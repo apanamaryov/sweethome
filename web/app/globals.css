@@ -475,3 +475,25 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
   .updated.flash { animation: none; }
   body.stale main, body.stale .panel, body.stale .topbar { transition: none; }
 }
+
+/* ---------- навигация по экранам (новое в Next-версии) ---------- */
+.nav-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 10px 14px 0;
+}
+.nav-tabs a {
+  padding: 6px 14px;
+  border: 1px solid var(--hairline);
+  background: var(--paper-0);
+  color: var(--ink-soft);
+  text-decoration: none;
+  font-variant: small-caps;
+  letter-spacing: 0.1em;
+  font-size: 14px;
+}
+.nav-tabs a.active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper-0);
+}
