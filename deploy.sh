@@ -31,8 +31,8 @@ echo "==> Установка и рестарт на Pi"
 set -euo pipefail
 cd "$PI_DIR"
 # Одноразовая миграция со старой раскладки (безопасна при повторных запусках)
-[ -d data ] && [ ! -e server/data ] && mv data server/data || true
-[ -f .env ] && [ ! -e server/.env ] && mv .env server/.env || true
+if [ -d data ] && [ ! -e server/data ]; then mv data server/data; fi
+if [ -f .env ] && [ ! -e server/.env ]; then mv .env server/.env; fi
 rm -rf dist src public
 npm ci -w server --omit=dev
 sudo cp server/systemd/inverter-monitor.service /etc/systemd/system/inverter-monitor.service
