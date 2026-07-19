@@ -1,9 +1,9 @@
 {
   "name": "inverter-monitor-root",
   "private": true,
-  "workspaces": ["server"],
+  "workspaces": ["shared", "server"],
   "scripts": {
-    "build": "npm run build -w server",
+    "build": "npm run build -w shared && npm run build -w server",
     "check": "npm run check -w server"
   },
   "engines": {

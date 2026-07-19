@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { Baseline } from "./protocol/types";
+import { Baseline } from "@inverter/shared";
 
 /**
  * Tiny JSON persistence for the captured settings baseline. Kept deliberately

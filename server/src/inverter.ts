@@ -13,9 +13,8 @@ import {
   parseId,
   isAck,
   buildControlCommand,
-  ControlType,
 } from "./protocol/pi30";
-import { Snapshot, DeviceMode, Baseline } from "./protocol/types";
+import { Snapshot, DeviceMode, Baseline, ControlType } from "@inverter/shared";
 import { Store } from "./store";
 
 export class Inverter extends EventEmitter {

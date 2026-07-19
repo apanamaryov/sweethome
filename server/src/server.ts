@@ -11,8 +11,8 @@ import {
   ALLOWED_MAX_CHARGE_CURRENT,
   ALLOWED_MAX_AC_CHARGE_CURRENT,
   ControlType,
-} from "./protocol/pi30";
-import { Snapshot } from "./protocol/types";
+} from "@inverter/shared";
+import { Snapshot } from "@inverter/shared";
 
 const CONTROL_TYPES: ControlType[] = [
   "outputSourcePriority",

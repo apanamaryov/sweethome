@@ -1,13 +1,13 @@
 import { Config } from "./config";
 import { Inverter } from "./inverter";
-import { Snapshot } from "./protocol/types";
 import {
+  Snapshot,
+  ControlType,
   OUTPUT_SOURCE_PRIORITY,
   CHARGER_SOURCE_PRIORITY,
   ALLOWED_MAX_CHARGE_CURRENT,
   ALLOWED_MAX_AC_CHARGE_CURRENT,
-  ControlType,
-} from "./protocol/pi30";
+} from "@inverter/shared";
 
 interface SensorDef {
   key: string;

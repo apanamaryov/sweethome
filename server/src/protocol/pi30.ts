@@ -4,7 +4,12 @@ import {
   InverterWarnings,
   InverterFlags,
   DeviceMode,
-} from "./types";
+  ControlType,
+  OUTPUT_SOURCE_PRIORITY,
+  CHARGER_SOURCE_PRIORITY,
+  ALLOWED_MAX_CHARGE_CURRENT,
+  ALLOWED_MAX_AC_CHARGE_CURRENT,
+} from "@inverter/shared";
 
 /**
  * PI30 ("HS") protocol helpers for Voltronic-based inverters
@@ -204,19 +209,6 @@ export function isAck(payload: string): boolean {
  * The inverter replies "(ACK" on success or "(NAK" on rejection.
  * ------------------------------------------------------------------ */
 
-export const OUTPUT_SOURCE_PRIORITY: Record<number, string> = {
-  0: "Utility first",
-  1: "Solar first",
-  2: "Solar → Battery → Utility (SBU)",
-};
-
-export const CHARGER_SOURCE_PRIORITY: Record<number, string> = {
-  0: "Utility first",
-  1: "Solar first",
-  2: "Solar and Utility",
-  3: "Only Solar",
-};
-
 export function setOutputSourcePriority(value: number): string {
   if (!(value in OUTPUT_SOURCE_PRIORITY)) throw new Error("Invalid output source priority");
   return `POP0${value}`;
@@ -227,8 +219,6 @@ export function setChargerSourcePriority(value: number): string {
   return `PCP0${value}`;
 }
 
-/** Max total charging current (A). Common allowed set on these units. */
-export const ALLOWED_MAX_CHARGE_CURRENT = [10, 20, 30, 40, 50, 60, 70, 80];
 export function setMaxChargingCurrent(amps: number): string {
   if (!ALLOWED_MAX_CHARGE_CURRENT.includes(amps)) {
     throw new Error(`Max charging current must be one of ${ALLOWED_MAX_CHARGE_CURRENT.join(", ")}`);
@@ -238,8 +228,6 @@ export function setMaxChargingCurrent(amps: number): string {
   return `MCHGC${String(amps).padStart(3, "0")}`;
 }
 
-/** Max utility (AC) charging current (A). */
-export const ALLOWED_MAX_AC_CHARGE_CURRENT = [2, 10, 20, 30, 40, 50, 60];
 export function setMaxAcChargingCurrent(amps: number): string {
   if (!ALLOWED_MAX_AC_CHARGE_CURRENT.includes(amps)) {
     throw new Error(`Max AC charging current must be one of ${ALLOWED_MAX_AC_CHARGE_CURRENT.join(", ")}`);
@@ -262,15 +250,6 @@ export function setBatteryRedischargeVoltage(volts: number): string {
   if (volts !== 0 && (volts < 48 || volts > 62)) throw new Error("Redischarge voltage out of range");
   return `PBDV${volts.toFixed(1).padStart(4, "0")}`;
 }
-
-/** A curated, whitelisted control surface exposed to the API/UI. */
-export type ControlType =
-  | "outputSourcePriority"
-  | "chargerSourcePriority"
-  | "maxChargingCurrent"
-  | "maxAcChargingCurrent"
-  | "batteryRechargeVoltage"
-  | "batteryRedischargeVoltage";
 
 export function buildControlCommand(type: ControlType, value: number): string {
   switch (type) {
