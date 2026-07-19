@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f1f0ec" />
+  <meta name="color-scheme" content="light" />
+  <title>Інвертор · SK-5500P-48L</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-row">
+      <h1 data-i18n="h1">Інвертор</h1>
+      <span id="mode" class="mode-badge">—</span>
+    </div>
+    <div class="topbar-row">
+      <span id="conn" class="pill pill-muted" data-i18n="connecting">З'єднання…</span>
+      <span id="updated" class="updated">—</span>
+    </div>
+  </header>
+
+  <div id="banner" class="banner hidden"></div>
+
+  <main class="grid">
+    <!-- Battery -->
+    <section class="card card-battery">
+      <div class="card-head"><span class="card-title" data-i18n="cardBattery">Батарея</span><span id="bat-state" class="tag">—</span></div>
+      <div id="soc-wrap" class="ring-wrap" role="img" data-i18n-aria="ringAria" aria-label="Рівень заряду батареї">
+        <svg id="soc-ring" viewBox="0 0 120 120" aria-hidden="true">
+          <defs>
+            <!-- Дизеринг Байера как SVG-паттерны; плотность растёт от d1 к d5.
+                 Цвет краски задаётся CSS-переменной (мох / кирпич при low). -->
+            <pattern id="dith-p1" patternUnits="userSpaceOnUse" width="8" height="8">
+              <g fill="var(--ring-c, #55795d)"><rect width="2" height="2" x="0" y="0"/><rect width="2" height="2" x="4" y="4"/></g>
+            </pattern>
+            <pattern id="dith-p2" patternUnits="userSpaceOnUse" width="8" height="8">
+              <g fill="var(--ring-c, #55795d)"><rect width="2" height="2" x="0" y="0"/><rect width="2" height="2" x="4" y="4"/><rect width="2" height="2" x="4" y="0"/><rect width="2" height="2" x="0" y="4"/><rect width="2" height="2" x="2" y="2"/></g>
+            </pattern>
+            <pattern id="dith-p3" patternUnits="userSpaceOnUse" width="8" height="8">
+              <g fill="var(--ring-c, #55795d)"><rect width="2" height="2" x="0" y="0"/><rect width="2" height="2" x="4" y="4"/><rect width="2" height="2" x="4" y="0"/><rect width="2" height="2" x="0" y="4"/><rect width="2" height="2" x="2" y="2"/><rect width="2" height="2" x="6" y="6"/><rect width="2" height="2" x="6" y="2"/><rect width="2" height="2" x="2" y="6"/></g>
+            </pattern>
+            <pattern id="dith-p4" patternUnits="userSpaceOnUse" width="8" height="8">
+              <g fill="var(--ring-c, #55795d)"><rect width="2" height="2" x="0" y="0"/><rect width="2" height="2" x="4" y="4"/><rect width="2" height="2" x="4" y="0"/><rect width="2" height="2" x="0" y="4"/><rect width="2" height="2" x="2" y="2"/><rect width="2" height="2" x="6" y="6"/><rect width="2" height="2" x="6" y="2"/><rect width="2" height="2" x="2" y="6"/><rect width="2" height="2" x="2" y="0"/><rect width="2" height="2" x="6" y="4"/><rect width="2" height="2" x="6" y="0"/></g>
+            </pattern>
+            <pattern id="dith-p5" patternUnits="userSpaceOnUse" width="8" height="8">
+              <g fill="var(--ring-c, #55795d)"><rect width="2" height="2" x="0" y="0"/><rect width="2" height="2" x="4" y="4"/><rect width="2" height="2" x="4" y="0"/><rect width="2" height="2" x="0" y="4"/><rect width="2" height="2" x="2" y="2"/><rect width="2" height="2" x="6" y="6"/><rect width="2" height="2" x="6" y="2"/><rect width="2" height="2" x="2" y="6"/><rect width="2" height="2" x="2" y="0"/><rect width="2" height="2" x="6" y="4"/><rect width="2" height="2" x="6" y="0"/><rect width="2" height="2" x="2" y="4"/><rect width="2" height="2" x="0" y="2"/><rect width="2" height="2" x="4" y="6"/></g>
+            </pattern>
+          </defs>
+          <g id="ring-segs"></g>
+        </svg>
+        <div class="ring-label"><span id="soc" class="ring-value">—</span><span class="ring-unit">%</span></div>
+      </div>
+      <div class="sub-metrics center">
+        <div><span id="bat-v">—</span><span class="cap" data-i18n="capV">В</span></div>
+        <div><span id="bat-charge">—</span><span class="cap" data-i18n="capChargeA">заряд, А</span></div>
+        <div><span id="bat-discharge">—</span><span class="cap" data-i18n="capDischargeA">розряд, А</span></div>
+      </div>
+    </section>
+
+    <!-- Solar -->
+    <section class="card card-solar">
+      <div class="card-head"><span class="card-title" data-i18n="cardSolar">Сонце (PV)</span></div>
+      <div class="big-metric"><span id="pv-w" class="big-val">—</span><span class="big-unit" data-i18n="capW">Вт</span></div>
+      <div class="sub-metrics">
+        <div><span id="pv-v">—</span><span class="cap" data-i18n="capV">В</span></div>
+        <div><span id="pv-a">—</span><span class="cap" data-i18n="unit_A">А</span></div>
+      </div>
+    </section>
+
+    <!-- Load -->
+    <section class="card card-load">
+      <div class="card-head"><span class="card-title" data-i18n="cardLoad">Навантаження</span><span id="load-pct" class="tag">—</span></div>
+      <div class="big-metric"><span id="load-w" class="big-val">—</span><span class="big-unit" data-i18n="capW">Вт</span></div>
+      <div class="sub-metrics">
+        <div><span id="out-v">—</span><span class="cap" data-i18n="capVout">В вих.</span></div>
+        <div><span id="out-hz">—</span><span class="cap" data-i18n="capHz">Гц</span></div>
+        <div><span id="load-va">—</span><span class="cap" data-i18n="capVA">ВА</span></div>
+      </div>
+    </section>
+
+    <!-- Grid -->
+    <section class="card card-grid">
+      <div class="card-head"><span class="card-title" data-i18n="cardGrid">Мережа</span></div>
+      <div class="sub-metrics wide">
+        <div><span id="grid-v">—</span><span class="cap" data-i18n="capV">В</span></div>
+        <div><span id="grid-hz">—</span><span class="cap" data-i18n="capHz">Гц</span></div>
+        <div><span id="temp">—</span><span class="cap" data-i18n="capTemp">°C радіатор</span></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Current settings + baseline -->
+  <section class="panel">
+    <button class="panel-toggle" data-target="settings-body">
+      <span data-i18n="panelSettings">📋 Поточні налаштування та еталон</span><span class="chev">▾</span>
+    </button>
+    <div id="settings-body" class="panel-body hidden">
+      <p id="baseline-note" class="note"></p>
+      <div class="settings-table" id="settings-table"></div>
+      <div class="flags-block">
+        <div class="flags-title" data-i18n="flagsTitle">Функції (прапорці)</div>
+        <div class="flags-list" id="flags-list"></div>
+      </div>
+      <button class="apply ghost-btn" id="recapture-btn" data-i18n="recaptureBtn">Перечитати еталон з інвертора</button>
+    </div>
+  </section>
+
+  <!-- Controls -->
+  <section class="panel">
+    <button class="panel-toggle" data-target="controls-body">
+      <span data-i18n="panelControls">⚙️ Керування налаштуваннями</span><span class="chev">▾</span>
+    </button>
+    <div id="controls-body" class="panel-body hidden">
+      <div id="lock-bar" class="lock-bar">
+        <span id="lock-status" class="lock-status"></span>
+        <button id="lock-toggle" class="lock-toggle"></button>
+      </div>
+      <p id="control-note" class="note"></p>
+
+      <div class="control" data-type="outputSourcePriority">
+        <label data-i18n="ctlOsp">Пріоритет джерела виходу</label>
+        <div class="segmented" id="ctl-osp"></div>
+      </div>
+
+      <div class="control" data-type="chargerSourcePriority">
+        <label data-i18n="ctlCsp">Пріоритет джерела заряду</label>
+        <div class="segmented" id="ctl-csp"></div>
+      </div>
+
+      <div class="control" data-type="maxChargingCurrent">
+        <label data-i18n="ctlMcc">Макс. струм заряду (А)</label>
+        <div class="row">
+          <select id="ctl-mcc"></select>
+          <button class="apply" data-apply="maxChargingCurrent" data-select="ctl-mcc" data-i18n="apply">Застосувати</button>
+        </div>
+      </div>
+
+      <div class="control" data-type="maxAcChargingCurrent">
+        <label data-i18n="ctlMacc">Макс. струм заряду від мережі (А)</label>
+        <div class="row">
+          <select id="ctl-macc"></select>
+          <button class="apply" data-apply="maxAcChargingCurrent" data-select="ctl-macc" data-i18n="apply">Застосувати</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Advanced -->
+  <section class="panel">
+    <button class="panel-toggle" data-target="adv-body">
+      <span data-i18n="panelAdvanced">🔧 Розширене (довільна команда)</span><span class="chev">▾</span>
+    </button>
+    <div id="adv-body" class="panel-body hidden">
+      <p class="note" data-i18n-html="advNote">Надсилання будь-якої query-команди PI30 (наприклад <code>QPIGS</code>, <code>QPIRI</code>, <code>QID</code>). Команди запису (що не починаються з <code>Q</code>) потребують розблокування керування.</p>
+      <div class="row">
+        <input id="raw-cmd" type="text" placeholder="QPIGS" autocapitalize="characters" spellcheck="false" />
+        <button class="apply" id="raw-send" data-i18n="send">Надіслати</button>
+      </div>
+      <pre id="raw-out" class="raw-out hidden"></pre>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="footer-row">
+      <span id="device-info">—</span><a href="#" id="logout" class="logout hidden" data-i18n="logout">вийти</a>
+    </div>
+    <nav class="lang-switch" aria-label="Language">
+      <button data-lang="uk">UA</button><button data-lang="ru">RU</button><button data-lang="en">EN</button>
+    </nav>
+  </footer>
+
+  <!-- Confirm modal -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-box">
+      <p id="modal-text"></p>
+      <div class="modal-actions">
+        <button id="modal-cancel" class="btn-ghost" data-i18n="modalCancel">Скасувати</button>
+        <button id="modal-ok" class="btn-danger" data-i18n="modalOk">Підтвердити</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/i18n.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

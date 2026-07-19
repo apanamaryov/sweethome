@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f1f0ec" />
+  <meta name="color-scheme" content="light" />
+  <title>Вхід · Інвертор</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body data-title-key="loginTitle">
+  <div class="login-wrap">
+    <div class="modal-box login-box">
+      <h1 class="login-title" data-i18n="h1">Інвертор</h1>
+      <p class="note" data-i18n="loginNote">SK-5500P-48L · локальний моніторинг. Введи пароль доступу.</p>
+      <form id="login-form" class="row">
+        <input type="password" id="pw" placeholder="Пароль" data-i18n-ph="loginPassword" autocomplete="current-password" autofocus />
+        <button class="apply" type="submit" data-i18n="loginSubmit">Увійти</button>
+      </form>
+      <p id="login-err" class="login-err hidden"></p>
+      <nav class="lang-switch" aria-label="Language">
+        <button data-lang="uk">UA</button><button data-lang="ru">RU</button><button data-lang="en">EN</button>
+      </nav>
+    </div>
+  </div>
+  <script src="/i18n.js"></script>
+  <script>
+    "use strict";
+    applyStaticI18n();
+    const form = document.getElementById("login-form");
+    const err = document.getElementById("login-err");
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      err.classList.add("hidden");
+      try {
+        const res = await fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password: document.getElementById("pw").value }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          location.href = "/";
+        } else {
+          let msg = data.error || t("toastError");
+          if (data.code === "bad_password") msg = t("badPassword");
+          else if (data.code === "rate_limited") msg = t("tooMany").replace("{m}", data.minutes ?? "?");
+          err.textContent = msg;
+          err.classList.remove("hidden");
+        }
+      } catch (ex) {
+        err.textContent = t("toastNetErr") + ex.message;
+        err.classList.remove("hidden");
+      }
+    });
+  </script>
+</body>
+</html>
