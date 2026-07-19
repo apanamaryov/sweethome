@@ -1,0 +1,477 @@
+/* ============================================================
+   E-INK / электронная бумага.
+   Только оттенки серого; «градиенты» набираются дизерингом
+   (матрица Байера 4×4), как это делает настоящий e-ink.
+   Шрифты только системные — страница живёт в LAN без интернета.
+   ============================================================ */
+
+:root {
+  --paper-0: #f1f0ec; /* верх страницы */
+  --paper-1: #d6d5d0; /* середина */
+  --paper-2: #c6c5c0; /* низ */
+  --card: #ecebe7;    /* поверхность панелей */
+  --ink: #1a1a1a;
+  --ink-soft: #444340;
+  --ink-faint: #85847f;
+  --hairline: #a9a8a3;
+
+  /* Приглушённые «печатные» цвета — как у цветного e-ink (Kaleido) или
+     ризографа: краска по серой бумаге, никаких неоновых оттенков.
+     Семантика: солнце — охра, батарея — мох, нагрузка — грифель,
+     сеть — слива, опасность/разряд — кирпич. */
+  --sun: #a5762a;
+  --sun-deep: #7c5a22;
+  --moss: #55795d;
+  --moss-deep: #3f5c46;
+  --slate: #53718e;
+  --slate-deep: #405872;
+  --plum: #7b6390;
+  --plum-deep: #614e73;
+  --brick: #a54836;
+  --brick-deep: #83392a;
+
+  --serif: "Charter", "Bitstream Charter", "PT Serif", Georgia, "Times New Roman", serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace;
+
+  /* Дизеринг: плотность 2/16 … 14/16 (Байер 4×4, клетка 2px) */
+  --dith-1: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 4 4' shape-rendering='crispEdges'%3E%3Cg fill='%231a1a1a'%3E%3Crect width='1' height='1' x='0' y='0'/%3E%3Crect width='1' height='1' x='2' y='2'/%3E%3C/g%3E%3C/svg%3E");
+  --dith-2: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 4 4' shape-rendering='crispEdges'%3E%3Cg fill='%231a1a1a'%3E%3Crect width='1' height='1' x='0' y='0'/%3E%3Crect width='1' height='1' x='2' y='2'/%3E%3Crect width='1' height='1' x='2' y='0'/%3E%3Crect width='1' height='1' x='0' y='2'/%3E%3Crect width='1' height='1' x='1' y='1'/%3E%3C/g%3E%3C/svg%3E");
+  --dith-3: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 4 4' shape-rendering='crispEdges'%3E%3Cg fill='%231a1a1a'%3E%3Crect width='1' height='1' x='0' y='0'/%3E%3Crect width='1' height='1' x='2' y='2'/%3E%3Crect width='1' height='1' x='2' y='0'/%3E%3Crect width='1' height='1' x='0' y='2'/%3E%3Crect width='1' height='1' x='1' y='1'/%3E%3Crect width='1' height='1' x='3' y='3'/%3E%3Crect width='1' height='1' x='3' y='1'/%3E%3Crect width='1' height='1' x='1' y='3'/%3E%3C/g%3E%3C/svg%3E");
+  --dith-4: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 4 4' shape-rendering='crispEdges'%3E%3Cg fill='%231a1a1a'%3E%3Crect width='1' height='1' x='0' y='0'/%3E%3Crect width='1' height='1' x='2' y='2'/%3E%3Crect width='1' height='1' x='2' y='0'/%3E%3Crect width='1' height='1' x='0' y='2'/%3E%3Crect width='1' height='1' x='1' y='1'/%3E%3Crect width='1' height='1' x='3' y='3'/%3E%3Crect width='1' height='1' x='3' y='1'/%3E%3Crect width='1' height='1' x='1' y='3'/%3E%3Crect width='1' height='1' x='1' y='0'/%3E%3Crect width='1' height='1' x='3' y='2'/%3E%3Crect width='1' height='1' x='3' y='0'/%3E%3C/g%3E%3C/svg%3E");
+  --dith-5: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 4 4' shape-rendering='crispEdges'%3E%3Cg fill='%231a1a1a'%3E%3Crect width='1' height='1' x='0' y='0'/%3E%3Crect width='1' height='1' x='2' y='2'/%3E%3Crect width='1' height='1' x='2' y='0'/%3E%3Crect width='1' height='1' x='0' y='2'/%3E%3Crect width='1' height='1' x='1' y='1'/%3E%3Crect width='1' height='1' x='3' y='3'/%3E%3Crect width='1' height='1' x='3' y='1'/%3E%3Crect width='1' height='1' x='1' y='3'/%3E%3Crect width='1' height='1' x='1' y='0'/%3E%3Crect width='1' height='1' x='3' y='2'/%3E%3Crect width='1' height='1' x='3' y='0'/%3E%3Crect width='1' height='1' x='1' y='2'/%3E%3Crect width='1' height='1' x='0' y='1'/%3E%3Crect width='1' height='1' x='2' y='3'/%3E%3C/g%3E%3C/svg%3E");
+
+  /* Штриховка тревоги — кирпичной краской */
+  --hatch: repeating-linear-gradient(45deg, var(--brick) 0 3px, transparent 3px 8px);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html { color-scheme: light; }
+
+body {
+  margin: 0;
+  font-family: var(--serif);
+  color: var(--ink);
+  background: linear-gradient(180deg, var(--paper-0) 0%, var(--paper-1) 62%, var(--paper-2) 100%);
+  background-attachment: fixed;
+  min-height: 100vh;
+  padding-bottom: env(safe-area-inset-bottom);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Ghosting: связь потеряна — картинка «выцветает», как остаточное
+   изображение на e-ink */
+body.stale main,
+body.stale .panel,
+body.stale .topbar { opacity: 0.45; filter: contrast(0.75); transition: opacity 1.2s, filter 1.2s; }
+
+::selection { background: var(--ink); color: var(--paper-0); }
+
+:focus-visible { outline: 2px dashed var(--ink); outline-offset: 2px; }
+
+/* ---------- шапка: строка состояния ридера ---------- */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--paper-0);
+  padding: calc(env(safe-area-inset-top) + 10px) 16px 8px;
+  border-bottom: 1px solid var(--ink);
+  box-shadow: 0 3px 0 -2px var(--hairline); /* двойная линейка, как у Kindle */
+}
+.topbar-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.topbar-row + .topbar-row { margin-top: 6px; }
+.topbar h1 {
+  font-size: 21px;
+  margin: 0;
+  font-weight: 700;
+  font-variant: small-caps;
+  letter-spacing: 0.14em;
+}
+.updated { font-family: var(--mono); font-size: 11px; color: var(--ink-soft); padding: 1px 4px; }
+.updated.flash { animation: eink-flash 0.28s steps(2, jump-none) 1; }
+@keyframes eink-flash {
+  0% { background: var(--ink); color: var(--paper-0); }
+  100% { background: transparent; color: var(--ink-soft); }
+}
+
+/* Режим работы — чип в духе меню ридера */
+.mode-badge {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 4px 10px;
+  border: 1.5px solid var(--ink);
+  background: var(--paper-0);
+  color: var(--ink);
+}
+.mode-Battery { background: var(--moss-deep); border-color: var(--moss-deep); color: var(--paper-0); } /* автономно */
+.mode-Line { border-color: var(--plum-deep); color: var(--plum-deep); }
+.mode-Fault {
+  background: var(--brick-deep);
+  border-color: var(--brick-deep);
+  color: var(--paper-0);
+  box-shadow: 0 0 0 2px var(--paper-0), 0 0 0 4px var(--brick-deep);
+}
+.mode-Standby, .mode-PowerSaving, .mode-Shutdown { border-style: dashed; color: var(--ink-soft); }
+
+/* Статус подключения */
+.pill {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 3px 9px;
+  border: 1.5px solid var(--ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--paper-0);
+  color: var(--ink);
+}
+.pill::before { content: ""; width: 7px; height: 7px; background: var(--ink); }
+.pill-ok::before { background: var(--moss); }
+.pill-mock { border-style: dashed; color: var(--ink-soft); } /* пунктир = данные не настоящие */
+.pill-mock::before { background: var(--dith-3); border: 1px solid var(--ink-soft); width: 8px; height: 8px; }
+.pill-bad { background: var(--brick-deep); border-color: var(--brick-deep); color: var(--paper-0); }
+.pill-bad::before { background: var(--paper-0); }
+.pill-muted { border-color: var(--ink-faint); color: var(--ink-faint); }
+.pill-muted::before { background: var(--ink-faint); }
+
+/* ---------- баннер предупреждений ---------- */
+.banner {
+  margin: 14px 16px 0;
+  padding: 10px 12px 10px 14px;
+  border: 2px solid var(--brick-deep);
+  border-left: 14px solid transparent;
+  border-image: none;
+  background:
+    linear-gradient(var(--card), var(--card)) padding-box,
+    var(--hatch) border-box;
+  color: var(--brick-deep);
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* ---------- сетка приборных панелей ---------- */
+/* Четыре равные приборные панели, по две в ряд */
+.grid { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 1fr; gap: 12px; padding: 16px; }
+.card {
+  background: var(--card);
+  border: 1.5px solid var(--ink);
+  padding: 12px 14px 14px;
+  min-width: 0;
+}
+
+.card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.card-head::after { content: ""; flex: 1; border-top: 1px solid var(--hairline); }
+.card-title {
+  font-size: 12px;
+  font-weight: 700;
+  font-variant: small-caps;
+  letter-spacing: 0.16em;
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+/* Цветовая метка раздела — как плашка краски в легенде печатной схемы */
+.card-title::before { content: ""; width: 9px; height: 9px; border: 1px solid var(--ink); }
+.card-battery .card-title::before { background: var(--moss); }
+.card-solar .card-title::before { background: var(--sun); }
+.card-load .card-title::before { background: var(--slate); }
+.card-grid .card-title::before { background: var(--plum); }
+.tag { font-family: var(--mono); font-size: 11px; color: var(--ink-soft); }
+.tag.state-charge { color: var(--moss-deep); font-weight: 700; }
+.tag.state-discharge { color: var(--brick-deep); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.tag.state-idle { color: var(--ink-faint); }
+
+.big-metric { display: flex; align-items: baseline; gap: 6px; }
+.big-val { font-family: var(--mono); font-size: 34px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.card-solar .big-val { color: var(--sun-deep); }
+.card-load .big-val { color: var(--slate-deep); }
+.big-unit { font-size: 13px; color: var(--ink-soft); font-style: italic; }
+
+.sub-metrics { display: flex; gap: 16px; margin-top: 10px; flex-wrap: wrap; }
+.sub-metrics.wide { gap: 22px; }
+.sub-metrics > div { display: flex; align-items: baseline; gap: 4px; font-family: var(--mono); font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cap { font-family: var(--serif); font-size: 11px; color: var(--ink-faint); font-style: italic; }
+
+/* ---------- батарея: секторное кольцо вокруг цифры заряда ---------- */
+/* 20 секторов по 5%; заполненные печатаются дизерингом нарастающей
+   плотности (краска — мох, при низком заряде — кирпич). Прогресс
+   дискретный, как и положено e-ink. */
+.ring-wrap { --ring-c: var(--moss); position: relative; width: 132px; margin: 6px auto 4px; }
+.ring-wrap svg { display: block; width: 100%; height: auto; }
+.ring-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+.ring-value {
+  font-family: var(--mono);
+  font-size: 27px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--moss-deep);
+}
+.ring-unit { font-size: 12px; color: var(--ink-soft); font-style: italic; }
+
+.seg { fill: var(--paper-0); stroke: var(--hairline); stroke-width: 1; }
+.seg.on { stroke: var(--ink); }
+.seg.on.d1 { fill: url(#dith-p1); }
+.seg.on.d2 { fill: url(#dith-p2); }
+.seg.on.d3 { fill: url(#dith-p3); }
+.seg.on.d4 { fill: url(#dith-p4); }
+.seg.on.d5 { fill: url(#dith-p5); }
+
+.ring-wrap.low { --ring-c: var(--brick); }
+.ring-wrap.low .ring-value { color: var(--brick-deep); }
+.ring-wrap.low .seg.on { stroke: var(--brick-deep); }
+
+.sub-metrics.center { justify-content: center; }
+
+/* ---------- складные секции: оглавление книги ---------- */
+.panel { margin: 0 16px 12px; background: var(--card); border: 1.5px solid var(--ink); }
+.panel-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: none;
+  border: none;
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 14px;
+  font-weight: 700;
+  font-variant: small-caps;
+  letter-spacing: 0.1em;
+  padding: 13px 16px;
+  cursor: pointer;
+}
+.chev { font-family: var(--mono); color: var(--ink-soft); }
+.panel-toggle.open .chev { transform: rotate(180deg); }
+.panel-body { padding: 0 16px 16px; border-top: 1px solid var(--hairline); }
+.note { color: var(--ink-soft); font-size: 13px; line-height: 1.55; margin: 12px 0 14px; }
+.note code, .note b { font-family: var(--mono); font-style: normal; font-size: 12px; }
+
+.control { margin-bottom: 18px; }
+.control label {
+  display: block;
+  font-size: 12px;
+  font-variant: small-caps;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+  color: var(--ink-soft);
+  margin-bottom: 8px;
+}
+
+/* Кнопки-сегменты: примыкают друг к другу, выбранная — инверсия */
+.segmented { display: flex; flex-wrap: wrap; }
+.segmented button {
+  flex: 1;
+  min-width: 90px;
+  padding: 10px;
+  border: 1.5px solid var(--ink);
+  margin: 0 -1.5px -1.5px 0;
+  background: var(--paper-0);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+.segmented button.active { background: var(--ink); color: var(--paper-0); }
+.segmented button:disabled { border-color: var(--ink-faint); color: var(--ink-faint); border-style: dashed; cursor: not-allowed; }
+.segmented button:disabled.active { background: var(--ink-faint); color: var(--paper-0); border-style: solid; }
+
+.row { display: flex; gap: 10px; align-items: stretch; }
+select, input[type="text"] {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1.5px solid var(--ink);
+  border-radius: 0;
+  background: var(--paper-0);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 15px;
+  appearance: none;
+  min-width: 0;
+}
+select:disabled { border-style: dashed; border-color: var(--ink-faint); color: var(--ink-faint); }
+
+.apply, .btn-danger, .btn-ghost, .lock-toggle {
+  padding: 10px 16px;
+  border: 1.5px solid var(--ink);
+  border-radius: 0;
+  background: var(--paper-0);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.apply:active, .btn-ghost:active, .lock-toggle:active { background: var(--ink); color: var(--paper-0); }
+.apply:disabled { border-style: dashed; border-color: var(--ink-faint); color: var(--ink-faint); cursor: not-allowed; }
+
+.raw-out {
+  background: var(--paper-0);
+  border: 1px solid var(--ink);
+  padding: 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow-x: auto;
+  margin-top: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.footer { text-align: center; color: var(--ink-faint); font-size: 12px; font-style: italic; padding: 8px 16px 28px; }
+.footer .logout { color: var(--ink-soft); margin-left: 10px; text-decoration: underline; text-underline-offset: 3px; }
+.footer-row { margin-bottom: 10px; }
+
+/* Переключатель языков */
+.lang-switch { display: flex; justify-content: center; gap: 6px; }
+.lang-switch button {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 4px 9px;
+  border: 1px solid var(--ink-faint);
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.lang-switch button.active { background: var(--ink); border-color: var(--ink); color: var(--paper-0); }
+.login-box .lang-switch { margin-top: 16px; justify-content: flex-start; }
+
+/* ---------- страница входа ---------- */
+.login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.login-box { max-width: 340px; }
+.login-title { margin: 0 0 6px; font-size: 22px; font-weight: 700; font-variant: small-caps; letter-spacing: 0.14em; }
+.login-err {
+  margin: 12px 0 0;
+  padding: 8px 10px;
+  background: var(--brick-deep);
+  color: var(--paper-0);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+/* ---------- модалка: книжная рамка в две линии ---------- */
+.modal { position: fixed; inset: 0; background: rgba(26, 26, 26, 0.35); display: flex; align-items: center; justify-content: center; z-index: 20; padding: 24px; }
+.modal-box {
+  background: var(--paper-0);
+  border: 2px solid var(--ink);
+  outline: 1px solid var(--ink);
+  outline-offset: 3px;
+  padding: 22px;
+  max-width: 380px;
+  width: 100%;
+}
+.modal-box p { margin: 0 0 20px; font-size: 15px; line-height: 1.5; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.btn-danger { background: var(--brick-deep); border-color: var(--brick-deep); color: var(--paper-0); }
+
+/* ---------- тост ---------- */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  background: var(--ink);
+  color: var(--paper-0);
+  padding: 11px 18px;
+  font-family: var(--mono);
+  font-size: 13px;
+  z-index: 30;
+  max-width: 90%;
+  text-align: center;
+}
+.toast.ok { background: var(--moss-deep); }
+.toast.bad { background: var(--brick-deep); }
+
+/* ---------- блокировка записи ---------- */
+.lock-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 13px;
+  margin: 12px 0 14px;
+  border: 1.5px solid var(--ink);
+  background: var(--paper-0);
+}
+.lock-status { font-size: 13px; font-weight: 700; }
+.lock-status.unlocked {
+  background: var(--brick-deep);
+  color: var(--paper-0);
+  padding: 3px 8px;
+}
+.lock-bar:has(.unlocked) {
+  border-width: 2px;
+  background:
+    linear-gradient(var(--paper-0), var(--paper-0)) padding-box,
+    var(--hatch) border-box;
+  border-color: transparent;
+  border-left-width: 12px;
+}
+.lock-toggle.unlock { background: var(--brick-deep); border-color: var(--brick-deep); color: var(--paper-0); }
+
+/* ---------- таблица настроек ---------- */
+.settings-table { display: flex; flex-direction: column; margin-bottom: 16px; border-top: 1px solid var(--hairline); }
+.srow {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr 1fr;
+  gap: 8px;
+  padding: 8px 6px;
+  font-size: 13px;
+  align-items: baseline;
+  border-bottom: 1px solid var(--hairline);
+}
+.srow.shead {
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-variant: small-caps;
+  letter-spacing: 0.14em;
+  font-weight: 700;
+  border-bottom: 1px solid var(--ink);
+}
+.slabel { font-weight: 400; }
+.scur { font-family: var(--mono); font-weight: 700; font-variant-numeric: tabular-nums; }
+.sbase { font-family: var(--mono); color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+.srow.drift { background: rgba(165, 118, 42, 0.13); box-shadow: inset 3px 0 0 var(--sun); }
+.srow.drift .slabel { font-weight: 700; }
+.srow.drift .scur { color: var(--sun-deep); }
+
+/* ---------- флаги ---------- */
+.flags-block { margin-bottom: 16px; }
+.flags-title { font-size: 11px; color: var(--ink-soft); font-variant: small-caps; letter-spacing: 0.14em; font-weight: 700; margin-bottom: 8px; }
+.flags-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.flag-chip { font-family: var(--mono); font-size: 11px; padding: 4px 9px; border: 1px solid var(--moss); background: var(--paper-0); color: var(--moss-deep); }
+.flag-chip.off { border: 1px dashed var(--ink-faint); color: var(--ink-faint); }
+
+.ghost-btn { width: 100%; }
+.muted { color: var(--ink-faint); font-size: 13px; }
+
+.hidden { display: none !important; }
+
+@media (min-width: 620px) {
+  .grid { max-width: 900px; margin: 0 auto; }
+  .panel, .banner { max-width: 900px; margin-left: auto; margin-right: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .updated.flash { animation: none; }
+  body.stale main, body.stale .panel, body.stale .topbar { transition: none; }
+}

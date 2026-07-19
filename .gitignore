@@ -4,3 +4,7 @@ data/
 .env
 *.log
 .superpowers/
+.next/
+web/out/
+next-env.d.ts
+*.tsbuildinfo

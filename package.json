@@ -1,10 +1,14 @@
 {
   "name": "inverter-monitor-root",
   "private": true,
-  "workspaces": ["shared", "server"],
+  "workspaces": ["shared", "server", "web"],
   "scripts": {
-    "build": "npm run build -w shared && npm run build -w server",
-    "check": "npm run check -w server"
+    "build": "npm run build -w shared && npm run build -w server && npm run build -w web",
+    "check": "npm run check -w server && npm run typecheck -w web",
+    "dev": "concurrently -k -n server,web -c blue,magenta \"npm run dev -w server\" \"npm run dev -w web\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
   },
   "engines": {
     "node": ">=20"
