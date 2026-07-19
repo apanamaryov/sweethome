@@ -52,7 +52,8 @@ RS485). Это приложение делает именно это.
 - **`src/inverter.ts`** — опрос по таймеру, очередь команд (сериализация доступа
   к единственному UART), автопереподключение, применение управляющих команд.
 - **`src/server.ts`** — Express (REST + статика) и WebSocket (живой push).
-- **`public/`** — мобильный веб-интерфейс (самодостаточный, без внешних CDN).
+- **`web/`** — мобильный веб-интерфейс на Next.js; статический экспорт
+  (`web/out/`) раздаёт тот же Express-сервер.
 
 ---
 
@@ -88,32 +89,77 @@ RS485). Это приложение делает именно это.
 
 ---
 
-## 5. Установка и запуск
+## 5. Разработка
+
+Монорепо на npm workspaces: `shared/` (общие типы и API-контракт),
+`server/` (Express + WebSocket, протокол PI30) и `web/` (UI на Next.js).
+Разработка и сборка ведутся на обычной машине (не на Pi); Node ≥ 20.
 
 ```bash
-cd ~/inverter-monitor
-npm install          # ставит зависимости, включая нативные serialport/node-hid
-npm run build        # компиляция TypeScript -> dist/
-cp .env.example .env # при необходимости отредактируй
-npm start            # запуск (или через systemd, см. ниже)
+git clone <репозиторий> inverter-monitor
+cd inverter-monitor
+npm install    # ставит зависимости всех воркспейсов разом
+npm run dev    # сервер :3000 (mock-данные) + UI :3001 (Next.js, HMR)
 ```
 
-Открой в браузере телефона: `http://<IP-адрес-Pi>:3000`
-(в этой установке — `http://192.168.1.112:3000`).
+Открой `http://localhost:3001` — в dev-режиме UI проксирует `/api/*` на
+сервер `:3000` (см. `web/next.config.ts`).
 
-### Автозапуск через systemd
+Перед коммитом — статическая проверка (typecheck сервера и веба, selfcheck
+протокола PI30/CRC):
 
 ```bash
-sudo cp systemd/inverter-monitor.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now inverter-monitor
-systemctl status inverter-monitor
-journalctl -u inverter-monitor -f     # логи
+npm run check
 ```
 
 ---
 
-## 6. Конфигурация (`.env`)
+## 6. Деплой на Pi
+
+Сборка — целиком **локальная**: Pi ничего не компилирует, только
+устанавливает production-зависимости сервера и рестартует systemd-сервис.
+
+```bash
+./deploy.sh
+```
+
+Что делает скрипт:
+1. `npm run build` (shared → server → web) и `npm run check`.
+2. `rsync` заливает на Pi собранные артефакты — `shared/dist`, `server/dist`,
+   `server/systemd`, `server/.env.example`, статику `web/out` — и
+   `package.json`/`package-lock.json` воркспейсов.
+3. По SSH на Pi: одноразово мигрирует старую раскладку (`data/` →
+   `server/data/`, `.env` → `server/.env`, удаляет старые `dist/`, `src/`,
+   `public/`), ставит `npm ci -w server --omit=dev`, обновляет systemd-юнит
+   и рестартует `inverter-monitor`.
+4. Проверяет `GET /api/health` (до минуты на рестарт пода); `200` без
+   авторизации или `401` с авторизацией — оба означают «сервер жив».
+
+Настройки — через переменные окружения:
+
+```bash
+PI_HOST=pi@192.168.1.112 SSH_KEY=~/.ssh/pi_key ./deploy.sh
+```
+
+- `PI_HOST` — пользователь и адрес Pi (по умолчанию `pi@192.168.1.112`).
+- `SSH_KEY` — путь к приватному ключу, если он не подхватывается ssh-агентом
+  по умолчанию.
+
+На Pi конфиг и данные теперь лежат в `server/.env` и `server/data/`
+(`baseline.json`, `sessions.json` — как и раньше, просто путь переехал под
+`server/`); статику отдаёт сам сервер из `web/out/`.
+
+Юнит копируется и рестартуется при каждом деплое автоматически, но
+`systemctl enable` (автозапуск после перезагрузки Pi) — разовая ручная
+операция:
+
+```bash
+ssh pi@192.168.1.112 sudo systemctl enable inverter-monitor
+```
+
+---
+
+## 7. Конфигурация (`.env`)
 
 | Переменная | По умолчанию | Описание |
 |---|---|---|
@@ -136,7 +182,7 @@ journalctl -u inverter-monitor -f     # логи
 
 При заданном `AUTH_PASSWORD` весь UI, API и WebSocket требуют входа
 (страница `/login.html`, HttpOnly-cookie, сессии переживают рестарт —
-`data/sessions.json` хранит только SHA-256 токенов). После 5 неверных паролей
+`server/data/sessions.json` хранит только SHA-256 токенов). После 5 неверных паролей
 с одного IP — блокировка на 10 минут. Выход — ссылка «выйти» в подвале или
 `POST /api/logout`.
 
@@ -147,7 +193,7 @@ journalctl -u inverter-monitor -f     # логи
 
 ---
 
-## 7. Веб-интерфейс
+## 8. Веб-интерфейс
 
 - **Шапка**: статус подключения (Подключено / Демо-данные / Нет связи), текущий
   режим (От сети / От батареи / …), время последнего обновления.
@@ -169,7 +215,7 @@ journalctl -u inverter-monitor -f     # логи
 
 ---
 
-## 8. API
+## 9. API
 
 | Метод | Путь | Назначение |
 |---|---|---|
@@ -198,7 +244,7 @@ curl -X POST http://192.168.1.112:3000/api/control \
 
 ---
 
-## 9. Подключение к Home Assistant (MQTT)
+## 10. Подключение к Home Assistant (MQTT)
 
 Приложение умеет публиковать данные в **MQTT с автодискавери Home Assistant** —
 HA сам создаёт все сущности, YAML писать не нужно. По умолчанию интеграция
@@ -207,7 +253,7 @@ HA сам создаёт все сущности, YAML писать не нуж�
 **Что нужно:**
 1. Рабочий **MQTT-брокер** (обычно аддон **Mosquitto** в Home Assistant) и
    включённая интеграция **MQTT** в HA. Запиши адрес брокера и логин/пароль.
-2. В `.env` приложения указать брокер и перезапустить сервис:
+2. В `server/.env` приложения указать брокер и перезапустить сервис:
    ```
    MQTT_URL=mqtt://ha-user:ha-pass@IP-БРОКЕРА:1883
    # опционально — управление инвертором из HA (обходит блокировку записи в UI):
@@ -243,7 +289,7 @@ discovery — `homeassistant/<component>/<node>/<key>/config`. Node id и пре
 > (Bookworm) и/или на более мощном узле; это приложение к нему подключится по MQTT
 > откуда угодно в сети.
 
-## 10. ⚠️ Безопасность управления и блокировка записи
+## 11. ⚠️ Безопасность управления и блокировка записи
 
 Приложение спроектировано по принципу **«читаем, но не перезаписываем, пока это
 не понадобится»**:
@@ -258,7 +304,7 @@ discovery — `homeassistant/<component>/<node>/<key>/config`. Node id и пре
   разблокировал → изменил один параметр → снова заблокировано.
 - **Эталон настроек**: при первом подключении устройства все текущие настройки
   (`QPIRI` + `QFLAG`) один раз считываются и сохраняются на диск
-  (`data/baseline.json`), с привязкой к серийному номеру (`QID`). В интерфейсе
+  (`server/data/baseline.json`), с привязкой к серийному номеру (`QID`). В интерфейсе
   видно эталон и **подсветку расхождений** (drift), если текущее значение
   отличается от снятого при подключении. Кнопка «Перечитать эталон» обновляет его
   вручную. При подключении другого устройства (например, реального инвертора
@@ -273,7 +319,7 @@ discovery — `homeassistant/<component>/<node>/<key>/config`. Node id и пре
 
 ---
 
-## 11. Что проверено, а что требует реального инвертора
+## 12. Что проверено, а что требует реального инвертора
 
 **Проверено (без железа):**
 - CRC-16/XMODEM — совпадает с эталонными значениями Voltronic.
@@ -296,7 +342,7 @@ mpp-solar -p /dev/hidraw0 -c QPIGS      # или -p /dev/ttyUSB0
 
 ---
 
-## 12. Про обновление системы (важно)
+## 13. Про обновление системы (важно)
 
 На Pi установлена **Raspbian 10 (buster)** — релиз снят с поддержки (EOL).
 Главный репозиторий Raspbian для buster уже недоступен (404), поэтому штатный
@@ -311,37 +357,39 @@ mpp-solar -p /dev/hidraw0 -c QPIGS      # или -p /dev/ttyUSB0
 
 ---
 
-## 13. Структура проекта
+## 14. Структура проекта
 
 ```
 inverter-monitor/
-├── src/
-│   ├── index.ts              # точка входа
-│   ├── config.ts             # конфиг из env
-│   ├── inverter.ts           # опрос, очередь, управление, переподключение
-│   ├── server.ts             # Express + WebSocket
-│   ├── mqtt.ts               # MQTT + Home Assistant автодискавери
-│   ├── store.ts              # персистентность эталона настроек
-│   ├── protocol/
-│   │   ├── crc.ts            # CRC-16/XMODEM, кадры
-│   │   ├── pi30.ts           # команды и парсеры
-│   │   └── types.ts          # типы данных
-│   └── transport/
-│       ├── types.ts          # интерфейс транспорта
-│       ├── serial.ts         # serialport
-│       ├── hid.ts            # node-hid
-│       ├── mock.ts           # демо-данные
-│       └── detect.ts         # автоопределение
-├── public/                   # веб-интерфейс (index.html, style.css, app.js)
-├── systemd/inverter-monitor.service
-├── .env.example
-├── package.json
-└── tsconfig.json
+├── package.json                  # root: workspaces + build/dev/check
+├── package-lock.json             # общий lock (генерируется)
+├── .gitignore                    # + .next/, web/out/, next-env.d.ts
+├── deploy.sh                     # сборка → rsync → npm ci → restart → health
+├── shared/
+│   ├── package.json  tsconfig.json
+│   └── src/{types.ts, api.ts, index.ts}
+├── server/
+│   ├── package.json  tsconfig.json  .env.example
+│   ├── scripts/selfcheck.ts      # CRC-эталоны, раундтрипы, парсеры, сеттеры
+│   ├── src/{index,config,inverter,server,auth,mqtt,store}.ts
+│   ├── src/protocol/{crc,pi30}.ts        # types.ts уезжает в shared
+│   ├── src/transport/{types,serial,hid,mock,detect}.ts
+│   └── systemd/inverter-monitor.service
+└── web/
+    ├── package.json  tsconfig.json  next.config.ts
+    ├── app/
+    │   ├── layout.tsx  globals.css        # globals.css = копия style.css
+    │   ├── login/page.tsx
+    │   └── (app)/{layout.tsx, page.tsx, settings/page.tsx, diagnostics/page.tsx}
+    ├── components/{Panel,ConfirmDialog,LangSwitch,BatteryRing}.tsx
+    └── lib/
+        ├── api.ts  format.ts  snapshot.tsx  meta.tsx  toast.tsx
+        └── i18n/{dict.ts, index.tsx}
 ```
 
 ---
 
-## 14. Траблшутинг
+## 15. Траблшутинг
 
 - **«Демо-данные» вместо реальных** — инвертор не найден. Проверь подключение
   (`lsusb`, `/dev/ttyUSB*`, `/dev/hidraw*`), права, вынь штатный донгл, задай

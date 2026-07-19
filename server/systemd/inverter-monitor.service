@@ -6,8 +6,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=pi
-WorkingDirectory=/home/pi/inverter-monitor
-EnvironmentFile=-/home/pi/inverter-monitor/.env
+WorkingDirectory=/home/pi/inverter-monitor/server
+EnvironmentFile=-/home/pi/inverter-monitor/server/.env
 ExecStart=/usr/local/bin/node dist/index.js
 Restart=always
 RestartSec=5
