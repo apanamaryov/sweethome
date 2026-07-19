@@ -143,7 +143,9 @@ cross-origin-cookie проблем нет.
 
 ```
 локально: tsc → server/dist  +  next build → web/out
-rsync:    корневые package.json/lock, shared/, server/{dist,package.json,systemd}, web/out/
+rsync:    корневые package.json/lock, shared/, server/{dist,package.json,systemd},
+          web/package.json (только манифест — нужен npm для резолва workspaces),
+          web/out/
 на Pi:    npm ci -w server --omit=dev  &&  sudo systemctl restart inverter-monitor
 ```
 
