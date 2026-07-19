@@ -1,0 +1,33 @@
+{
+  "name": "@inverter/server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local monitoring and control for a Voltronic/SmartESS-style hybrid inverter (SK-5500P-48L) over serial/USB-HID. No cloud.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "INVERTER_TRANSPORT=mock tsx watch src/index.ts",
+    "clean": "rm -rf dist"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "mqtt": "^5.10.1",
+    "ws": "^8.18.0"
+  },
+  "optionalDependencies": {
+    "serialport": "^12.0.0",
+    "node-hid": "^3.1.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^18.19.0",
+    "@types/ws": "^8.5.10",
+    "tsx": "^4.19.0",
+    "typescript": "^5.4.5"
+  },
+  "license": "MIT"
+}
