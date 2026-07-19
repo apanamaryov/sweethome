@@ -35,13 +35,14 @@ export function createServer(inverter: Inverter, cfg: Config): http.Server {
 
   // The UI shell redirects to the login page when there is no session; static
   // assets themselves (css/js/login page) stay open — they contain no data.
-  app.get(["/", "/index.html"], (req, res, next) => {
+  app.get(["/", "/index.html", "/settings", "/diagnostics"], (req, res, next) => {
     if (auth.verifyToken(reqToken(req))) return next();
-    res.redirect("/login.html");
+    res.redirect("/login");
   });
 
-  const publicDir = path.join(__dirname, "..", "public");
-  app.use(express.static(publicDir));
+  // Статика Next.js (web/out); extensions позволяет отдавать /settings как settings.html.
+  const publicDir = path.join(__dirname, "..", "..", "web", "out");
+  app.use(express.static(publicDir, { extensions: ["html"] }));
 
   app.post("/api/login", (req, res) => {
     if (!auth.enabled) return res.json({ ok: true });
