@@ -24,7 +24,7 @@ npm run check      # selfcheck протокола (server) + typecheck (web)
 - **Единственный «тест» — `server/scripts/selfcheck.ts`** (запускается как `npm run check -w server`, а также `cd server && npx tsx scripts/selfcheck.ts`). Это не typecheck: он через `assert` сверяет эталонные CRC, раундтрип кадров и позиционный маппинг парсеров PI30. Джестов/витестов нет. **После правок в `server/src/protocol/*` обязательно гоняй selfcheck.**
 - `npm run check` для сервера — это selfcheck, а НЕ проверка типов. Типы сервера проверяются только сборкой (`tsc` в `npm run build`). Веб проверяется отдельно (`tsc --noEmit`).
 - Деплой на дев-Pi — можно; учитывай, что `deploy.sh` пересобирает всё локально, заливает артефакты и **рестартует живой systemd-сервис** на Pi. Параметры: `PI_HOST=pi@… SSH_KEY=~/.ssh/… ./deploy.sh`.
-- Node: dev-машина — **≥ 20** (root `engines`), на Pi крутится **Node 18** (`server` engines `>=18`). Не тяни в server-код фичи новее Node 18.
+- Node: root `engines` — **≥ 20**, `server` `engines` — **≥ 18** (заявленный минимум). Сам Pi сейчас на **Node 24** (Raspberry Pi OS Trixie, arm64). Держи server-код в рамках заявленного `>=18`, если сознательно не поднимаешь `engines`.
 
 ## Архитектура
 
