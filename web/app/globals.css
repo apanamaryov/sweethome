@@ -30,8 +30,13 @@
   --brick: #a54836;
   --brick-deep: #83392a;
 
-  --serif: "Charter", "Bitstream Charter", "PT Serif", Georgia, "Times New Roman", serif;
-  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace;
+  /* Шрифт по просьбе пользователя (2026-07-20): Verdana вместо антиквы/моно.
+     Обе исторические переменные теперь указывают на Verdana, чтобы не править
+     десятки мест; для «сырого» вывода команд и инлайн-кода оставлен настоящий
+     моноширинный (--code). */
+  --serif: Verdana, Geneva, "DejaVu Sans", Tahoma, sans-serif;
+  --mono: Verdana, Geneva, "DejaVu Sans", Tahoma, sans-serif;
+  --code: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace;
 
   /* Дизеринг: плотность 2/16 … 14/16 (Байер 4×4, клетка 2px) */
   --dith-1: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 4 4' shape-rendering='crispEdges'%3E%3Cg fill='%231a1a1a'%3E%3Crect width='1' height='1' x='0' y='0'/%3E%3Crect width='1' height='1' x='2' y='2'/%3E%3C/g%3E%3C/svg%3E");
@@ -82,13 +87,13 @@ body.stale .topbar { opacity: 0.45; filter: contrast(0.75); transition: opacity 
 .topbar-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .topbar-row + .topbar-row { margin-top: 6px; }
 .topbar h1 {
-  font-size: 21px;
+  font-size: 23px;
   margin: 0;
   font-weight: 700;
   font-variant: small-caps;
   letter-spacing: 0.14em;
 }
-.updated { font-family: var(--mono); font-size: 11px; color: var(--ink-soft); padding: 1px 4px; }
+.updated { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); padding: 1px 4px; }
 .updated.flash { animation: eink-flash 0.28s steps(2, jump-none) 1; }
 @keyframes eink-flash {
   0% { background: var(--ink); color: var(--paper-0); }
@@ -98,7 +103,7 @@ body.stale .topbar { opacity: 0.45; filter: contrast(0.75); transition: opacity 
 /* Режим работы — чип в духе меню ридера */
 .mode-badge {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -120,7 +125,7 @@ body.stale .topbar { opacity: 0.45; filter: contrast(0.75); transition: opacity 
 /* Статус подключения */
 .pill {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   padding: 3px 9px;
@@ -152,7 +157,7 @@ body.stale .topbar { opacity: 0.45; filter: contrast(0.75); transition: opacity 
     var(--hatch) border-box;
   color: var(--brick-deep);
   font-weight: 700;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.45;
 }
 
@@ -169,7 +174,7 @@ body.stale .topbar { opacity: 0.45; filter: contrast(0.75); transition: opacity 
 .card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .card-head::after { content: ""; flex: 1; border-top: 1px solid var(--hairline); }
 .card-title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   font-variant: small-caps;
   letter-spacing: 0.16em;
@@ -184,21 +189,21 @@ body.stale .topbar { opacity: 0.45; filter: contrast(0.75); transition: opacity 
 .card-solar .card-title::before { background: var(--sun); }
 .card-load .card-title::before { background: var(--slate); }
 .card-grid .card-title::before { background: var(--plum); }
-.tag { font-family: var(--mono); font-size: 11px; color: var(--ink-soft); }
+.tag { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); }
 .tag.state-charge { color: var(--moss-deep); font-weight: 700; }
 .tag.state-discharge { color: var(--brick-deep); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .tag.state-idle { color: var(--ink-faint); }
 
 .big-metric { display: flex; align-items: baseline; gap: 6px; }
-.big-val { font-family: var(--mono); font-size: 34px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.big-val { font-family: var(--mono); font-size: 37px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
 .card-solar .big-val { color: var(--sun-deep); }
 .card-load .big-val { color: var(--slate-deep); }
-.big-unit { font-size: 13px; color: var(--ink-soft); font-style: italic; }
+.big-unit { font-size: 14px; color: var(--ink-soft); font-style: italic; }
 
 .sub-metrics { display: flex; gap: 16px; margin-top: 10px; flex-wrap: wrap; }
 .sub-metrics.wide { gap: 22px; }
-.sub-metrics > div { display: flex; align-items: baseline; gap: 4px; font-family: var(--mono); font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.cap { font-family: var(--serif); font-size: 11px; color: var(--ink-faint); font-style: italic; }
+.sub-metrics > div { display: flex; align-items: baseline; gap: 4px; font-family: var(--mono); font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cap { font-family: var(--serif); font-size: 12px; color: var(--ink-faint); font-style: italic; }
 
 /* ---------- батарея: секторное кольцо вокруг цифры заряда ---------- */
 /* 20 секторов по 5%; заполненные печатаются дизерингом нарастающей
@@ -216,13 +221,13 @@ body.stale .topbar { opacity: 0.45; filter: contrast(0.75); transition: opacity 
 }
 .ring-value {
   font-family: var(--mono);
-  font-size: 27px;
+  font-size: 30px;
   font-weight: 700;
   line-height: 1;
   font-variant-numeric: tabular-nums;
   color: var(--moss-deep);
 }
-.ring-unit { font-size: 12px; color: var(--ink-soft); font-style: italic; }
+.ring-unit { font-size: 13px; color: var(--ink-soft); font-style: italic; }
 
 .seg { fill: var(--paper-0); stroke: var(--hairline); stroke-width: 1; }
 .seg.on { stroke: var(--ink); }
@@ -249,7 +254,7 @@ body.stale .topbar { opacity: 0.45; filter: contrast(0.75); transition: opacity 
   border: none;
   color: var(--ink);
   font-family: var(--serif);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
   font-variant: small-caps;
   letter-spacing: 0.1em;
@@ -259,13 +264,13 @@ body.stale .topbar { opacity: 0.45; filter: contrast(0.75); transition: opacity 
 .chev { font-family: var(--mono); color: var(--ink-soft); }
 .panel-toggle.open .chev { transform: rotate(180deg); }
 .panel-body { padding: 0 16px 16px; border-top: 1px solid var(--hairline); }
-.note { color: var(--ink-soft); font-size: 13px; line-height: 1.55; margin: 12px 0 14px; }
-.note code, .note b { font-family: var(--mono); font-style: normal; font-size: 12px; }
+.note { color: var(--ink-soft); font-size: 14px; line-height: 1.55; margin: 12px 0 14px; }
+.note code, .note b { font-family: var(--code); font-style: normal; font-size: 13px; }
 
 .control { margin-bottom: 18px; }
 .control label {
   display: block;
-  font-size: 12px;
+  font-size: 13px;
   font-variant: small-caps;
   letter-spacing: 0.12em;
   font-weight: 700;
@@ -284,7 +289,7 @@ body.stale .topbar { opacity: 0.45; filter: contrast(0.75); transition: opacity 
   background: var(--paper-0);
   color: var(--ink);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 13px;
   cursor: pointer;
 }
 .segmented button.active { background: var(--ink); color: var(--paper-0); }
@@ -300,7 +305,7 @@ select, input[type="text"] {
   background: var(--paper-0);
   color: var(--ink);
   font-family: var(--mono);
-  font-size: 15px;
+  font-size: 17px;
   appearance: none;
   min-width: 0;
 }
@@ -313,7 +318,7 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
   background: var(--paper-0);
   color: var(--ink);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -327,15 +332,15 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
   background: var(--paper-0);
   border: 1px solid var(--ink);
   padding: 12px;
-  font-family: var(--mono);
-  font-size: 12px;
+  font-family: var(--code);
+  font-size: 13px;
   overflow-x: auto;
   margin-top: 12px;
   white-space: pre-wrap;
   word-break: break-all;
 }
 
-.footer { text-align: center; color: var(--ink-faint); font-size: 12px; font-style: italic; padding: 8px 16px 28px; }
+.footer { text-align: center; color: var(--ink-faint); font-size: 13px; font-style: italic; padding: 8px 16px 28px; }
 .footer .logout { color: var(--ink-soft); margin-left: 10px; text-decoration: underline; text-underline-offset: 3px; }
 .footer-row { margin-bottom: 10px; }
 
@@ -343,7 +348,7 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
 .lang-switch { display: flex; justify-content: center; gap: 6px; }
 .lang-switch button {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.06em;
   padding: 4px 9px;
@@ -358,14 +363,14 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
 /* ---------- страница входа ---------- */
 .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
 .login-box { max-width: 340px; }
-.login-title { margin: 0 0 6px; font-size: 22px; font-weight: 700; font-variant: small-caps; letter-spacing: 0.14em; }
+.login-title { margin: 0 0 6px; font-size: 24px; font-weight: 700; font-variant: small-caps; letter-spacing: 0.14em; }
 .login-err {
   margin: 12px 0 0;
   padding: 8px 10px;
   background: var(--brick-deep);
   color: var(--paper-0);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 /* ---------- модалка: книжная рамка в две линии ---------- */
@@ -379,7 +384,7 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
   max-width: 380px;
   width: 100%;
 }
-.modal-box p { margin: 0 0 20px; font-size: 15px; line-height: 1.5; }
+.modal-box p { margin: 0 0 20px; font-size: 17px; line-height: 1.5; }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
 .btn-danger { background: var(--brick-deep); border-color: var(--brick-deep); color: var(--paper-0); }
 
@@ -393,7 +398,7 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
   color: var(--paper-0);
   padding: 11px 18px;
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 14px;
   z-index: 30;
   max-width: 90%;
   text-align: center;
@@ -412,7 +417,7 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
   border: 1.5px solid var(--ink);
   background: var(--paper-0);
 }
-.lock-status { font-size: 13px; font-weight: 700; }
+.lock-status { font-size: 14px; font-weight: 700; }
 .lock-status.unlocked {
   background: var(--brick-deep);
   color: var(--paper-0);
@@ -435,13 +440,13 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
   grid-template-columns: 1.6fr 1fr 1fr;
   gap: 8px;
   padding: 8px 6px;
-  font-size: 13px;
+  font-size: 14px;
   align-items: baseline;
   border-bottom: 1px solid var(--hairline);
 }
 .srow.shead {
   color: var(--ink-soft);
-  font-size: 11px;
+  font-size: 12px;
   font-variant: small-caps;
   letter-spacing: 0.14em;
   font-weight: 700;
@@ -456,13 +461,13 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
 
 /* ---------- флаги ---------- */
 .flags-block { margin-bottom: 16px; }
-.flags-title { font-size: 11px; color: var(--ink-soft); font-variant: small-caps; letter-spacing: 0.14em; font-weight: 700; margin-bottom: 8px; }
+.flags-title { font-size: 12px; color: var(--ink-soft); font-variant: small-caps; letter-spacing: 0.14em; font-weight: 700; margin-bottom: 8px; }
 .flags-list { display: flex; flex-wrap: wrap; gap: 6px; }
-.flag-chip { font-family: var(--mono); font-size: 11px; padding: 4px 9px; border: 1px solid var(--moss); background: var(--paper-0); color: var(--moss-deep); }
+.flag-chip { font-family: var(--mono); font-size: 12px; padding: 4px 9px; border: 1px solid var(--moss); background: var(--paper-0); color: var(--moss-deep); }
 .flag-chip.off { border: 1px dashed var(--ink-faint); color: var(--ink-faint); }
 
 .ghost-btn { width: 100%; }
-.muted { color: var(--ink-faint); font-size: 13px; }
+.muted { color: var(--ink-faint); font-size: 14px; }
 
 .hidden { display: none !important; }
 
@@ -490,7 +495,7 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
   text-decoration: none;
   font-variant: small-caps;
   letter-spacing: 0.1em;
-  font-size: 14px;
+  font-size: 15px;
 }
 .nav-tabs a.active {
   background: var(--ink);
