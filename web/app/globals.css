@@ -207,9 +207,10 @@ body.stale .topbar { opacity: 0.45; filter: contrast(0.75); transition: opacity 
 
 /* ---------- батарея: секторное кольцо вокруг цифры заряда ---------- */
 /* 20 секторов по 5%; заполненные печатаются дизерингом нарастающей
-   плотности (краска — мох, при низком заряде — кирпич). Прогресс
-   дискретный, как и положено e-ink. */
-.ring-wrap { --ring-c: var(--moss); position: relative; width: 132px; margin: 6px auto 4px; }
+   плотности. Краска — «термометр» по уровню заряда (кирпич → охра → мох,
+   по 20% на цвет; задаётся в BatteryRing.tsx). Прогресс дискретный, как
+   и положено e-ink. */
+.ring-wrap { position: relative; width: 132px; margin: 6px auto 4px; }
 .ring-wrap svg { display: block; width: 100%; height: auto; }
 .ring-label {
   position: absolute;
@@ -237,7 +238,7 @@ body.stale .topbar { opacity: 0.45; filter: contrast(0.75); transition: opacity 
 .seg.on.d4 { fill: url(#dith-p4); }
 .seg.on.d5 { fill: url(#dith-p5); }
 
-.ring-wrap.low { --ring-c: var(--brick); }
+/* Заряд ≤20% — кирпичный алерт на цифре (сегменты и так уже кирпичные). */
 .ring-wrap.low .ring-value { color: var(--brick-deep); }
 .ring-wrap.low .seg.on { stroke: var(--brick-deep); }
 

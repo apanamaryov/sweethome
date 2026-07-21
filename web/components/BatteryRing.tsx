@@ -22,6 +22,21 @@ const SEG_PATHS = Array.from({ length: RING_SEGS }, (_, i) =>
   segPath(60, 60, 39, 55, i * STEP + RING_GAP_DEG / 2, (i + 1) * STEP - RING_GAP_DEG / 2)
 );
 
+/**
+ * Печатная краска сегмента по уровню заряда («термометр»): низкий → кирпич,
+ * средний → охра, высокий → мох. Индекс совпадает с density-группой (по 20 %
+ * на группу, см. класс dN у сегмента) — поэтому цвет и плотность дизеринга
+ * растут вместе. Хекс-фолбэк на случай, если var() не резолвится в
+ * presentation-атрибуте fill.
+ */
+const BAND_INK = [
+  "var(--brick, #a54836)", // 0–20 %
+  "var(--sun, #a5762a)", //   20–40 %
+  "var(--moss, #55795d)", //  40–60 %
+  "var(--moss, #55795d)", //  60–80 %
+  "var(--moss, #55795d)", //  80–100 %
+];
+
 /** Ячейки дизеринга Байера для паттернов p1..p5 (координаты 2×2-точек). */
 const DITHER_CELLS: Array<Array<[number, number]>> = [
   [[0, 0], [4, 4]],
@@ -40,7 +55,7 @@ export function BatteryRing({ soc, label, ariaLabel }: { soc: number; label: str
         <defs>
           {DITHER_CELLS.map((cells, p) => (
             <pattern key={p} id={`dith-p${p + 1}`} patternUnits="userSpaceOnUse" width="8" height="8">
-              <g fill="var(--ring-c, #55795d)">
+              <g fill={BAND_INK[p]}>
                 {cells.map(([x, y], i) => (
                   <rect key={i} width="2" height="2" x={x} y={y} />
                 ))}
