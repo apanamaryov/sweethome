@@ -97,12 +97,14 @@ export class SerialTransport implements Transport {
       const onError = (err: Error) => fail(err);
       const timer = setTimeout(() => fail(new Error(`Serial timeout after ${timeoutMs}ms`)), timeoutMs);
 
-      this.port.on("data", onData);
       this.port.on("error", onError);
       // Discard any stale bytes (e.g. the tail of a previously timed-out reply)
-      // so they can't be glued onto this transaction's response.
+      // so they can't be glued onto this transaction's response. The data
+      // listener is attached only AFTER the flush completes — otherwise stale
+      // bytes arriving in between would be taken for (part of) the reply.
       this.port.flush(() => {
         if (done) return;
+        this.port.on("data", onData);
         this.port.write(frame, (err: Error | null) => {
           if (err) fail(err);
         });
