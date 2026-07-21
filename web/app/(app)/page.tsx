@@ -88,11 +88,11 @@ export default function DashboardPage() {
         <div className="card-head">
           <span className="card-title">{t.cardGrid}</span>
         </div>
-        <div className="sub-metrics wide">
-          <div>
-            <span>{fmt(s?.gridVoltage, 1)}</span>
-            <span className="cap">{t.capV}</span>
-          </div>
+        <div className="big-metric">
+          <span className="big-val">{fmt(s?.gridVoltage, 1)}</span>
+          <span className="big-unit">{t.capV}</span>
+        </div>
+        <div className="sub-metrics">
           <div>
             <span>{fmt(s?.gridFrequency, 1)}</span>
             <span className="cap">{t.capHz}</span>
