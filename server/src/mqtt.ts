@@ -139,7 +139,7 @@ export class HaMqtt {
     return {
       identifiers: [this.cfg.mqtt.nodeId],
       name: this.cfg.mqtt.deviceName,
-      manufacturer: "Voltronic / SmartESS",
+      manufacturer: "ISolar / EASUN (SMG II)",
       model: "SK-5500P-48L",
       sw_version: "inverter-monitor",
     };
@@ -242,7 +242,7 @@ export class HaMqtt {
     const cspVal = info?.chargerSourcePriority;
 
     const payload: Record<string, unknown> = {
-      pv_w: st?.pvChargingPower ?? null,
+      pv_w: st?.pvPower ?? null,
       pv_v: st?.pvInputVoltage ?? null,
       pv_a: st?.pvInputCurrent ?? null,
       soc: st?.batteryCapacity ?? null,

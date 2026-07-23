@@ -1,7 +1,7 @@
 import { Transport } from "./types";
 
 /**
- * Serial (RS232 via USB adapter, or a CDC USB port) transport.
+ * Serial (RS232 via USB adapter) transport carrying Modbus RTU.
  * serialport is an optional dependency; it is required lazily so the app still
  * runs (in mock mode) if the native module failed to install.
  */
@@ -63,7 +63,7 @@ export class SerialTransport implements Transport {
     this.port = null;
   }
 
-  transact(frame: Buffer, timeoutMs: number): Promise<Buffer> {
+  transact(frame: Buffer, timeoutMs: number, expectedLen: number): Promise<Buffer> {
     return new Promise<Buffer>((resolve, reject) => {
       if (!this.port || !this.port.isOpen) {
         return reject(new Error("Serial port not open"));
@@ -92,7 +92,10 @@ export class SerialTransport implements Transport {
       const onData = (data: Buffer) => {
         chunks.push(data);
         const acc = Buffer.concat(chunks);
-        if (acc.includes(0x0d)) finish(acc);
+        // Кадр-исключение Modbus короче нормального ответа: 5 байт, у функции
+        // выставлен бит 0x80. Ждать expectedLen в этом случае бессмысленно.
+        if (acc.length >= 5 && (acc[1] & 0x80) !== 0) return finish(acc.subarray(0, 5));
+        if (acc.length >= expectedLen) return finish(acc.subarray(0, expectedLen));
       };
       const onError = (err: Error) => fail(err);
       const timer = setTimeout(() => fail(new Error(`Serial timeout after ${timeoutMs}ms`)), timeoutMs);

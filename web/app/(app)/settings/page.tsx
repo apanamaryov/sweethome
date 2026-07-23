@@ -16,9 +16,20 @@ interface SettingRow {
   key: keyof InverterRatedInfo;
   labelKey: keyof Dict;
   coded?: "osp" | "csp";
-  unit?: "A" | "V";
+  unit?: "A" | "V" | "pct";
   map?: Record<number, string>;
 }
+
+const BATTERY_TYPES: Record<number, string> = {
+  0: "AGM",
+  1: "Flooded",
+  2: "User",
+  3: "Li1",
+  4: "Li2",
+  5: "Li3",
+  6: "Li4",
+  8: "Lib",
+};
 
 const SETTINGS_ROWS: SettingRow[] = [
   { key: "outputSourcePriority", labelKey: "sOsp", coded: "osp" },
@@ -30,7 +41,10 @@ const SETTINGS_ROWS: SettingRow[] = [
   { key: "batteryBulkVoltage", labelKey: "sBulk", unit: "V" },
   { key: "batteryFloatVoltage", labelKey: "sFloat", unit: "V" },
   { key: "batteryUnderVoltage", labelKey: "sCutoff", unit: "V" },
-  { key: "batteryType", labelKey: "sBatType", map: { 0: "AGM", 1: "Flooded", 2: "User" } },
+  { key: "socBackToUtility", labelKey: "sSocBackUtility", unit: "pct" },
+  { key: "socBackToBattery", labelKey: "sSocBackBattery", unit: "pct" },
+  { key: "socLowCutoff", labelKey: "sSocCutoff", unit: "pct" },
+  { key: "batteryType", labelKey: "sBatType", map: BATTERY_TYPES },
 ];
 
 type Meta = NonNullable<ReturnType<typeof useMeta>>;

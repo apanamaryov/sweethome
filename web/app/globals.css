@@ -120,7 +120,8 @@ body.stale .topbar { opacity: 0.45; filter: contrast(0.75); transition: opacity 
   color: var(--paper-0);
   box-shadow: 0 0 0 2px var(--paper-0), 0 0 0 4px var(--brick-deep);
 }
-.mode-Standby, .mode-PowerSaving, .mode-Shutdown { border-style: dashed; color: var(--ink-soft); }
+.mode-Standby, .mode-Bypass { border-style: dashed; color: var(--ink-soft); }
+.mode-Charging { border-color: var(--moss-deep); color: var(--moss-deep); }
 
 /* Статус подключения */
 .pill {

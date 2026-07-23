@@ -1,12 +1,11 @@
 import { Transport } from "./types";
 import { SerialTransport } from "./serial";
-import { HidTransport } from "./hid";
 import { MockTransport } from "./mock";
 import { Config } from "../config";
 
 /**
  * Produce an ordered list of candidate transports to probe. The Inverter class
- * opens each in turn, sends a probe command, and keeps the first that answers.
+ * opens each in turn, sends a probe request, and keeps the first that answers.
  * A MockTransport is always appended last so the app is never dead in the water.
  */
 export async function detectTransports(cfg: Config): Promise<Transport[]> {
@@ -17,7 +16,6 @@ export async function detectTransports(cfg: Config): Promise<Transport[]> {
   }
 
   const wantSerial = cfg.transport === "auto" || cfg.transport === "serial";
-  const wantHid = cfg.transport === "auto" || cfg.transport === "hid";
 
   if (wantSerial && SerialTransport.isAvailable()) {
     if (cfg.serialDevice) {
@@ -26,14 +24,6 @@ export async function detectTransports(cfg: Config): Promise<Transport[]> {
       const ports = await SerialTransport.list();
       const usable = rankSerialPorts(ports.filter(isUsbSerial));
       for (const p of usable) candidates.push(new SerialTransport(p, cfg.baudRate));
-    }
-  }
-
-  if (wantHid && HidTransport.isAvailable()) {
-    for (const d of HidTransport.find()) {
-      candidates.push(
-        new HidTransport({ vendorId: d.vendorId, productId: d.productId, path: (d as any).path })
-      );
     }
   }
 

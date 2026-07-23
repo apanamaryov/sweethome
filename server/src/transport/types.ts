@@ -1,5 +1,5 @@
 export interface Transport {
-  /** "serial" | "hid" | "mock" */
+  /** "serial" | "mock" */
   readonly name: string;
   /** Human-readable device path/identifier, or null. */
   readonly device: string | null;
@@ -10,9 +10,11 @@ export interface Transport {
   close(): Promise<void>;
 
   /**
-   * Write a fully-built command frame (command + CRC + CR) and read back the
-   * complete response bytes (up to and including the trailing CR).
+   * Write a fully-built Modbus RTU request and read back the response.
+   * `expectedLen` — длина нормального ответа; транспорт завершает чтение,
+   * когда накоплено столько байт ЛИБО когда пришёл кадр-исключение
+   * (5 байт, у второго байта выставлен бит 0x80).
    * Throws on timeout or I/O error.
    */
-  transact(frame: Buffer, timeoutMs: number): Promise<Buffer>;
+  transact(frame: Buffer, timeoutMs: number, expectedLen: number): Promise<Buffer>;
 }

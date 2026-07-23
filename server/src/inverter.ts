@@ -2,20 +2,35 @@ import { EventEmitter } from "events";
 import { Config } from "./config";
 import { Transport } from "./transport/types";
 import { detectTransports } from "./transport/detect";
-import { buildFrame, parseFrame } from "./protocol/crc";
 import {
-  QUERY,
-  parseStatus,
-  parseMode,
-  parseRatedInfo,
-  parseWarnings,
-  parseFlags,
-  parseId,
-  isAck,
-  buildControlCommand,
-} from "./protocol/pi30";
+  buildReadRequest,
+  buildWriteRequest,
+  expectedResponseLength,
+  parseReadResponse,
+  parseWriteResponse,
+} from "./protocol/modbus";
+import {
+  RegisterMap,
+  STATUS_BLOCKS,
+  ALARM_BLOCKS,
+  SETTINGS_BLOCKS,
+  decodeStatus,
+  decodeSettings,
+  decodeFlags,
+  decodeAlarms,
+  decodeMode,
+  buildControlWrite,
+} from "./protocol/smg";
 import { Snapshot, DeviceMode, Baseline, ControlType } from "@inverter/shared";
 import { Store } from "./store";
+
+/**
+ * Пауза между Modbus-командами: устройство не любит запросы вплотную
+ * (esphome-smg-ii использует command_throttle 200 мс).
+ */
+const INTER_COMMAND_MS = 120;
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export class Inverter extends EventEmitter {
   private cfg: Config;
@@ -89,10 +104,11 @@ export class Inverter extends EventEmitter {
   /** Serialize all transport access through a single queue (one UART). */
   private enqueue<T>(fn: () => Promise<T>): Promise<T> {
     const run = this.queue.then(fn, fn);
-    // Keep the chain alive regardless of individual outcomes.
+    // Keep the chain alive regardless of individual outcomes, and pace the
+    // next command so the inverter's Modbus stack keeps up.
     this.queue = run.then(
-      () => undefined,
-      () => undefined
+      () => sleep(INTER_COMMAND_MS),
+      () => sleep(INTER_COMMAND_MS)
     );
     return run;
   }
@@ -113,7 +129,7 @@ export class Inverter extends EventEmitter {
   /** Capture the as-found settings once per device, and persist them. */
   private maybeCaptureBaseline(info: Snapshot["info"], flags: Snapshot["flags"]): void {
     const id = this.deviceId ?? "unknown";
-    if (!info) return; // need at least the rated info
+    if (!info) return; // need at least the settings
     if (this.baseline && this.baseline.deviceId === id) return; // already captured for this device
     this.baseline = { deviceId: id, capturedAt: Date.now(), info, flags };
     try {
@@ -127,13 +143,9 @@ export class Inverter extends EventEmitter {
   /** Force re-capture of the baseline from freshly-read settings. */
   async recaptureBaseline(): Promise<Baseline> {
     if (!this.transport) throw new Error("Inverter is not connected");
-    const info = parseRatedInfo(await this.raw(QUERY.RATED));
-    let flags = this.snapshot.flags;
-    try {
-      flags = parseFlags(await this.raw(QUERY.FLAGS));
-    } catch {
-      /* some firmwares omit QFLAG; keep the last known value */
-    }
+    const regs = await this.readBlocks(SETTINGS_BLOCKS);
+    const info = decodeSettings(regs);
+    const flags = decodeFlags(regs);
     const id = this.deviceId ?? "unknown";
     this.baseline = { deviceId: id, capturedAt: Date.now(), info, flags };
     this.store.saveBaseline(this.baseline);
@@ -142,7 +154,49 @@ export class Inverter extends EventEmitter {
     return this.baseline;
   }
 
-  /** Probe candidate transports; keep the first that answers QPIGS. */
+  /** Прочитать один блок регистров: адрес → u16. */
+  private async readBlock(start: number, count: number): Promise<RegisterMap> {
+    return this.enqueue(async () => {
+      if (!this.transport) throw new Error("No transport");
+      const req = buildReadRequest(this.cfg.slaveId, start, count);
+      let lastErr: Error | null = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const resp = await this.transport.transact(req, this.cfg.commandTimeoutMs, expectedResponseLength(req));
+          const values = parseReadResponse(resp, this.cfg.slaveId, count);
+          const map: RegisterMap = new Map();
+          values.forEach((v, i) => map.set(start + i, v));
+          return map;
+        } catch (e) {
+          lastErr = e as Error;
+          if (attempt === 0) await sleep(INTER_COMMAND_MS);
+        }
+      }
+      throw lastErr ?? new Error("Read failed");
+    });
+  }
+
+  /** Прочитать несколько блоков в одну карту регистров. */
+  private async readBlocks(blocks: Array<[number, number]>): Promise<RegisterMap> {
+    const all: RegisterMap = new Map();
+    for (const [start, count] of blocks) {
+      const m = await this.readBlock(start, count);
+      for (const [a, v] of m) all.set(a, v);
+    }
+    return all;
+  }
+
+  /** Записать значение в регистр (fn 0x10, устройство не поддерживает 0x06). */
+  private async writeRegister(register: number, rawValue: number): Promise<void> {
+    return this.enqueue(async () => {
+      if (!this.transport) throw new Error("No transport");
+      const req = buildWriteRequest(this.cfg.slaveId, register, [rawValue]);
+      const resp = await this.transport.transact(req, this.cfg.commandTimeoutMs, expectedResponseLength(req));
+      parseWriteResponse(resp, this.cfg.slaveId, register, 1);
+    });
+  }
+
+  /** Probe candidate transports; keep the first that answers a mode read. */
   private async connect(): Promise<void> {
     await this.closeTransport();
     const candidates = await detectTransports(this.cfg);
@@ -151,22 +205,16 @@ export class Inverter extends EventEmitter {
     for (const t of candidates) {
       try {
         await t.open();
-        if (t.mock) {
-          this.transport = t;
-          this.setConnection(true, t, null);
-          return;
-        }
-        // Probe: a real inverter answers QPIGS with a CRC-valid frame carrying
-        // >= 17 numeric fields. parseFrame throws on bad framing/CRC; the field
-        // check rejects CRC-valid but wrong replies (e.g. "NAK").
-        const frame = buildFrame(QUERY.STATUS);
-        const raw = await t.transact(frame, this.cfg.commandTimeoutMs);
-        const payload = parseFrame(raw);
-        const status = parseStatus(payload);
-        if (!Number.isFinite(status.batteryVoltage) || payload.trim().split(/\s+/).length < 17) {
-          throw new Error(`Unexpected QPIGS reply: ${JSON.stringify(payload)}`);
+        // Probe: реальный SMG II отвечает на чтение регистра 201 (режим)
+        // CRC-валидным кадром с осмысленным значением 0..6.
+        const req = buildReadRequest(this.cfg.slaveId, 201, 1);
+        const resp = await t.transact(req, this.cfg.commandTimeoutMs, expectedResponseLength(req));
+        const [modeReg] = parseReadResponse(resp, this.cfg.slaveId, 1);
+        if (decodeMode(modeReg) === "Unknown") {
+          throw new Error(`Unexpected mode register value: ${modeReg}`);
         }
         this.transport = t;
+        this.deviceId = t.mock ? "SMG-MOCK-0001" : `smg-modbus-${this.cfg.slaveId}`;
         this.setConnection(true, t, null);
         return;
       } catch (e) {
@@ -198,24 +246,6 @@ export class Inverter extends EventEmitter {
     this.emit("snapshot", this.snapshot);
   }
 
-  /** Send a command, return parsed payload string. One retry on failure. */
-  private async raw(command: string): Promise<string> {
-    return this.enqueue(async () => {
-      if (!this.transport) throw new Error("No transport");
-      const frame = buildFrame(command);
-      let lastErr: Error | null = null;
-      for (let attempt = 0; attempt < 2; attempt++) {
-        try {
-          const buf = await this.transport.transact(frame, this.cfg.commandTimeoutMs);
-          return parseFrame(buf);
-        } catch (e) {
-          lastErr = e as Error;
-        }
-      }
-      throw lastErr ?? new Error("Command failed");
-    });
-  }
-
   private scheduleNextPoll(delay: number): void {
     if (this.pollTimer) clearTimeout(this.pollTimer);
     this.pollTimer = setTimeout(() => void this.poll(), delay);
@@ -231,44 +261,27 @@ export class Inverter extends EventEmitter {
         }
       }
 
-      // Identify the device once (serial via QID) so the baseline can be keyed.
-      if (this.deviceId === null) {
-        try {
-          this.deviceId = parseId(await this.raw(QUERY.ID));
-        } catch {
-          /* some firmwares omit QID; leave null */
-        }
-      }
+      const statusRegs = await this.readBlocks(STATUS_BLOCKS);
+      const status = decodeStatus(statusRegs);
+      const mode: DeviceMode = decodeMode(statusRegs.get(201) ?? -1);
 
-      const statusPayload = await this.raw(QUERY.STATUS);
-      const status = parseStatus(statusPayload);
-
-      let mode: DeviceMode = this.snapshot.mode;
+      let warnings = this.snapshot.warnings;
       try {
-        mode = parseMode(await this.raw(QUERY.MODE));
+        warnings = decodeAlarms(await this.readBlocks(ALARM_BLOCKS));
       } catch {
-        /* keep previous mode */
+        /* keep previous */
       }
 
-      // Settings (rated info + flags) & warnings less often (every ~6 polls),
-      // but always on the first poll after connecting so "current settings are
-      // read out on connect".
+      // Settings (registers 300+) less often (every ~6 polls), but always on
+      // the first poll after connecting so "current settings are read out on
+      // connect".
       let info = this.snapshot.info;
       let flags = this.snapshot.flags;
-      let warnings = this.snapshot.warnings;
       if (this.ratedCounter % 6 === 0) {
         try {
-          info = parseRatedInfo(await this.raw(QUERY.RATED));
-        } catch {
-          /* keep */
-        }
-        try {
-          flags = parseFlags(await this.raw(QUERY.FLAGS));
-        } catch {
-          /* keep */
-        }
-        try {
-          warnings = parseWarnings(await this.raw(QUERY.WARNINGS));
+          const regs = await this.readBlocks(SETTINGS_BLOCKS);
+          info = decodeSettings(regs);
+          flags = decodeFlags(regs);
         } catch {
           /* keep */
         }
@@ -311,7 +324,7 @@ export class Inverter extends EventEmitter {
   }
 
   /**
-   * Apply a whitelisted control command. Returns { ok, reply }.
+   * Apply a whitelisted control command. Returns { ok, command, reply }.
    * opts.bypassLock is used only by the MQTT/HA path when MQTT control is
    * explicitly enabled — that flag is itself the deliberate authorization, so
    * it neither requires the UI unlock nor toggles the UI lock afterwards.
@@ -327,39 +340,54 @@ export class Inverter extends EventEmitter {
     if (this.locked && !opts.bypassLock) {
       throw new Error("Settings are locked (read-only). Unlock control before writing.");
     }
-    const command = buildControlCommand(type, value);
-    const reply = await this.raw(command);
-    const ok = isAck(reply);
-    // Refresh rated info so the UI reflects the change promptly.
-    if (ok) {
-      try {
-        const info = parseRatedInfo(await this.raw(QUERY.RATED));
-        this.snapshot = { ...this.snapshot, info, timestamp: Date.now() };
-        this.emit("snapshot", this.snapshot);
-      } catch {
-        /* ignore */
-      }
-      // Re-engage the UI lock after a UI-originated write (not for MQTT).
-      if (!opts.bypassLock && this.cfg.autoRelock) this.setLock(true);
+    const w = buildControlWrite(type, value);
+    const command = `reg ${w.register} := ${w.rawValue} (${w.label})`;
+    await this.writeRegister(w.register, w.rawValue); // бросает при Modbus-исключении
+    // Refresh settings so the UI reflects the change promptly.
+    try {
+      const regs = await this.readBlocks(SETTINGS_BLOCKS);
+      this.snapshot = {
+        ...this.snapshot,
+        info: decodeSettings(regs),
+        flags: decodeFlags(regs),
+        timestamp: Date.now(),
+      };
+      this.emit("snapshot", this.snapshot);
+    } catch {
+      /* ignore */
     }
-    return { ok, command, reply };
+    // Re-engage the UI lock after a UI-originated write (not for MQTT).
+    if (!opts.bypassLock && this.cfg.autoRelock) this.setLock(true);
+    return { ok: true, command, reply: "ACK" };
   }
 
   /**
-   * Send an arbitrary command (advanced/debug). Query commands (Q*) are always
-   * allowed; anything else is a potential setter and must pass the same gates
-   * as control() — otherwise /api/raw would be a lock bypass.
+   * Диагностика: текстовая команда чтения/записи регистров.
+   *   "R <адрес> [количество]"  — чтение (доступно всегда)
+   *   "W <адрес> <значение>"    — запись сырого значения (требует разблокировки)
    */
   async rawQuery(command: string): Promise<string> {
-    if (!/^[A-Za-z0-9]+$/.test(command)) throw new Error("Invalid command characters");
-    if (!/^Q/i.test(command)) {
-      if (!this.cfg.allowControl) {
-        throw new Error("Control is disabled (ALLOW_CONTROL=false); only Q* commands allowed");
-      }
-      if (this.locked) {
-        throw new Error("Settings are locked (read-only); unlock before sending non-query commands");
-      }
+    const m = command.trim().toUpperCase().match(/^([RW])\s+(\d{1,5})(?:\s+(\d{1,5}))?$/);
+    if (!m) throw new Error('Use "R <addr> [count]" to read or "W <addr> <value>" to write');
+    const op = m[1];
+    const addr = parseInt(m[2], 10);
+    const arg = m[3] !== undefined ? parseInt(m[3], 10) : undefined;
+
+    if (op === "R") {
+      const count = Math.max(1, Math.min(32, arg ?? 1));
+      const regs = await this.readBlock(addr, count);
+      return [...regs.entries()].map(([a, v]) => `${a} = ${v} (0x${v.toString(16).padStart(4, "0")})`).join("\n");
     }
-    return this.raw(command);
+
+    // Запись: те же гейты, что у control() — иначе это обход блокировки.
+    if (!this.cfg.allowControl) {
+      throw new Error("Control is disabled (ALLOW_CONTROL=false); only reads allowed");
+    }
+    if (this.locked) {
+      throw new Error("Settings are locked (read-only); unlock before writing");
+    }
+    if (arg === undefined) throw new Error('Write needs a value: "W <addr> <value>"');
+    await this.writeRegister(addr, arg);
+    return `reg ${addr} := ${arg} — ACK`;
   }
 }

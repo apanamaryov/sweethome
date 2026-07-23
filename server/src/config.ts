@@ -1,9 +1,11 @@
 export interface Config {
   port: number;
   host: string;
-  transport: "auto" | "serial" | "hid" | "mock";
+  transport: "auto" | "serial" | "mock";
   serialDevice: string | null;
   baudRate: number;
+  /** Modbus slave id инвертора (настройка №25 в меню, по умолчанию 1). */
+  slaveId: number;
   pollIntervalMs: number;
   commandTimeoutMs: number;
   allowMock: boolean;
@@ -51,9 +53,10 @@ export function loadConfig(): Config {
   return {
     port: envInt("PORT", 3000),
     host: process.env.HOST || "0.0.0.0",
-    transport: (["auto", "serial", "hid", "mock"].includes(transport) ? transport : "auto") as Config["transport"],
+    transport: (["auto", "serial", "mock"].includes(transport) ? transport : "auto") as Config["transport"],
     serialDevice: process.env.INVERTER_SERIAL_DEVICE || null,
-    baudRate: envInt("INVERTER_BAUD", 2400),
+    baudRate: envInt("INVERTER_BAUD", 9600),
+    slaveId: envInt("MODBUS_SLAVE_ID", 1),
     pollIntervalMs: envInt("POLL_INTERVAL_MS", 5000),
     commandTimeoutMs: envInt("COMMAND_TIMEOUT_MS", 3000),
     allowMock: envBool("ALLOW_MOCK", true),

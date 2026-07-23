@@ -30,7 +30,7 @@ export default function DiagnosticsPage() {
         <input
           type="text"
           value={cmd}
-          placeholder="QPIGS"
+          placeholder="R 201 10"
           autoCapitalize="characters"
           spellCheck={false}
           onChange={(e) => setCmd(e.target.value)}

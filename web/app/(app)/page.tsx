@@ -44,7 +44,7 @@ export default function DashboardPage() {
           <span className="card-title">{t.cardSolar}</span>
         </div>
         <div className="big-metric">
-          <span className="big-val">{fmt(s?.pvChargingPower, 0)}</span>
+          <span className="big-val">{fmt(s?.pvPower, 0)}</span>
           <span className="big-unit">{t.capW}</span>
         </div>
         <div className="sub-metrics">

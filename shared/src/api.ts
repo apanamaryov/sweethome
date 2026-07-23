@@ -7,23 +7,26 @@ export type ControlType =
   | "batteryRechargeVoltage"
   | "batteryRedischargeVoltage";
 
+/** Регистр 301 (output priority), значения SMG II. */
 export const OUTPUT_SOURCE_PRIORITY: Record<number, string> = {
-  0: "Utility first",
-  1: "Solar first",
-  2: "Solar → Battery → Utility (SBU)",
+  0: "Utility → PV → Battery (UTI)",
+  1: "PV → Utility → Battery (SOL)",
+  2: "PV → Battery → Utility (SBU)",
+  3: "PV → Utility → Battery (SUB)",
 };
 
+/** Регистр 331 (battery charging priority). */
 export const CHARGER_SOURCE_PRIORITY: Record<number, string> = {
   0: "Utility first",
-  1: "Solar first",
-  2: "Solar and Utility",
-  3: "Only Solar",
+  1: "PV first",
+  2: "PV and Utility",
+  3: "Only PV",
 };
 
-/** Допустимый общий ток заряда (А) на этих аппаратах. */
-export const ALLOWED_MAX_CHARGE_CURRENT = [10, 20, 30, 40, 50, 60, 70, 80];
-/** Допустимый ток заряда от сети (А). */
-export const ALLOWED_MAX_AC_CHARGE_CURRENT = [2, 10, 20, 30, 40, 50, 60];
+/** Общий ток заряда, А (регистр 332, шаг устройства 0.1 А, диапазон 0–100). */
+export const ALLOWED_MAX_CHARGE_CURRENT = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+/** Ток заряда от сети, А (регистр 333). */
+export const ALLOWED_MAX_AC_CHARGE_CURRENT = [10, 20, 30, 40, 50, 60, 70, 80];
 
 /** Ответ GET /api/meta. */
 export interface ApiMeta {
