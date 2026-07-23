@@ -163,8 +163,10 @@ body.stale .topbar { opacity: 0.45; filter: contrast(0.75); transition: opacity 
 }
 
 /* ---------- сетка приборных панелей ---------- */
-/* Четыре равные приборные панели, по две в ряд */
-.grid { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 1fr; gap: 12px; padding: 16px; }
+/* На телефоне — одна колонка (карточки по контенту); от 620px — по две в ряд.
+   Никаких grid-auto-rows: 1fr — иначе все ряды растягиваются до самой высокой
+   карточки (батарея с кольцом) и получаются огромные пустоты. */
+.grid { display: grid; grid-template-columns: 1fr; gap: 12px; padding: 16px; }
 .card {
   background: var(--card);
   border: 1.5px solid var(--ink);
@@ -172,7 +174,7 @@ body.stale .topbar { opacity: 0.45; filter: contrast(0.75); transition: opacity 
   min-width: 0;
 }
 
-.card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; row-gap: 4px; }
 .card-head::after { content: ""; flex: 1; border-top: 1px solid var(--hairline); }
 .card-title {
   font-size: 13px;
@@ -190,7 +192,9 @@ body.stale .topbar { opacity: 0.45; filter: contrast(0.75); transition: opacity 
 .card-solar .card-title::before { background: var(--sun); }
 .card-load .card-title::before { background: var(--slate); }
 .card-grid .card-title::before { background: var(--plum); }
-.tag { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); }
+/* nowrap: тег («заряджається ↑») при нехватке места переносится целиком,
+   а не ломается посреди — стрелка не уезжает на отдельную строку. */
+.tag { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); white-space: nowrap; }
 .tag.state-charge { color: var(--moss-deep); font-weight: 700; }
 .tag.state-discharge { color: var(--brick-deep); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .tag.state-idle { color: var(--ink-faint); }
@@ -471,7 +475,7 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
 .hidden { display: none !important; }
 
 @media (min-width: 620px) {
-  .grid { max-width: 900px; margin: 0 auto; }
+  .grid { grid-template-columns: 1fr 1fr; max-width: 900px; margin: 0 auto; }
   .panel, .banner { max-width: 900px; margin-left: auto; margin-right: auto; }
 }
 
