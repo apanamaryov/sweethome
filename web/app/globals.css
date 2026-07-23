@@ -166,7 +166,7 @@ body.stale .topbar { opacity: 0.45; filter: contrast(0.75); transition: opacity 
 /* На телефоне — одна колонка (карточки по контенту); от 620px — по две в ряд.
    Никаких grid-auto-rows: 1fr — иначе все ряды растягиваются до самой высокой
    карточки (батарея с кольцом) и получаются огромные пустоты. */
-.grid { display: grid; grid-template-columns: 1fr; gap: 12px; padding: 16px; }
+.grid { display: grid; grid-template-columns: 1fr; gap: 12px; padding: 0 16px 16px; }
 .card {
   background: var(--card);
   border: 1.5px solid var(--ink);
@@ -488,7 +488,9 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
 .nav-tabs {
   display: flex;
   gap: 6px;
-  margin: 10px 14px 0;
+  /* Нижний отступ — общий вертикальный ритм для контента всех вкладок
+     (сетка дашборда за это отдаёт свой верхний padding). */
+  margin: 10px 14px 16px;
 }
 .nav-tabs a {
   padding: 6px 14px;
