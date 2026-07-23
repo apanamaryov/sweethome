@@ -99,7 +99,7 @@ WebSocket, Modbus-протокол) і `web/` (UI на Next.js). Розробк�
 звичайній машині (не на Pi); Node ≥ 20.
 
 ```bash
-git clone git@github.com:apanamaryov/sweethome.git inverter-monitor
+git clone https://github.com/apanamaryov/sweethome.git inverter-monitor
 cd inverter-monitor
 npm install    # ставить залежності всіх воркспейсів разом
 npm run dev    # сервер :3000 (mock-дані) + UI :3001 (Next.js, HMR)
@@ -159,7 +159,7 @@ production-залежності сервера та рестартує systemd-�
 ```bash
 ./deploy.sh
 # з параметрами:
-PI_HOST=pi@192.168.1.112 SSH_KEY=~/.ssh/pi_key ./deploy.sh
+PI_HOST=pi@<адреса-pi> SSH_KEY=~/.ssh/<ключ> ./deploy.sh
 ```
 
 Що робить скрипт:
@@ -169,7 +169,7 @@ PI_HOST=pi@192.168.1.112 SSH_KEY=~/.ssh/pi_key ./deploy.sh
 3. По SSH на Pi: ставить `npm ci -w server --omit=dev`, оновлює systemd-юніт і рестартує `inverter-monitor`.
 4. Перевіряє `GET /api/health` (до хвилини на рестарт); `200` без авторизації або `401` з авторизацією — обидва означають «сервер живий».
 
-- `PI_HOST` — користувач і адреса Pi (типово `pi@192.168.1.112`).
+- `PI_HOST` — користувач і адреса твого Pi (типово `pi@raspberrypi.local`).
 - `SSH_KEY` — шлях до приватного ключа, якщо він не підхоплюється ssh-агентом.
 
 На Pi конфіг і дані лежать у `server/.env` і `server/data/` (`baseline.json`, `sessions.json`);
@@ -177,7 +177,7 @@ PI_HOST=pi@192.168.1.112 SSH_KEY=~/.ssh/pi_key ./deploy.sh
 (`systemctl enable`) — разова ручна операція:
 
 ```bash
-ssh pi@192.168.1.112 sudo systemctl enable inverter-monitor
+ssh pi@<адреса-pi> sudo systemctl enable inverter-monitor
 ```
 
 ---
@@ -254,7 +254,7 @@ HttpOnly-cookie, сесії переживають рестарт — `server/da
 `batteryRedischargeVoltage` (326).
 
 ```bash
-curl -X POST http://192.168.1.112:3000/api/control \
+curl -X POST http://<адреса-pi>:3000/api/control \
   -H 'Content-Type: application/json' \
   -d '{"type":"chargerSourcePriority","value":3}'   # 3 = Only PV
 ```

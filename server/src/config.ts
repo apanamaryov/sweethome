@@ -24,7 +24,7 @@ export interface Config {
   };
   /** MQTT / Home Assistant integration. */
   mqtt: {
-    url: string | null; // e.g. mqtt://user:pass@192.168.1.112:1883 ; null disables MQTT
+    url: string | null; // e.g. mqtt://user:pass@broker-host:1883 ; null disables MQTT
     username: string | null;
     password: string | null;
     baseTopic: string; // state/command topic root

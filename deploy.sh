@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Деплой inverter-monitor на Raspberry Pi.
-# Использование: [PI_HOST=pi@192.168.1.112] [SSH_KEY=~/.ssh/pi_key] ./deploy.sh
+# Использование: [PI_HOST=pi@raspberrypi.local] [SSH_KEY=~/.ssh/pi_key] ./deploy.sh
 set -euo pipefail
 cd "$(dirname "$0")"
 
-PI_HOST="${PI_HOST:-pi@192.168.1.112}"
+PI_HOST="${PI_HOST:-pi@raspberrypi.local}"
 PI_DIR="/home/pi/inverter-monitor"
 
 SSH=(ssh)
