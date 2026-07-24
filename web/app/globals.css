@@ -300,7 +300,7 @@ body.stale .topbar { opacity: 0.45; filter: contrast(0.75); transition: opacity 
 .segmented button:disabled.active { background: var(--ink-faint); color: var(--paper-0); border-style: solid; }
 
 .row { display: flex; gap: 10px; align-items: stretch; }
-select, input[type="text"] {
+select, input[type="text"], input[type="password"] {
   flex: 1;
   padding: 10px 12px;
   border: 1.5px solid var(--ink);
@@ -366,6 +366,9 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
 /* ---------- страница входа ---------- */
 .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
 .login-box { max-width: 340px; }
+/* Формы входа/смены пароля — вертикальные (в 340px-коробке горизонтальный .row
+   с полями + кнопкой переполнял контейнер на телефоне). */
+.login-box .row { flex-direction: column; }
 .login-title { margin: 0 0 6px; font-size: 24px; font-weight: 700; font-variant: small-caps; letter-spacing: 0.14em; }
 .login-err {
   margin: 12px 0 0;

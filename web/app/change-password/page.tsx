@@ -9,6 +9,7 @@ export default function ChangePasswordPage() {
   useDocTitle("changePwTitle");
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [err, setErr] = useState<string | null>(null);
 
   const submit = async (e: FormEvent) => {
@@ -16,6 +17,10 @@ export default function ChangePasswordPage() {
     setErr(null);
     if (next.length < 6) {
       setErr(t.changePwMismatch);
+      return;
+    }
+    if (next !== confirm) {
+      setErr(t.changePwNoMatch);
       return;
     }
     try {
@@ -54,6 +59,13 @@ export default function ChangePasswordPage() {
             value={next}
             onChange={(e) => setNext(e.target.value)}
             placeholder={t.changePwNew}
+            autoComplete="new-password"
+          />
+          <input
+            type="password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            placeholder={t.changePwConfirm}
             autoComplete="new-password"
           />
           <button className="apply" type="submit">
