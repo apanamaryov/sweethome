@@ -208,4 +208,45 @@ assert.strictEqual(dc.length, 1, "device-changed после «рестарта»
 assert.deepStrictEqual(JSON.parse(dc[0].detail), { from: "old-dev", to: "smg-test" });
 assert.strictEqual(db5.getMeta("device_id"), "smg-test", "meta.device_id обновлён");
 
-console.log("selfcheck-stats: db + rollups + recorder OK");
+// ---------- 13. queryEnergy: корзины по часам и по суткам ----------
+const db6 = new StatsDb(":memory:");
+const H = (s: string) => Date.parse(s); // локальное время окружения
+// 720 Вт × (5000 мс / 3.6e6) = 1 Вт·ч на снапшот; по одному снапшоту в минуту.
+const eSample = (ts: number) => sample(ts, { pvPower: 720, mainsPower: 720 });
+db6.transaction(() => {
+  // День 1, час 10 — 3 минуты; час 11 — 2 минуты.
+  db6.insertSample(eSample(H("2026-07-23T10:00:00")));
+  db6.insertSample(eSample(H("2026-07-23T10:01:00")));
+  db6.insertSample(eSample(H("2026-07-23T10:02:00")));
+  db6.insertSample(eSample(H("2026-07-23T11:00:00")));
+  db6.insertSample(eSample(H("2026-07-23T11:05:00")));
+  // День 2, час 10 — 4 минуты.
+  db6.insertSample(eSample(H("2026-07-24T10:00:00")));
+  db6.insertSample(eSample(H("2026-07-24T10:01:00")));
+  db6.insertSample(eSample(H("2026-07-24T10:02:00")));
+  db6.insertSample(eSample(H("2026-07-24T10:03:00")));
+});
+db6.rollupMinutes(H("2026-07-24T12:00:00"), 5000);
+
+const eFrom = H("2026-07-23T00:00:00");
+const eTo = H("2026-07-24T23:59:59");
+const r3 = (x: number) => Number(x.toFixed(3));
+
+const hrs = db6.queryEnergy(eFrom, eTo, "hour");
+assert.strictEqual(hrs.length, 3, "три часовые корзины");
+assert.strictEqual(r3(hrs.reduce((s, b) => s + b.pv_wh, 0)), 9, "часы: сумма pv_wh");
+assert.strictEqual(r3(hrs.reduce((s, b) => s + b.grid_wh, 0)), 9, "часы: сумма grid_wh");
+assert.strictEqual(
+  hrs[0].t,
+  Math.floor(H("2026-07-23T10:00:00") / 3_600_000) * 3_600_000,
+  "часовая корзина выровнена по началу часа"
+);
+
+const days = db6.queryEnergy(eFrom, eTo, "day");
+assert.strictEqual(days.length, 2, "две суточные корзины");
+assert.strictEqual(r3(days[0].pv_wh), 5, "сутки 1: pv_wh (3+2)");
+assert.strictEqual(r3(days[1].pv_wh), 4, "сутки 2: pv_wh");
+assert.strictEqual(days[0].t, new Date(2026, 6, 23).getTime(), "суточная корзина = локальная полночь дня 1");
+assert.strictEqual(days[1].t, new Date(2026, 6, 24).getTime(), "суточная корзина = локальная полночь дня 2");
+
+console.log("selfcheck-stats: db + rollups + recorder + energy OK");

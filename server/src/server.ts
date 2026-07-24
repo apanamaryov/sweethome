@@ -192,6 +192,22 @@ export function createServer(inverter: Inverter, cfg: Config, stats: StatsRecord
     }
   });
 
+  app.get("/api/stats/energy", (req, res) => {
+    try {
+      if (!stats) return res.status(503).json({ ok: false, error: "stats unavailable" });
+      const from = parseTime(req.query.from);
+      const to = parseTime(req.query.to);
+      if (from === null || to === null || to <= from) {
+        return res.status(400).json({ ok: false, error: "bad from/to" });
+      }
+      const bucket = req.query.bucket === "hour" ? ("hour" as const) : ("day" as const);
+      res.json(stats.db.queryEnergy(from, to, bucket));
+    } catch (e) {
+      console.error("[inverter-monitor] stats query failed:", (e as Error).message);
+      res.status(503).json({ ok: false, error: "stats unavailable" });
+    }
+  });
+
   app.get("/api/stats/events", (req, res) => {
     try {
       if (!stats) return res.status(503).json({ ok: false, error: "stats unavailable" });

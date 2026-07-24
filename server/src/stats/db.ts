@@ -29,6 +29,16 @@ export interface StatsEventRow {
   detail: string; // JSON
 }
 
+/** Энергия (Вт·ч) за одну корзину времени. `t` — начало корзины, unix ms. */
+export interface EnergyBucket {
+  t: number;
+  pv_wh: number;
+  load_wh: number;
+  grid_wh: number;
+  batt_charge_wh: number;
+  batt_discharge_wh: number;
+}
+
 /** YYYY-MM-DD в локальном часовом поясе хоста. */
 export function localDay(ms: number): string {
   const d = new Date(ms);
@@ -244,6 +254,40 @@ export class StatsDb {
 
   queryDaily(fromDay: string, toDay: string): Array<Record<string, unknown>> {
     return this.dailyQueryStmt.all(fromDay, toDay) as Array<Record<string, unknown>>;
+  }
+
+  /**
+   * Энергия (Вт·ч) по корзинам из samples_minute — включает текущую незакрытую
+   * корзину (в отличие от таблицы daily). `bucket="hour"` — по часам (для вида
+   * «день»), `"day"` — по локальным суткам (для «недели»/«месяца»). Диапазон
+   * ограничен по ts (PK-индекс), без полного скана.
+   */
+  queryEnergy(from: number, to: number, bucket: "hour" | "day"): EnergyBucket[] {
+    const sums = ENERGY_COLS.map((c) => `sum(${c}) AS ${c}`).join(", ");
+    // SQL статичен для каждого bucket, но набор из двух вариантов мал — не кэшируем.
+    const rows =
+      bucket === "hour"
+        ? (this.db
+            .prepare(
+              `SELECT (ts / 3600000) * 3600000 AS bucket, ${sums}
+               FROM samples_minute WHERE ts >= ? AND ts <= ? GROUP BY ts / 3600000 ORDER BY bucket`
+            )
+            .all(from, to) as Array<Record<string, number>>)
+        : (this.db
+            .prepare(
+              `SELECT ${DAY_EXPR} AS bucket, ${sums}
+               FROM samples_minute WHERE ts >= ? AND ts <= ? GROUP BY ${DAY_EXPR} ORDER BY bucket`
+            )
+            .all(from, to) as Array<Record<string, string | number>>);
+    return rows.map((r) => ({
+      // Дневная корзина: начало суток считаем в JS от строки дня (DST-безопасно).
+      t: bucket === "hour" ? Number(r.bucket) : dayStartMs(String(r.bucket)),
+      pv_wh: Number(r.pv_wh) || 0,
+      load_wh: Number(r.load_wh) || 0,
+      grid_wh: Number(r.grid_wh) || 0,
+      batt_charge_wh: Number(r.batt_charge_wh) || 0,
+      batt_discharge_wh: Number(r.batt_discharge_wh) || 0,
+    }));
   }
 
   queryEvents(opts: {

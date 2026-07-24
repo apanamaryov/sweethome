@@ -22,6 +22,16 @@ export interface StatsEvent {
   detail: string; // JSON
 }
 
+/** Энергия (Вт·ч) за одну корзину. `t` — начало корзины, unix ms. */
+export interface EnergyBucket {
+  t: number;
+  pv_wh: number;
+  load_wh: number;
+  grid_wh: number;
+  batt_charge_wh: number;
+  batt_discharge_wh: number;
+}
+
 export function fetchSeries(fields: string[], from: number, to: number): Promise<SeriesPoint[]> {
   return getJson(`/api/stats/series?fields=${fields.join(",")}&from=${from}&to=${to}&res=auto`);
 }
@@ -33,4 +43,12 @@ export function fetchDaily(fromDay: string, toDay: string): Promise<DailyRow[]> 
 export function fetchEvents(from: number, to: number, type?: string): Promise<StatsEvent[]> {
   const t = type ? `&type=${encodeURIComponent(type)}` : "";
   return getJson(`/api/stats/events?from=${from}&to=${to}&limit=200${t}`);
+}
+
+export function fetchEnergy(
+  from: number,
+  to: number,
+  bucket: "hour" | "day"
+): Promise<EnergyBucket[]> {
+  return getJson(`/api/stats/energy?from=${from}&to=${to}&bucket=${bucket}`);
 }

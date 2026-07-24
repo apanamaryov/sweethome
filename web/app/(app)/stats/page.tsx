@@ -6,7 +6,9 @@ import TimeChart, { ChartSeries } from "@/components/TimeChart";
 import { useT, warnLabel } from "@/lib/i18n";
 import {
   DailyRow,
+  EnergyBucket,
   fetchDaily,
+  fetchEnergy,
   fetchEvents,
   fetchSeries,
   SeriesPoint,
@@ -72,34 +74,40 @@ export default function StatsPage() {
   const [anchor, setAnchor] = useState<Date>(() => new Date());
   const [rows, setRows] = useState<SeriesPoint[] | null>(null);
   const [daily, setDaily] = useState<DailyRow[]>([]);
+  const [energy, setEnergy] = useState<EnergyBucket[]>([]);
   const [events, setEvents] = useState<StatsEvent[]>([]);
   const [evType, setEvType] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
 
   const { from, to } = useMemo(() => rangeFor(kind, anchor), [kind, anchor]);
+  // День — почасовые столбики энергии, неделя/месяц — посуточные.
+  const energyBucket: "hour" | "day" = kind === "day" ? "hour" : "day";
 
   useEffect(() => {
     let alive = true;
     setRows(null);
     setError(null);
     setDaily([]);
+    setEnergy([]);
     setEvents([]);
     Promise.all([
       fetchSeries([...SERIES_FIELDS], from.getTime(), to.getTime()),
       fetchDaily(dayKey(from), dayKey(new Date(to.getTime() - 1))),
+      fetchEnergy(from.getTime(), to.getTime(), energyBucket),
       fetchEvents(from.getTime(), to.getTime(), evType || undefined),
     ])
-      .then(([s, d, e]) => {
+      .then(([s, d, en, e]) => {
         if (!alive) return;
         setRows(s);
         setDaily(d);
+        setEnergy(en);
         setEvents(e);
       })
       .catch((e: Error) => alive && setError(e.message));
     return () => {
       alive = false;
     };
-  }, [from, to, evType]);
+  }, [from, to, energyBucket, evType]);
 
   const powerSeries: ChartSeries[] = [
     { label: t.stSeriesPv, stroke: "#f59e0b", unit: t.capW },
@@ -115,6 +123,15 @@ export default function StatsPage() {
     { label: t.stSeriesTempDcdc, stroke: "#f59e0b", unit: "°C" },
     { label: t.stSeriesTempInv, stroke: "#ef4444", unit: "°C" },
   ];
+
+  // Энергия столбиками (кВт·ч): почасово для дня, посуточно для недели/месяца.
+  const energyX = energy.map((b) => b.t / 1000);
+  const pvEnergyData: uPlot.AlignedData = [energyX, energy.map((b) => b.pv_wh / 1000)];
+  const gridEnergyData: uPlot.AlignedData = [energyX, energy.map((b) => b.grid_wh / 1000)];
+  const totalPv = energy.reduce((s, b) => s + b.pv_wh, 0) / 1000;
+  const totalGrid = energy.reduce((s, b) => s + b.grid_wh, 0) / 1000;
+  const pvEnergySeries: ChartSeries[] = [{ label: t.stChartPvEnergy, stroke: "#f59e0b" }];
+  const gridEnergySeries: ChartSeries[] = [{ label: t.stChartGridEnergy, stroke: "#8b5cf6" }];
 
   const evLabel = (type: string): string =>
     ((
@@ -221,6 +238,27 @@ export default function StatsPage() {
                 series={tempSeries}
                 height={160}
               />
+            </div>
+          </section>
+        </>
+      )}
+
+      {energy.length > 0 && (
+        <>
+          <section className="stats-section">
+            <h3>
+              {t.stChartPvEnergy} · <b>{totalPv.toFixed(1)} {t.capKwh}</b>
+            </h3>
+            <div className="chart-box">
+              <TimeChart data={pvEnergyData} series={pvEnergySeries} height={180} bars legend={false} />
+            </div>
+          </section>
+          <section className="stats-section">
+            <h3>
+              {t.stChartGridEnergy} · <b>{totalGrid.toFixed(1)} {t.capKwh}</b>
+            </h3>
+            <div className="chart-box">
+              <TimeChart data={gridEnergyData} series={gridEnergySeries} height={180} bars legend={false} />
             </div>
           </section>
         </>
