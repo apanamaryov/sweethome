@@ -57,6 +57,9 @@ export class StatsRecorder {
 
   private push(ts: number, type: string, detail: object): void {
     this.pending.push({ ts, type, detail: JSON.stringify(detail) });
+    // События диффовые и редкие, но при хронических ошибках флаша (например,
+    // осцилляции сети вокруг порога) массив не должен расти бесконечно.
+    while (this.pending.length > this.maxBuffered) this.pending.shift();
   }
 
   private deriveEvents(snap: Snapshot): void {

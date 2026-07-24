@@ -178,4 +178,21 @@ rec.flush(B + 27_000); // повторный флаш ничего не дубл
 assert.strictEqual(n(db3.all("SELECT COUNT(*) AS n FROM samples")), 5);
 assert.strictEqual(n(db3.all("SELECT COUNT(*) AS n FROM events")), 6);
 
+// ---------- 11. Потолок pending-событий ----------
+// pollIntervalMs=600000 → maxBuffered=1: из трёх mode-change выживает последний.
+const db4 = new StatsDb(":memory:");
+const rec2 = new StatsRecorder(db4, { pollIntervalMs: 600_000, rawDays: 30, minuteDays: 730 });
+const C = Date.parse("2026-07-24T12:00:00");
+rec2.handleSnapshot(snap(C));
+rec2.handleSnapshot(snap(C + 5000, { mode: "Battery" }));
+rec2.handleSnapshot(snap(C + 10000, { mode: "Line" }));
+rec2.handleSnapshot(snap(C + 15000, { mode: "Battery" }));
+rec2.flush(C + 16_000);
+assert.strictEqual(n(db4.all("SELECT COUNT(*) AS n FROM events")), 1, "pending capped at maxBuffered");
+assert.strictEqual(
+  JSON.parse(db4.queryEvents({ limit: 1, offset: 0 })[0].detail).to,
+  "Battery",
+  "выжило последнее событие"
+);
+
 console.log("selfcheck-stats: db + rollups + recorder OK");
