@@ -61,4 +61,10 @@ assert.ok(!adb.getSession("hashB"), "прочие сессии удалены");
 adb.pruneExpired(T + 2000);
 assert.ok(!adb.getSession("hashA"), "истёкшая сессия убрана prune");
 
+// каскад: удаление пользователя удаляет его сессии (ON DELETE CASCADE)
+adb.createSession("hashC", admin.id, T + 5000, T);
+assert.ok(adb.getSession("hashC"), "сессия создана перед удалением пользователя");
+adb.deleteUser(admin.id);
+assert.ok(!adb.getSession("hashC"), "ON DELETE CASCADE удалил сессию при удалении пользователя");
+
 console.log("selfcheck-auth: OK");
