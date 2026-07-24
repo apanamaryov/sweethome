@@ -18,14 +18,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm install        # ставит зависимости всех воркспейсов разом (это монорепо)
 npm run dev        # server :3000 (форсит INVERTER_TRANSPORT=mock) + web :3001 (Next.js HMR, проксирует /api на :3000)
 npm run build      # СТРОГО в порядке shared → server → web
-npm run check      # selfcheck протокола (server) + typecheck (web)
+npm run check      # selfcheck протокола + stats (server) + typecheck (web)
 ./deploy.sh        # локальная сборка → rsync на Pi → npm ci → рестарт systemd → health-check
 ```
 
-- **Единственный «тест» — `server/scripts/selfcheck.ts`** (запускается как `npm run check -w server`, а также `cd server && npx tsx scripts/selfcheck.ts`). Это не typecheck: он через `assert` сверяет **эталонные Modbus-кадры, снятые с живого инвертора** (запрос `01 03 00 C9 00 01 54 34` → ответ `01 03 02 00 03 F8 45` и др.), CRC-16/Modbus, декодеры регистров и билдеры сеттеров. Джестов/витестов нет. **После правок в `server/src/protocol/*` обязательно гоняй selfcheck.**
-- `npm run check` для сервера — это selfcheck, а НЕ проверка типов. Типы сервера проверяются только сборкой (`tsc` в `npm run build`). Веб проверяется отдельно (`tsc --noEmit`).
+- **`npm run check -w server` гоняет ОБА selfcheck-скрипта**: `scripts/selfcheck.ts` (протокол) и `scripts/selfcheck-stats.ts` (SQLite-статистика). Ни один из них — не typecheck.
+- **Основной «тест» — `server/scripts/selfcheck.ts`** (запускается как часть `npm run check -w server`, а также отдельно `cd server && npx tsx scripts/selfcheck.ts`). Это не typecheck: он через `assert` сверяет **эталонные Modbus-кадры, снятые с живого инвертора** (запрос `01 03 00 C9 00 01 54 34` → ответ `01 03 02 00 03 F8 45` и др.), CRC-16/Modbus, декодеры регистров и билдеры сеттеров. Джестов/витестов нет. **После правок в `server/src/protocol/*` обязательно гоняй selfcheck.**
+- **`server/scripts/selfcheck-stats.ts`** — аналогично через `assert` проверяет схему/свёртки/retention SQLite-статистики (`src/stats/db.ts`, `recorder.ts`). **После правок в `server/src/stats/*` обязательно гоняй его.**
+- `npm run check` для сервера — это два selfcheck-скрипта, а НЕ проверка типов. Типы сервера проверяются только сборкой (`tsc` в `npm run build`). Веб проверяется отдельно (`tsc --noEmit`).
 - Деплой на Pi — `PI_HOST=pi@… SSH_KEY=~/.ssh/… ./deploy.sh`; учитывай, что скрипт пересобирает всё локально, заливает артефакты и **рестартует живой systemd-сервис** на Pi. Конкретный адрес/ключ — вне репозитория (локальное окружение владельца).
-- Node: root `engines` — **≥ 20**, `server` `engines` — **≥ 18** (заявленный минимум). Сам Pi сейчас на **Node 24** (Raspberry Pi OS Trixie, arm64). Держи server-код в рамках заявленного `>=18`, если сознательно не поднимаешь `engines`.
+- Node: root `engines` и `server` `engines` — оба **≥ 24** (нужен встроенный `node:sqlite` для статистики). Сам Pi уже на **Node 24** (Raspberry Pi OS Trixie, arm64) — совпадает с заявленным минимумом.
 
 ## Протокол (важно: Modbus, НЕ PI30)
 
@@ -61,6 +63,11 @@ npm run check      # selfcheck протокола (server) + typecheck (web)
    - `smg.ts` — блоки чтения (`STATUS_BLOCKS`/`ALARM_BLOCKS`/`SETTINGS_BLOCKS` — только документированные диапазоны, без «дыр»), декодеры (`decodeStatus`/`decodeSettings`/`decodeFlags`/`decodeAlarms`/`decodeMode`), сеттеры (`buildControlWrite`). **Масштабирование — делением** (`/10`, `/100`), не умножением на 0.1 — иначе float-хвосты (232.70000000000002) ломают selfcheck и UI.
 2. **`src/transport/`** — общий интерфейс `Transport` + две реализации: `serial` (`serialport`, optionalDependency c `isAvailable()`-проверкой) и `mock` (**полноценный эмулятор Modbus-slave**: отвечает на fn 0x03 из внутренней карты регистров с правдоподобной динамикой, принимает записи fn 0x10). `transact(frame, timeout, expectedLen)` — чтение завершается по накоплению `expectedLen` байт ЛИБО по кадру-исключению (5 байт, бит 0x80 у функции). `detect.ts`: mock всегда последним; onboard-UART'ы Pi отфильтровываются — только USB-serial, если явно не задан `INVERTER_SERIAL_DEVICE`.
 3. **`src/inverter.ts`** — ядро. **Вся работа с транспортом сериализована через одну очередь-промис (`enqueue`) с пейсингом 120 мс** между командами. Поллинг: статус+аварии каждый цикл (7 блоковых чтений), настройки раз в ~6 циклов и всегда на первом цикле после коннекта; probe при коннекте — чтение регистра 201 с валидацией режима; автопереподключение после 3 подряд ошибок; **захват baseline** (один раз на устройство, сохраняется на диск); блокировка записи. `rawQuery` понимает текстовые команды `"R <адрес> [количество]"` (всегда) и `"W <адрес> <значение>"` (под теми же гейтами, что `control()`).
+3½. **`src/stats/`** — статистика в SQLite через встроенный `node:sqlite` (Node ≥ 24, нативных
+   зависимостей нет). `db.ts` — схема (samples 30 дней / samples_minute 2 года / daily+events
+   бессрочно), свёртки по watermark, retention; `recorder.ts` — подписка на `"snapshot"`,
+   буфер с флашем раз в 60 с (щадит SD), деривация событий из диффа снапшотов. Никогда не
+   пишет в инвертор. Тесты — `scripts/selfcheck-stats.ts` (входит в `npm run check -w server`).
 4. **`src/server.ts`** — Express (REST под `/api` + раздача статики `web/out`) и WebSocket (`/ws`, push каждого `Snapshot`). `Inverter` — `EventEmitter`, сервер и MQTT подписаны на событие `"snapshot"`.
 5. **`src/mqtt.ts`** — публикация в MQTT с автодискавери Home Assistant (по умолчанию выключено, `MQTT_URL` пуст).
 6. **`src/config.ts`** — вся конфигурация только из env (см. `.env.example`): `INVERTER_BAUD` default **9600**, `MODBUS_SLAVE_ID` default 1, transport `auto|serial|mock`.

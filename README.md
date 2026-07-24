@@ -85,6 +85,7 @@ Protocol correctness is pinned by reference frames captured from a live inverter
 - [Configuration (`.env`)](#️-configuration-env)
 - [Web interface](#️-web-interface)
 - [API](#-api)
+- [Statistics](#-statistics)
 - [Home Assistant (MQTT)](#-home-assistant-mqtt)
 - [Control safety & write lock](#-control-safety--write-lock)
 - [What's been verified](#-whats-been-verified)
@@ -261,6 +262,26 @@ curl -X POST http://<pi-address>:3000/api/control \
   -H 'Content-Type: application/json' \
   -d '{"type":"chargerSourcePriority","value":3}'   # 3 = Only PV
 ```
+
+---
+
+## 📊 Statistics
+
+The daemon keeps a telemetry history in SQLite (`server/data/stats.db`, the built-in
+`node:sqlite` module, requires Node ≥ 24). Snapshots are buffered in memory and flushed
+to disk once a minute (to spare the SD card). Tiered retention: raw 5-second snapshots
+— 30 days (`STATS_RAW_DAYS`), per-minute aggregates — 2 years (`STATS_MINUTE_DAYS`),
+daily summaries and the event log — kept indefinitely. Disable with `STATS_ENABLED=false`.
+
+The **/stats** page in the web UI: power/battery/temperature charts, daily kWh totals,
+an event log (mode changes, grid loss, faults, connectivity), CSV export.
+
+API: `GET /api/stats/series|daily|events|export.csv` (session-authenticated, same as
+the rest of the API). If the database is unavailable — `503`; core monitoring keeps
+running regardless.
+
+> On Node 24.11.0, the built-in `node:sqlite` module prints an `ExperimentalWarning`
+> to stderr at server startup — harmless, safe to ignore.
 
 ---
 
