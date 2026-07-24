@@ -9,7 +9,7 @@
     "start": "node dist/index.js",
     "dev": "INVERTER_TRANSPORT=mock tsx watch src/index.ts",
     "clean": "rm -rf dist",
-    "check": "tsx scripts/selfcheck.ts && tsx scripts/selfcheck-stats.ts"
+    "check": "tsx scripts/selfcheck.ts && tsx scripts/selfcheck-stats.ts && tsx scripts/selfcheck-auth.ts"
   },
   "engines": {
     "node": ">=24"
