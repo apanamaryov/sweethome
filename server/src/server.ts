@@ -7,6 +7,8 @@ import { Config } from "./config";
 import { Auth, tokenFromCookieHeader } from "./auth/service";
 import { canAccess } from "./auth/policy";
 import type { SessionInfo } from "./auth/db";
+import { normalizeUsername } from "./auth/db";
+import { validatePassword } from "./auth/hash";
 import {
   OUTPUT_SOURCE_PRIORITY,
   CHARGER_SOURCE_PRIORITY,
@@ -135,6 +137,87 @@ export function createServer(inverter: Inverter, cfg: Config, stats: StatsRecord
       next();
     }
   );
+
+  app.get("/api/users", (_req, res) => {
+    res.json(auth.db.listUsers());
+  });
+
+  app.post("/api/users", (req, res) => {
+    try {
+      const { username, role, password } = req.body ?? {};
+      if (role !== "admin" && role !== "viewer") {
+        return res.status(400).json({ ok: false, error: "role must be admin or viewer" });
+      }
+      if (typeof password !== "string") {
+        return res.status(400).json({ ok: false, error: "password required" });
+      }
+      validatePassword(password);
+      const uname = normalizeUsername(String(username ?? ""));
+      if (auth.db.getByUsername(uname)) {
+        return res.status(409).json({ ok: false, code: "exists", error: "Username already exists" });
+      }
+      const user = auth.db.createUser(uname, password, role, true, Date.now());
+      res.json({ ok: true, user });
+    } catch (e) {
+      res.status(400).json({ ok: false, error: (e as Error).message });
+    }
+  });
+
+  app.patch("/api/users/:id", (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { role } = req.body ?? {};
+      if (role !== "admin" && role !== "viewer") {
+        return res.status(400).json({ ok: false, error: "role must be admin or viewer" });
+      }
+      const target = auth.db.getById(id);
+      if (!target) return res.status(404).json({ ok: false, error: "User not found" });
+      // Нельзя понизить последнего админа.
+      if (target.role === "admin" && role === "viewer" && auth.db.countAdmins() <= 1) {
+        return res.status(409).json({ ok: false, code: "last_admin", error: "Cannot demote the last admin" });
+      }
+      auth.db.updateRole(id, role, Date.now());
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(400).json({ ok: false, error: (e as Error).message });
+    }
+  });
+
+  app.post("/api/users/:id/reset-password", (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { newPassword } = req.body ?? {};
+      if (typeof newPassword !== "string") {
+        return res.status(400).json({ ok: false, error: "newPassword required" });
+      }
+      validatePassword(newPassword);
+      const target = auth.db.getById(id);
+      if (!target) return res.status(404).json({ ok: false, error: "User not found" });
+      auth.db.setPassword(id, newPassword, true, Date.now());
+      auth.db.deleteSessionsForUser(id, null); // разлогинить пользователя
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(400).json({ ok: false, error: (e as Error).message });
+    }
+  });
+
+  app.delete("/api/users/:id", (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const target = auth.db.getById(id);
+      if (!target) return res.status(404).json({ ok: false, error: "User not found" });
+      if (id === req.user!.userId) {
+        return res.status(409).json({ ok: false, code: "self_delete", error: "Cannot delete yourself" });
+      }
+      if (target.role === "admin" && auth.db.countAdmins() <= 1) {
+        return res.status(409).json({ ok: false, code: "last_admin", error: "Cannot delete the last admin" });
+      }
+      auth.db.deleteUser(id);
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(400).json({ ok: false, error: (e as Error).message });
+    }
+  });
 
   app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
