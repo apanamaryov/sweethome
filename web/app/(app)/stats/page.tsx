@@ -109,11 +109,13 @@ export default function StatsPage() {
     };
   }, [from, to, energyBucket, evType]);
 
-  const powerSeries: ChartSeries[] = [
-    { label: t.stSeriesPv, stroke: "#f59e0b", unit: t.capW },
-    { label: t.stSeriesLoad, stroke: "#3b82f6", unit: t.capW },
-    { label: t.stSeriesGrid, stroke: "#8b5cf6", unit: t.capW },
-    { label: t.stSeriesBatt, stroke: "#10b981", unit: t.capW },
+  // Мощность — по одному графику на показатель (общий график с 4 линиями
+  // разных масштабов читался плохо).
+  const powerCharts: { field: string; label: string; stroke: string }[] = [
+    { field: "pvPower", label: t.stSeriesPv, stroke: "#f59e0b" },
+    { field: "acOutputActivePower", label: t.stSeriesLoad, stroke: "#3b82f6" },
+    { field: "mainsPower", label: t.stSeriesGrid, stroke: "#8b5cf6" },
+    { field: "batteryPower", label: t.stSeriesBatt, stroke: "#10b981" },
   ];
   const battSeries: ChartSeries[] = [
     { label: t.stSeriesSoc, stroke: "#10b981", scale: "pct", unit: "%" },
@@ -215,15 +217,18 @@ export default function StatsPage() {
 
       {rows !== null && rows.length > 0 && (
         <>
-          <section className="stats-section">
-            <h3>{t.stChartPower}</h3>
-            <div className="chart-box">
-              <TimeChart
-                data={aligned(rows, ["pvPower", "acOutputActivePower", "mainsPower", "batteryPower"])}
-                series={powerSeries}
-              />
-            </div>
-          </section>
+          {powerCharts.map((c) => (
+            <section className="stats-section" key={c.field}>
+              <h3>{c.label}</h3>
+              <div className="chart-box">
+                <TimeChart
+                  data={aligned(rows, [c.field])}
+                  series={[{ label: c.label, stroke: c.stroke, unit: t.capW }]}
+                  height={160}
+                />
+              </div>
+            </section>
+          ))}
           <section className="stats-section">
             <h3>{t.stChartBattery}</h3>
             <div className="chart-box">
