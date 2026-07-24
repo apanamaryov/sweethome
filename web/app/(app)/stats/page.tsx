@@ -171,7 +171,7 @@ export default function StatsPage() {
   const exportQs = `from=${from.getTime()}&to=${to.getTime()}`;
 
   return (
-    <main>
+    <main className="stats">
       <div className="stats-controls">
         <span className="seg">
           {(["day", "week", "month"] as const).map((k) => (
@@ -184,8 +184,8 @@ export default function StatsPage() {
           <button onClick={() => setAnchor(shift(kind, anchor, -1))}>{t.stPrev}</button>
           <button onClick={() => setAnchor(shift(kind, anchor, 1))}>{t.stNext}</button>
         </span>
-        <strong>{periodLabel}</strong>
-        <span style={{ marginLeft: "auto" }}>
+        <strong className="stats-period">{periodLabel}</strong>
+        <span className="stats-export">
           <a href={`/api/stats/export.csv?${exportQs}&res=raw`} download>{t.stExportRaw}</a>
           {" · "}
           <a href={`/api/stats/export.csv?${exportQs}&res=minute`} download>{t.stExportMinute}</a>
@@ -200,22 +200,28 @@ export default function StatsPage() {
         <>
           <section className="stats-section">
             <h3>{t.stChartPower}</h3>
-            <TimeChart
-              data={aligned(rows, ["pvPower", "acOutputActivePower", "mainsPower", "batteryPower"])}
-              series={powerSeries}
-            />
+            <div className="chart-box">
+              <TimeChart
+                data={aligned(rows, ["pvPower", "acOutputActivePower", "mainsPower", "batteryPower"])}
+                series={powerSeries}
+              />
+            </div>
           </section>
           <section className="stats-section">
             <h3>{t.stChartBattery}</h3>
-            <TimeChart data={aligned(rows, ["batteryCapacity", "batteryVoltage"])} series={battSeries} />
+            <div className="chart-box">
+              <TimeChart data={aligned(rows, ["batteryCapacity", "batteryVoltage"])} series={battSeries} />
+            </div>
           </section>
           <section className="stats-section">
             <h3>{t.stChartTemp}</h3>
-            <TimeChart
-              data={aligned(rows, ["dcdcTemperature", "heatSinkTemperature"])}
-              series={tempSeries}
-              height={160}
-            />
+            <div className="chart-box">
+              <TimeChart
+                data={aligned(rows, ["dcdcTemperature", "heatSinkTemperature"])}
+                series={tempSeries}
+                height={160}
+              />
+            </div>
           </section>
         </>
       )}
@@ -223,38 +229,40 @@ export default function StatsPage() {
       {daily.length > 0 && (
         <section className="stats-section">
           <h3>{t.stDailyTitle}</h3>
-          <table className="stats-table">
-            <thead>
-              <tr>
-                <th>{t.stThDay}</th>
-                <th></th>
-                <th>{t.stThPv}</th>
-                <th>{t.stThLoad}</th>
-                <th>{t.stThGrid}</th>
-                <th>{t.stThCharge}</th>
-                <th>{t.stThDischarge}</th>
-                <th>{t.stThSoc}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {daily.map((r) => (
-                <tr key={r.day}>
-                  <td>{r.day}</td>
-                  <td style={{ width: "30%" }}>
-                    <span className="stats-bar" style={{ width: `${(r.pv_wh / maxWh) * 100}%` }} />
-                  </td>
-                  <td>{kwh(r.pv_wh)}</td>
-                  <td>{kwh(r.load_wh)}</td>
-                  <td>{kwh(r.grid_wh)}</td>
-                  <td>{kwh(r.batt_charge_wh)}</td>
-                  <td>{kwh(r.batt_discharge_wh)}</td>
-                  <td>
-                    {r.soc_min ?? "—"}/{r.soc_max ?? "—"}%
-                  </td>
+          <div className="table-scroll">
+            <table className="stats-table stats-daily">
+              <thead>
+                <tr>
+                  <th>{t.stThDay}</th>
+                  <th></th>
+                  <th>{t.stThPv}</th>
+                  <th>{t.stThLoad}</th>
+                  <th>{t.stThGrid}</th>
+                  <th>{t.stThCharge}</th>
+                  <th>{t.stThDischarge}</th>
+                  <th>{t.stThSoc}</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {daily.map((r) => (
+                  <tr key={r.day}>
+                    <td>{r.day}</td>
+                    <td className="stats-bar-cell">
+                      <span className="stats-bar" style={{ width: `${(r.pv_wh / maxWh) * 100}%` }} />
+                    </td>
+                    <td>{kwh(r.pv_wh)}</td>
+                    <td>{kwh(r.load_wh)}</td>
+                    <td>{kwh(r.grid_wh)}</td>
+                    <td>{kwh(r.batt_charge_wh)}</td>
+                    <td>{kwh(r.batt_discharge_wh)}</td>
+                    <td>
+                      {r.soc_min ?? "—"}/{r.soc_max ?? "—"}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
 
@@ -270,17 +278,19 @@ export default function StatsPage() {
         {events.length === 0 ? (
           <div className="muted">{t.stNoData}</div>
         ) : (
-          <table className="stats-table stats-events">
-            <tbody>
-              {events.map((e) => (
-                <tr key={e.id}>
-                  <td>{fmtT(e.ts)}</td>
-                  <td>{evLabel(e.type)}</td>
-                  <td>{evText(e)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="table-scroll">
+            <table className="stats-table stats-events">
+              <tbody>
+                {events.map((e) => (
+                  <tr key={e.id}>
+                    <td>{fmtT(e.ts)}</td>
+                    <td>{evLabel(e.type)}</td>
+                    <td>{evText(e)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
     </main>

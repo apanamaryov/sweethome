@@ -60,5 +60,5 @@ export default function TimeChart({
     };
   }, [data, series, height]);
   if (!data[0]?.length) return <div className="muted">—</div>;
-  return <div ref={ref} />;
+  return <div className="chart" ref={ref} />;
 }
