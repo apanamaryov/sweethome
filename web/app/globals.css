@@ -490,16 +490,27 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
   gap: 6px;
   /* Нижний отступ — общий вертикальный ритм для контента всех вкладок
      (сетка дашборда за это отдаёт свой верхний padding). */
-  margin: 10px 14px 16px;
+  margin: 10px 0 16px 14px;
+  /* Четыре вкладки с длинными метками (Налаштування/Діагностика) не влезают
+     в строку телефона — горизонтальный скролл-стрип вместо переноса. Правый
+     padding вместо margin: край стрипа доходит до кромки экрана, поэтому
+     следующая вкладка «выглядывает» — это подсказка, что можно листать. */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-right: 14px;
+  scrollbar-width: none; /* Firefox: полоса не нужна, есть свайп/выглядывание */
 }
+.nav-tabs::-webkit-scrollbar { display: none; } /* WebKit */
 .nav-tabs a {
+  flex: 0 0 auto;         /* не сжимать и не переносить — вкладки держат размер */
+  white-space: nowrap;
   padding: 6px 14px;
   border: 1px solid var(--hairline);
   background: var(--paper-0);
   color: var(--ink-soft);
   text-decoration: none;
   font-variant: small-caps;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   font-size: 15px;
 }
 .nav-tabs a.active {
