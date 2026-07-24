@@ -46,7 +46,7 @@ export function useT(): Dict {
 }
 
 /** Заголовок вкладки, следит за сменой языка. */
-export function useDocTitle(key: "title" | "loginTitle") {
+export function useDocTitle(key: "title" | "loginTitle" | "changePwTitle") {
   const dict = useT();
   useEffect(() => {
     document.title = dict[key];
