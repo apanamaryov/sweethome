@@ -168,6 +168,39 @@ export class StatsDb {
     this.setMetaStmt.run(key, value);
   }
 
+  /** Свернуть полностью прошедшие минуты. Возвращает число вставленных строк. */
+  rollupMinutes(nowMs: number, pollIntervalMs: number): number {
+    const upto = Math.floor(nowMs / 60_000) * 60_000; // текущая минута не трогается
+    const from = Number(this.getMeta("minute_rollup_ts") ?? 0);
+    if (upto <= from) return 0;
+    const k = pollIntervalMs / 3_600_000; // Вт → Вт·ч на один снапшот
+    const info = this.minuteStmt.run(k, k, k, k, k, from, upto);
+    this.setMeta("minute_rollup_ts", String(upto));
+    return Number(info.changes);
+  }
+
+  /** Свернуть завершённые локальные дни. Возвращает число свёрнутых дней. */
+  rollupDaily(nowMs: number): number {
+    const today = localDay(nowMs);
+    const last = this.getMeta("daily_rollup_day") ?? "";
+    const days = this.db
+      .prepare(
+        `SELECT DISTINCT ${DAY_EXPR} AS day FROM samples_minute
+         WHERE ${DAY_EXPR} > ? AND ${DAY_EXPR} < ? ORDER BY 1`
+      )
+      .all(last, today) as Array<{ day: string }>;
+    for (const { day } of days) this.dailyStmt.run({ day });
+    // Идемпотентный REPLACE делает возможный DST-сдвиг «вчера» безвредным.
+    this.setMeta("daily_rollup_day", localDay(nowMs - 86_400_000));
+    return days.length;
+  }
+
+  /** Удалить сырьё старше rawDays и поминутки старше minuteDays. */
+  prune(nowMs: number, rawDays: number, minuteDays: number): void {
+    this.db.prepare("DELETE FROM samples WHERE ts < ?").run(nowMs - rawDays * 86_400_000);
+    this.db.prepare("DELETE FROM samples_minute WHERE ts < ?").run(nowMs - minuteDays * 86_400_000);
+  }
+
   querySeries(
     fields: GaugeField[],
     from: number,
