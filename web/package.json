@@ -11,7 +11,8 @@
     "@inverter/shared": "1.0.0",
     "next": "^15.3.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "uplot": "^1.6.31"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
