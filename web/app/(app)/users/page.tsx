@@ -110,9 +110,9 @@ export default function UsersPage() {
                       <option value="viewer">{t.usersRoleViewer}</option>
                     </select>
                   </td>
-                  <td className="row">
-                    <button onClick={() => resetPw(u)}>{t.usersResetPw}</button>
-                    <button onClick={() => del(u)}>{t.usersDelete}</button>
+                  <td className="users-actions">
+                    <button className="btn-ghost" onClick={() => resetPw(u)}>{t.usersResetPw}</button>
+                    <button className="btn-danger" onClick={() => del(u)}>{t.usersDelete}</button>
                   </td>
                 </tr>
               ))}
@@ -123,7 +123,7 @@ export default function UsersPage() {
 
       <section className="panel">
         <h2>{t.usersAdd}</h2>
-        <div className="row">
+        <div className="row users-add">
           <input value={uname} onChange={(e) => setUname(e.target.value)} placeholder={t.loginUsername} />
           <input
             type="password"
