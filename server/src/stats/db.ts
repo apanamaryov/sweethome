@@ -53,6 +53,8 @@ export class StatsDb {
   private setMetaStmt!: StatementSync;
   private minuteStmt!: StatementSync;
   private dailyStmt!: StatementSync;
+  private dailyQueryStmt!: StatementSync;
+  private exportStmt!: { raw: StatementSync; minute: StatementSync };
 
   constructor(file: string) {
     this.db = new DatabaseSync(file);
@@ -131,6 +133,11 @@ export class StatsDb {
       FROM samples_minute
       WHERE ${DAY_EXPR} = $day
     `);
+    this.dailyQueryStmt = this.db.prepare("SELECT * FROM daily WHERE day >= ? AND day <= ? ORDER BY day");
+    this.exportStmt = {
+      raw: this.db.prepare(`SELECT ${SAMPLE_COLS.join(", ")} FROM samples WHERE ts > ? AND ts <= ? ORDER BY ts LIMIT ?`),
+      minute: this.db.prepare(`SELECT ${MINUTE_COLS.join(", ")} FROM samples_minute WHERE ts > ? AND ts <= ? ORDER BY ts LIMIT ?`),
+    };
   }
 
   transaction(fn: () => void): void {
@@ -171,6 +178,7 @@ export class StatsDb {
     const cols =
       res === "raw" ? fields.join(", ") : fields.map((f) => `${f}_avg AS ${f}`).join(", ");
     const table = res === "raw" ? "samples" : "samples_minute";
+    // SQL динамический (состав полей) — кэшировать statement нецелесообразно
     const rows = this.db
       .prepare(`SELECT ts AS t, ${cols} FROM ${table} WHERE ts >= ? AND ts <= ? ORDER BY ts`)
       .all(from, to) as Array<Record<string, number | null>>;
@@ -180,9 +188,7 @@ export class StatsDb {
   }
 
   queryDaily(fromDay: string, toDay: string): Array<Record<string, unknown>> {
-    return this.db
-      .prepare("SELECT * FROM daily WHERE day >= ? AND day <= ? ORDER BY day")
-      .all(fromDay, toDay) as Array<Record<string, unknown>>;
+    return this.dailyQueryStmt.all(fromDay, toDay) as Array<Record<string, unknown>>;
   }
 
   queryEvents(opts: {
@@ -197,6 +203,7 @@ export class StatsDb {
     if (opts.from !== undefined) { where.push("ts >= ?"); params.push(opts.from); }
     if (opts.to !== undefined) { where.push("ts <= ?"); params.push(opts.to); }
     if (opts.type) { where.push("type = ?"); params.push(opts.type); }
+    // SQL динамический (WHERE-условия) — кэшировать statement нецелесообразно
     const sql = `SELECT id, ts, type, detail FROM events
       ${where.length ? "WHERE " + where.join(" AND ") : ""}
       ORDER BY ts DESC, id DESC LIMIT ? OFFSET ?`;
@@ -216,11 +223,7 @@ export class StatsDb {
     to: number,
     limit: number
   ): Array<Record<string, unknown>> {
-    const table = kind === "raw" ? "samples" : "samples_minute";
-    return this.db
-      .prepare(`SELECT ${this.exportColumns(kind).join(", ")} FROM ${table}
-        WHERE ts > ? AND ts <= ? ORDER BY ts LIMIT ?`)
-      .all(afterTs, to, limit) as Array<Record<string, unknown>>;
+    return this.exportStmt[kind].all(afterTs, to, limit) as Array<Record<string, unknown>>;
   }
 
   /** Сырой SELECT для selfcheck и диагностики. */
