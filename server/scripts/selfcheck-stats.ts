@@ -1,5 +1,5 @@
 import assert from "assert";
-import { StatsDb, SAMPLE_FIELDS, SampleRow, localDay } from "../src/stats/db";
+import { StatsDb, SAMPLE_FIELDS, SampleRow, localDay, prevCalendarDay } from "../src/stats/db";
 
 /** Сэмпл со всеми нулями + переопределения. */
 export function sample(
@@ -97,6 +97,9 @@ assert.strictEqual(d.soc_max, 81);
 assert.strictEqual(d.grid_loss_count, 1);
 assert.strictEqual(d.sample_count, 12);
 assert.strictEqual(db2.rollupDaily(NOW), 0, "idempotent: no new days");
+assert.strictEqual(db2.getMeta("daily_rollup_day"), "2026-07-23", "watermark = календарное вчера");
+assert.strictEqual(prevCalendarDay("2026-03-01"), "2026-02-28", "prevCalendarDay: граница месяца");
+assert.strictEqual(prevCalendarDay("2026-01-01"), "2025-12-31", "prevCalendarDay: граница года");
 
 // ---------- 9. Retention ----------
 db2.insertSample(sample(NOW - 40 * 86_400_000)); // сырьё старше 30 дней

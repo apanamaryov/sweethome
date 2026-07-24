@@ -36,6 +36,12 @@ export function localDay(ms: number): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
+/** Календарный день перед `day` (YYYY-MM-DD) — через полдень, безопасно к DST. */
+export function prevCalendarDay(day: string): string {
+  const [y, m, d] = day.split("-").map(Number);
+  return localDay(new Date(y, m - 1, d - 1, 12).getTime());
+}
+
 const ENERGY_COLS = ["pv_wh", "load_wh", "grid_wh", "batt_charge_wh", "batt_discharge_wh"];
 const SAMPLE_COLS = ["ts", "mode", ...SAMPLE_FIELDS];
 const MINUTE_COLS = [
@@ -190,8 +196,10 @@ export class StatsDb {
       )
       .all(last, today) as Array<{ day: string }>;
     for (const { day } of days) this.dailyStmt.run({ day });
-    // Идемпотентный REPLACE делает возможный DST-сдвиг «вчера» безвредным.
-    this.setMeta("daily_rollup_day", localDay(nowMs - 86_400_000));
+    // Watermark — календарное «вчера» от today (не now-24ч: на 25-часовом дне
+    // осеннего перевода это выражение может вернуть сам today и навсегда
+    // пропустить его свёртку).
+    this.setMeta("daily_rollup_day", prevCalendarDay(today));
     return days.length;
   }
 
