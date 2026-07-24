@@ -7,6 +7,7 @@ import { LangSwitch } from "@/components/LangSwitch";
 export default function LoginPage() {
   const t = useT();
   useDocTitle("loginTitle");
+  const [user, setUser] = useState("");
   const [pw, setPw] = useState("");
   const [err, setErr] = useState<string | null>(null);
 
@@ -18,11 +19,11 @@ export default function LoginPage() {
       const res = await fetch("/api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: pw }),
+        body: JSON.stringify({ username: user, password: pw }),
       });
       const data = await res.json();
       if (data.ok) {
-        window.location.href = "/";
+        window.location.href = data.mustChangePassword ? "/change-password" : "/";
         return;
       }
       let msg: string = data.error || t.toastError;
@@ -41,12 +42,19 @@ export default function LoginPage() {
         <p className="note">{t.loginNote}</p>
         <form className="row" onSubmit={submit}>
           <input
+            type="text"
+            value={user}
+            onChange={(e) => setUser(e.target.value)}
+            placeholder={t.loginUsername}
+            autoComplete="username"
+            autoFocus
+          />
+          <input
             type="password"
             value={pw}
             onChange={(e) => setPw(e.target.value)}
             placeholder={t.loginPassword}
             autoComplete="current-password"
-            autoFocus
           />
           <button className="apply" type="submit">
             {t.loginSubmit}

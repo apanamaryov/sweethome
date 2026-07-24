@@ -2,7 +2,20 @@ export function redirectToLogin(): void {
   window.location.href = "/login";
 }
 
-/** POST JSON. При 401 уводит на /login и бросает. Ответ разбирает вызывающий. */
+/** 403 с кодом must_change_password уводит на смену пароля. Возвращает true, если обработал. */
+async function redirectIfMustChange(res: Response): Promise<boolean> {
+  if (res.status !== 403) return false;
+  try {
+    const data = await res.clone().json();
+    if (data?.code === "must_change_password") {
+      window.location.href = "/change-password";
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+/** POST JSON. 401 → /login; 403 must_change → /change-password. */
 export async function postJson(path: string, body: unknown): Promise<Response> {
   const res = await fetch(path, {
     method: "POST",
@@ -13,16 +26,18 @@ export async function postJson(path: string, body: unknown): Promise<Response> {
     redirectToLogin();
     throw new Error("Unauthorized");
   }
+  if (await redirectIfMustChange(res)) throw new Error("Password change required");
   return res;
 }
 
-/** GET JSON. При 401 уводит на /login и бросает; при не-2xx бросает. */
+/** GET JSON. 401 → /login; 403 must_change → /change-password; иначе не-2xx бросает. */
 export async function getJson<T>(path: string): Promise<T> {
   const res = await fetch(path);
   if (res.status === 401) {
     redirectToLogin();
     throw new Error("Unauthorized");
   }
+  if (await redirectIfMustChange(res)) throw new Error("Password change required");
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return (await res.json()) as T;
 }
