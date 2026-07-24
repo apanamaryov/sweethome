@@ -103,8 +103,9 @@ export class Auth {
     this.db.deleteSessionsForUser(row.id, s.tokenHash); // разлогинить прочие устройства
   }
 
-  cookie(token: string): string {
-    return `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(this.ttlMs / 1000)}`;
+  cookie(token: string, secure: boolean): string {
+    const base = `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(this.ttlMs / 1000)}`;
+    return secure ? `${base}; Secure` : base;
   }
 
   clearCookie(): string {

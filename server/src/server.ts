@@ -37,6 +37,7 @@ const CONTROL_TYPES: ControlType[] = [
 
 export function createServer(inverter: Inverter, cfg: Config, stats: StatsRecorder | null): http.Server {
   const app = express();
+  app.set("trust proxy", 1); // ровно один прокси-хоп — Caddy на Pi (см. CLAUDE.md); dev без прокси не мешает
   app.use(express.json());
 
   const auth = new Auth(cfg.dataDir, cfg.auth.sessionTtlDays);
@@ -69,11 +70,11 @@ export function createServer(inverter: Inverter, cfg: Config, stats: StatsRecord
       return res.status(400).json({ ok: false, error: "username and password must be strings" });
     }
     try {
-      const result = auth.login(username, password, req.socket.remoteAddress ?? "unknown");
+      const result = auth.login(username, password, req.ip ?? "unknown");
       if (!result) {
         return res.status(401).json({ ok: false, code: "bad_password", error: "Wrong credentials" });
       }
-      res.setHeader("Set-Cookie", auth.cookie(result.token));
+      res.setHeader("Set-Cookie", auth.cookie(result.token, req.secure));
       res.json({ ok: true, role: result.user.role, mustChangePassword: result.user.mustChangePassword });
     } catch (e) {
       const err = e as Error & { code?: number; retryMinutes?: number };
@@ -418,7 +419,8 @@ export function createServer(inverter: Inverter, cfg: Config, stats: StatsRecord
   inverter.on("snapshot", broadcast);
 
   wss.on("connection", (ws, req) => {
-    if (!auth.verify(tokenFromCookieHeader(req.headers.cookie))) {
+    const s = auth.verify(tokenFromCookieHeader(req.headers.cookie));
+    if (!s || s.mustChangePassword) {
       ws.close(4401, "Unauthorized");
       return;
     }
