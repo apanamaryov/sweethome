@@ -2,6 +2,7 @@ import { loadConfig } from "./config";
 import { Inverter } from "./inverter";
 import { createServer } from "./server";
 import { HaMqtt } from "./mqtt";
+import { createStats } from "./stats/recorder";
 
 // Safety net: a long-running device service must survive stray async errors
 // from native transports (e.g. a benign serialport 'error' after unplug) rather
@@ -17,7 +18,11 @@ async function main(): Promise<void> {
   const cfg = loadConfig();
   const inverter = new Inverter(cfg);
 
-  const server = createServer(inverter, cfg);
+  const stats = createStats(cfg);
+  if (stats) stats.attach(inverter);
+  console.log(`[inverter-monitor] stats: ${stats ? "enabled (stats.db)" : "disabled"}`);
+
+  const server = createServer(inverter, cfg, stats);
   // A failed bind (e.g. port already in use) must be fatal: the global
   // uncaughtException guard would otherwise keep a listener-less process
   // alive, hiding the failure from systemd.
@@ -48,6 +53,7 @@ async function main(): Promise<void> {
   const shutdown = async (sig: string) => {
     console.log(`\n[inverter-monitor] ${sig} received, shutting down...`);
     mqtt.stop();
+    stats?.stop();
     await inverter.stop();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 2000);

@@ -17,6 +17,12 @@ export interface Config {
   autoRelock: boolean;
   /** Where to persist the settings baseline. */
   dataDir: string;
+  /** Статистика/история в SQLite. */
+  stats: {
+    enabled: boolean;
+    rawDays: number; //    retention сырых 5-сек снапшотов
+    minuteDays: number; // retention поминутных агрегатов
+  };
   /** Web/API authentication. */
   auth: {
     password: string | null; // null = auth disabled (open LAN mode)
@@ -64,6 +70,11 @@ export function loadConfig(): Config {
     startupLocked: envBool("STARTUP_LOCKED", true),
     autoRelock: envBool("AUTO_RELOCK", true),
     dataDir: process.env.DATA_DIR || "data",
+    stats: {
+      enabled: envBool("STATS_ENABLED", true),
+      rawDays: envInt("STATS_RAW_DAYS", 30),
+      minuteDays: envInt("STATS_MINUTE_DAYS", 730),
+    },
     auth: {
       password: process.env.AUTH_PASSWORD || null,
       sessionTtlDays: envInt("AUTH_SESSION_TTL_DAYS", 30),

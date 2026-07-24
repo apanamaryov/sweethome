@@ -1,7 +1,9 @@
+import path from "path";
 import { Snapshot } from "@inverter/shared";
 import { Inverter } from "../inverter";
 import { FAULTS } from "../protocol/smg";
 import { localDay, SAMPLE_FIELDS, SampleRow, StatsDb, StatsEventRow } from "./db";
+import { Config } from "../config";
 
 export interface RecorderOpts {
   pollIntervalMs: number;
@@ -147,5 +149,21 @@ export class StatsRecorder {
     this.timer = null;
     this.flush();
     this.db.close();
+  }
+}
+
+/** Открывает БД и создаёт recorder; при любой ошибке статистика выключается, демон живёт. */
+export function createStats(cfg: Config): StatsRecorder | null {
+  if (!cfg.stats.enabled) return null;
+  try {
+    const db = new StatsDb(path.join(cfg.dataDir, "stats.db"));
+    return new StatsRecorder(db, {
+      pollIntervalMs: cfg.pollIntervalMs,
+      rawDays: cfg.stats.rawDays,
+      minuteDays: cfg.stats.minuteDays,
+    });
+  } catch (e) {
+    console.error("[inverter-monitor] stats disabled (DB open failed):", (e as Error).message);
+    return null;
   }
 }
