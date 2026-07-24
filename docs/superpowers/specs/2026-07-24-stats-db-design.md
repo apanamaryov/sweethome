@@ -50,7 +50,7 @@
 
 ### `samples` — сырьё, 30 дней
 
-`ts INTEGER PRIMARY KEY` + `mode INTEGER` + все 20 числовых полей `InverterStatus`
+`ts INTEGER PRIMARY KEY` + `mode TEXT` (DeviceMode строкой) + все 20 числовых полей `InverterStatus`
 (`gridVoltage`, `gridFrequency`, `mainsPower`, `inverterPower`, `acOutputVoltage`,
 `acOutputFrequency`, `acOutputActivePower`, `acOutputApparentPower`,
 `outputLoadPercent`, `batteryVoltage`, `batteryPower`, `batteryChargingCurrent`,
