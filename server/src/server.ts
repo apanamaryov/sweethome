@@ -149,70 +149,94 @@ export function createServer(inverter: Inverter, cfg: Config, stats: StatsRecord
   };
 
   app.get("/api/stats/series", (req, res) => {
-    if (!stats) return res.status(503).json({ ok: false, error: "stats unavailable" });
-    const fields = String(req.query.fields ?? "").split(",").filter(Boolean);
-    if (!fields.length || fields.some((f) => !(GAUGE_FIELDS as readonly string[]).includes(f))) {
-      return res
-        .status(400)
-        .json({ ok: false, error: `fields: comma list of ${GAUGE_FIELDS.join(", ")}` });
+    try {
+      if (!stats) return res.status(503).json({ ok: false, error: "stats unavailable" });
+      const fields = String(req.query.fields ?? "").split(",").filter(Boolean);
+      if (!fields.length || fields.some((f) => !(GAUGE_FIELDS as readonly string[]).includes(f))) {
+        return res
+          .status(400)
+          .json({ ok: false, error: `fields: comma list of ${GAUGE_FIELDS.join(", ")}` });
+      }
+      const from = parseTime(req.query.from);
+      const to = parseTime(req.query.to);
+      if (from === null || to === null || to <= from) {
+        return res.status(400).json({ ok: false, error: "bad from/to" });
+      }
+      const r = String(req.query.res ?? "auto");
+      const eff: "raw" | "minute" =
+        r === "raw" || r === "minute"
+          ? (r as "raw" | "minute")
+          : to - from <= 6 * 3_600_000
+            ? "raw"
+            : "minute";
+      res.json(stats.db.querySeries(fields as GaugeField[], from, to, eff));
+    } catch (e) {
+      console.error("[inverter-monitor] stats query failed:", (e as Error).message);
+      res.status(503).json({ ok: false, error: "stats unavailable" });
     }
-    const from = parseTime(req.query.from);
-    const to = parseTime(req.query.to);
-    if (from === null || to === null || to <= from) {
-      return res.status(400).json({ ok: false, error: "bad from/to" });
-    }
-    const r = String(req.query.res ?? "auto");
-    const eff: "raw" | "minute" =
-      r === "raw" || r === "minute"
-        ? (r as "raw" | "minute")
-        : to - from <= 6 * 3_600_000
-          ? "raw"
-          : "minute";
-    res.json(stats.db.querySeries(fields as GaugeField[], from, to, eff));
   });
 
   app.get("/api/stats/daily", (req, res) => {
-    if (!stats) return res.status(503).json({ ok: false, error: "stats unavailable" });
-    const day = /^\d{4}-\d{2}-\d{2}$/;
-    const from = String(req.query.from ?? "");
-    const to = String(req.query.to ?? "");
-    if (!day.test(from) || !day.test(to)) {
-      return res.status(400).json({ ok: false, error: "from/to must be YYYY-MM-DD" });
+    try {
+      if (!stats) return res.status(503).json({ ok: false, error: "stats unavailable" });
+      const day = /^\d{4}-\d{2}-\d{2}$/;
+      const from = String(req.query.from ?? "");
+      const to = String(req.query.to ?? "");
+      if (!day.test(from) || !day.test(to)) {
+        return res.status(400).json({ ok: false, error: "from/to must be YYYY-MM-DD" });
+      }
+      res.json(stats.db.queryDaily(from, to));
+    } catch (e) {
+      console.error("[inverter-monitor] stats query failed:", (e as Error).message);
+      res.status(503).json({ ok: false, error: "stats unavailable" });
     }
-    res.json(stats.db.queryDaily(from, to));
   });
 
   app.get("/api/stats/events", (req, res) => {
-    if (!stats) return res.status(503).json({ ok: false, error: "stats unavailable" });
-    const from = parseTime(req.query.from) ?? undefined;
-    const to = parseTime(req.query.to) ?? undefined;
-    const type = req.query.type ? String(req.query.type) : undefined;
-    const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 100));
-    const offset = Math.max(0, Number(req.query.offset) || 0);
-    res.json(stats.db.queryEvents({ from, to, type, limit, offset }));
+    try {
+      if (!stats) return res.status(503).json({ ok: false, error: "stats unavailable" });
+      const from = parseTime(req.query.from) ?? undefined;
+      const to = parseTime(req.query.to) ?? undefined;
+      const type = req.query.type ? String(req.query.type) : undefined;
+      const limit = Math.min(500, Math.max(1, Math.trunc(Number(req.query.limit) || 100)));
+      const offset = Math.max(0, Math.trunc(Number(req.query.offset) || 0));
+      res.json(stats.db.queryEvents({ from, to, type, limit, offset }));
+    } catch (e) {
+      console.error("[inverter-monitor] stats query failed:", (e as Error).message);
+      res.status(503).json({ ok: false, error: "stats unavailable" });
+    }
   });
 
   app.get("/api/stats/export.csv", (req, res) => {
-    if (!stats) return res.status(503).json({ ok: false, error: "stats unavailable" });
-    const from = parseTime(req.query.from);
-    const to = parseTime(req.query.to);
-    if (from === null || to === null || to <= from) {
-      return res.status(400).json({ ok: false, error: "bad from/to" });
+    try {
+      if (!stats) return res.status(503).json({ ok: false, error: "stats unavailable" });
+      const from = parseTime(req.query.from);
+      const to = parseTime(req.query.to);
+      if (from === null || to === null || to <= from) {
+        return res.status(400).json({ ok: false, error: "bad from/to" });
+      }
+      const kind = req.query.res === "minute" ? ("minute" as const) : ("raw" as const);
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="stats-${kind}-${from}-${to}.csv"`);
+      const cols = stats.db.exportColumns(kind);
+      res.write(cols.join(",") + "\n");
+      // Значения — числа и имя режима (без запятых/кавычек), экранирование CSV не требуется.
+      let after = from - 1;
+      for (;;) {
+        const chunk = stats.db.exportChunk(kind, after, to, 10_000);
+        if (!chunk.length) break;
+        res.write(chunk.map((r) => cols.map((c) => r[c] ?? "").join(",")).join("\n") + "\n");
+        after = Number(chunk[chunk.length - 1].ts);
+      }
+      res.end();
+    } catch (e) {
+      console.error("[inverter-monitor] stats query failed:", (e as Error).message);
+      if (!res.headersSent) {
+        res.status(503).json({ ok: false, error: "stats unavailable" });
+      } else {
+        res.destroy();
+      }
     }
-    const kind = req.query.res === "minute" ? ("minute" as const) : ("raw" as const);
-    res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename="stats-${kind}-${from}-${to}.csv"`);
-    const cols = stats.db.exportColumns(kind);
-    res.write(cols.join(",") + "\n");
-    // Значения — числа и имя режима (без запятых/кавычек), экранирование CSV не требуется.
-    let after = from - 1;
-    for (;;) {
-      const chunk = stats.db.exportChunk(kind, after, to, 10_000);
-      if (!chunk.length) break;
-      res.write(chunk.map((r) => cols.map((c) => r[c] ?? "").join(",")).join("\n") + "\n");
-      after = Number(chunk[chunk.length - 1].ts);
-    }
-    res.end();
   });
 
   app.post("/api/raw", async (req, res) => {

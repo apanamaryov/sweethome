@@ -125,6 +125,7 @@ function snap(
     grid?: number;
     warnings?: string[];
     status?: Partial<InverterStatus>;
+    deviceId?: string;
   } = {}
 ): Snapshot {
   const connected = over.connected ?? true;
@@ -138,7 +139,7 @@ function snap(
       connected,
       transport: connected ? "serial" : "none",
       device: "/dev/ttyUSB0",
-      deviceId: connected ? "smg-test" : null,
+      deviceId: connected ? (over.deviceId ?? "smg-test") : null,
       mock: false,
       lastError: connected ? null : "read timeout",
     },
@@ -194,5 +195,17 @@ assert.strictEqual(
   "Battery",
   "выжило последнее событие"
 );
+
+// ---------- 12. device-changed между рестартами через meta.device_id ----------
+const db5 = new StatsDb(":memory:");
+db5.setMeta("device_id", "old-dev");
+const rec3 = new StatsRecorder(db5, { pollIntervalMs: 5000, rawDays: 30, minuteDays: 730 });
+const D = Date.parse("2026-07-24T14:00:00");
+rec3.handleSnapshot(snap(D));
+rec3.flush(D + 1000);
+const dc = db5.queryEvents({ type: "device-changed", limit: 10, offset: 0 });
+assert.strictEqual(dc.length, 1, "device-changed после «рестарта» с другим устройством");
+assert.deepStrictEqual(JSON.parse(dc[0].detail), { from: "old-dev", to: "smg-test" });
+assert.strictEqual(db5.getMeta("device_id"), "smg-test", "meta.device_id обновлён");
 
 console.log("selfcheck-stats: db + rollups + recorder OK");

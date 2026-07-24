@@ -42,6 +42,18 @@ export function prevCalendarDay(day: string): string {
   return localDay(new Date(y, m - 1, d - 1, 12).getTime());
 }
 
+/** Unix ms локальной полуночи дня `day` (YYYY-MM-DD). */
+export function dayStartMs(day: string): number {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(y, m - 1, d, 0).getTime();
+}
+
+/** Unix ms локальной полуночи дня, СЛЕДУЮЩЕГО за `day`. DST-безопасно (компонентная арифметика). */
+export function nextDayStartMs(day: string): number {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(y, m - 1, d + 1, 0).getTime();
+}
+
 const ENERGY_COLS = ["pv_wh", "load_wh", "grid_wh", "batt_charge_wh", "batt_discharge_wh"];
 const SAMPLE_COLS = ["ts", "mode", ...SAMPLE_FIELDS];
 const MINUTE_COLS = [
@@ -134,10 +146,11 @@ export class StatsDb {
       SELECT $day, ${ENERGY_COLS.map((c) => `sum(${c})`).join(", ")},
         min(batteryCapacity_min), max(batteryCapacity_max),
         (SELECT COUNT(*) FROM events e WHERE e.type = 'grid-loss'
+           AND e.ts >= $dayStart AND e.ts < $dayEnd
            AND strftime('%Y-%m-%d', e.ts / 1000, 'unixepoch', 'localtime') = $day),
         sum(sample_count)
       FROM samples_minute
-      WHERE ${DAY_EXPR} = $day
+      WHERE ts >= $dayStart AND ts < $dayEnd AND ${DAY_EXPR} = $day
     `);
     this.dailyQueryStmt = this.db.prepare("SELECT * FROM daily WHERE day >= ? AND day <= ? ORDER BY day");
     this.exportStmt = {
@@ -189,13 +202,14 @@ export class StatsDb {
   rollupDaily(nowMs: number): number {
     const today = localDay(nowMs);
     const last = this.getMeta("daily_rollup_day") ?? "";
+    const minTs = last ? nextDayStartMs(last) : 0;
     const days = this.db
       .prepare(
         `SELECT DISTINCT ${DAY_EXPR} AS day FROM samples_minute
-         WHERE ${DAY_EXPR} > ? AND ${DAY_EXPR} < ? ORDER BY 1`
+         WHERE ts >= ? AND ${DAY_EXPR} > ? AND ${DAY_EXPR} < ? ORDER BY 1`
       )
-      .all(last, today) as Array<{ day: string }>;
-    for (const { day } of days) this.dailyStmt.run({ day });
+      .all(minTs, last, today) as Array<{ day: string }>;
+    for (const { day } of days) this.dailyStmt.run({ day, dayStart: dayStartMs(day), dayEnd: nextDayStartMs(day) });
     // Watermark — календарное «вчера» от today (не now-24ч: на 25-часовом дне
     // осеннего перевода это выражение может вернуть сам today и навсегда
     // пропустить его свёртку).

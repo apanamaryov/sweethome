@@ -40,6 +40,7 @@ export class StatsRecorder {
     this.gridPresentVolts = opts.gridPresentVolts ?? 100;
     // Потолок буфера ~10 минут: при хронических ошибках флаша старьё выбрасывается.
     this.maxBuffered = Math.max(1, Math.ceil(600_000 / opts.pollIntervalMs));
+    this.prevDeviceId = db.getMeta("device_id");
   }
 
   attach(inverter: Inverter): void {
@@ -130,6 +131,9 @@ export class StatsRecorder {
         });
         this.buf = [];
         this.pending = [];
+        if (this.prevDeviceId && this.prevDeviceId !== this.db.getMeta("device_id")) {
+          this.db.setMeta("device_id", this.prevDeviceId);
+        }
       }
       this.db.rollupMinutes(nowMs, this.opts.pollIntervalMs);
       this.db.rollupDaily(nowMs);
