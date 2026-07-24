@@ -579,18 +579,22 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
 .stats-events td:last-child { white-space: normal; min-width: 14ch; }
 
 /* ---------- страница «Пользователи» ---------- */
-.users-table { width: 100%; border-collapse: collapse; }
-.users-table th, .users-table td {
-  text-align: left;
-  padding: 8px 8px;
-  border-bottom: 1px solid var(--hairline);
-  vertical-align: middle;
+.users-list { display: flex; flex-direction: column; gap: 10px; }
+.user-card {
+  border: 1px solid var(--hairline);
+  background: var(--paper-0);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
-.users-table th { font-size: 13px; font-weight: 700; }
-.users-table td:first-child, .users-table th:first-child { width: 1%; white-space: nowrap; color: var(--ink-soft); }
-.users-table select { font-size: 14px; width: 100%; }
-/* колонка действий: кнопки переносятся, а не уезжают за край экрана */
-.users-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.users-actions button { font-size: 12px; padding: 8px 10px; }
-/* форма добавления — вертикальная (4 контрола в ряд не влезали на телефоне) */
-.users-add { flex-direction: column; }
+.user-card-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; row-gap: 2px; }
+.user-name { font-weight: 700; font-size: 16px; word-break: break-word; }
+.user-role-row { display: flex; align-items: center; gap: 12px; }
+.user-role-label { font-size: 13px; font-weight: 700; color: var(--ink-soft); }
+.user-role-row select { flex: 1; }
+/* действия: кнопки делят ширину, при нехватке переносятся, а не уезжают за край */
+.user-card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.user-card-actions button { flex: 1 1 140px; }
+/* форма добавления — вертикальная колонка с равномерными отступами */
+.users-add { display: flex; flex-direction: column; gap: 10px; }

@@ -84,46 +84,38 @@ export default function UsersPage() {
 
   return (
     <main className="grid">
-      <section className="panel">
-        <h2>{t.usersTitle}</h2>
-        <div className="table-scroll">
-          <table className="users-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>{t.loginUsername}</th>
-                <th>{t.usersRole}</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => (
-                <tr key={u.id}>
-                  <td>{u.id}</td>
-                  <td>
-                    {u.username}
-                    {u.mustChangePassword ? <span className="note"> ({t.usersMustChange})</span> : null}
-                  </td>
-                  <td>
-                    <select value={u.role} onChange={(e) => changeRole(u, e.target.value as Role)}>
-                      <option value="admin">{t.usersRoleAdmin}</option>
-                      <option value="viewer">{t.usersRoleViewer}</option>
-                    </select>
-                  </td>
-                  <td className="users-actions">
-                    <button className="btn-ghost" onClick={() => resetPw(u)}>{t.usersResetPw}</button>
-                    <button className="btn-danger" onClick={() => del(u)}>{t.usersDelete}</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <section className="card">
+        <div className="card-head">
+          <span className="card-title">{t.usersTitle}</span>
+        </div>
+        <div className="users-list">
+          {users.map((u) => (
+            <div className="user-card" key={u.id}>
+              <div className="user-card-head">
+                <span className="user-name">{u.username}</span>
+                {u.mustChangePassword ? <span className="tag">{t.usersMustChange}</span> : null}
+              </div>
+              <label className="user-role-row">
+                <span className="user-role-label">{t.usersRole}</span>
+                <select value={u.role} onChange={(e) => changeRole(u, e.target.value as Role)}>
+                  <option value="admin">{t.usersRoleAdmin}</option>
+                  <option value="viewer">{t.usersRoleViewer}</option>
+                </select>
+              </label>
+              <div className="user-card-actions">
+                <button className="btn-ghost" onClick={() => resetPw(u)}>{t.usersResetPw}</button>
+                <button className="btn-danger" onClick={() => del(u)}>{t.usersDelete}</button>
+              </div>
+            </div>
+          ))}
         </div>
       </section>
 
-      <section className="panel">
-        <h2>{t.usersAdd}</h2>
-        <div className="row users-add">
+      <section className="card">
+        <div className="card-head">
+          <span className="card-title">{t.usersAdd}</span>
+        </div>
+        <div className="users-add">
           <input value={uname} onChange={(e) => setUname(e.target.value)} placeholder={t.loginUsername} />
           <input
             type="password"
