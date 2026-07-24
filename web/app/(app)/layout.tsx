@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode } from "react";
+import { ReactNode, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { SnapshotProvider, useSnapshot } from "@/lib/snapshot";
@@ -61,13 +61,26 @@ function WarningsBanner() {
 
 function NavTabs() {
   const t = useT();
+  const meta = useMeta();
   const pathname = usePathname();
+  const isAdmin = meta?.session.role === "admin";
+
+  // Клиентский guard: viewer, попавший на admin-страницу, уводится на дашборд
+  // (сервер тоже редиректит — это подстраховка для SPA-навигации).
+  useEffect(() => {
+    if (!meta) return;
+    const adminPaths = ["/settings", "/diagnostics", "/users"];
+    if (!isAdmin && adminPaths.includes(pathname)) window.location.href = "/";
+  }, [meta, isAdmin, pathname]);
+
   const tabs = [
-    { href: "/", label: t.navDashboard },
-    { href: "/stats", label: t.navStats },
-    { href: "/settings", label: t.navSettings },
-    { href: "/diagnostics", label: t.navDiagnostics },
-  ];
+    { href: "/", label: t.navDashboard, admin: false },
+    { href: "/stats", label: t.navStats, admin: false },
+    { href: "/settings", label: t.navSettings, admin: true },
+    { href: "/diagnostics", label: t.navDiagnostics, admin: true },
+    { href: "/users", label: t.navUsers, admin: true },
+  ].filter((tab) => !tab.admin || isAdmin);
+
   return (
     <nav className="nav-tabs">
       {tabs.map((tab) => (
@@ -103,7 +116,7 @@ function Footer() {
     <footer className="footer">
       <div className="footer-row">
         <span>{deviceInfo}</span>
-        {meta?.authEnabled && (
+        {meta && (
           <a href="#" className="logout" onClick={logout}>
             {t.logout}
           </a>
