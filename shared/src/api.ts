@@ -1,3 +1,5 @@
+import type { SessionUser } from "./auth";
+
 /** Whitelist управляющих команд, доступный API/UI. */
 export type ControlType =
   | "outputSourcePriority"
@@ -30,7 +32,7 @@ export const ALLOWED_MAX_AC_CHARGE_CURRENT = [10, 20, 30, 40, 50, 60, 70, 80];
 
 /** Ответ GET /api/meta. */
 export interface ApiMeta {
-  authEnabled: boolean;
+  session: SessionUser;
   allowControl: boolean;
   outputSourcePriority: Record<number, string>;
   chargerSourcePriority: Record<number, string>;
