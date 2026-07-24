@@ -5,7 +5,7 @@
 **Local monitoring and control of a hybrid inverter, talking to it directly — no SmartESS cloud.**
 
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.4-3178C6?logo=typescript&logoColor=white)
-![Node](https://img.shields.io/badge/Node-%E2%89%A518-339933?logo=node.js&logoColor=white)
+![Node](https://img.shields.io/badge/Node-%E2%89%A524-339933?logo=node.js&logoColor=white)
 ![Next.js](https://img.shields.io/badge/Next.js-15-000000?logo=next.js&logoColor=white)
 ![Modbus](https://img.shields.io/badge/Modbus-RTU%209600-orange)
 ![Cloud](https://img.shields.io/badge/cloud-none-success)
@@ -99,7 +99,7 @@ Protocol correctness is pinned by reference frames captured from a live inverter
 
 An npm-workspaces monorepo: `shared/` (shared types and the API contract), `server/`
 (Express + WebSocket, the Modbus protocol) and `web/` (Next.js UI). Development and
-builds happen on a regular machine (not on the Pi); Node ≥ 20.
+builds happen on a regular machine (not on the Pi); Node ≥ 24.
 
 ```bash
 git clone https://github.com/apanamaryov/sweethome.git inverter-monitor
@@ -150,7 +150,7 @@ npm run check
 If the Pi doesn't see the adapter: `lsusb`, `ls -l /dev/ttyUSB*`, and permissions
 (user `pi` must be in the `dialout` group).
 
-**Requirements:** Raspberry Pi (tested on a Pi 3B), **Node.js ≥ 18**; building the
+**Requirements:** Raspberry Pi (tested on a Pi 3B), **Node.js ≥ 24**; building the
 native serialport module needs `git`, `gcc`, `make`, `python3`.
 
 ---
