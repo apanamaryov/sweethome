@@ -155,7 +155,7 @@ export function decodeFlags(regs: RegisterMap): InverterFlags {
 }
 
 /** Биты регистра fault (100–101). Имена — как в esphome-smg-ii (ключи локализации). */
-const FAULTS: string[] = [
+export const FAULTS: string[] = [
   "Over temperature of inverter module",
   "Over temperature of DCDC module",
   "Battery over voltage",
