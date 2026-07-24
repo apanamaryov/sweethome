@@ -177,7 +177,7 @@ What the script does:
 - `SSH_KEY` — path to a private key if the ssh agent doesn't pick one up.
 
 On the Pi, config and data live in `server/.env` and `server/data/` (`baseline.json`,
-`sessions.json`); static files are served by the server itself from `web/out/`.
+`auth.db`); static files are served by the server itself from `web/out/`.
 Enabling autostart after a Pi reboot (`systemctl enable`) is a one-time manual step:
 
 ```bash
@@ -202,8 +202,7 @@ ssh pi@<pi-address> sudo systemctl enable inverter-monitor
 | `ALLOW_CONTROL` | `true` | Master write switch. `false` = permanently read-only (cannot be unlocked) |
 | `STARTUP_LOCKED` | `true` | Start in read-only mode (writing requires an explicit unlock) |
 | `AUTO_RELOCK` | `true` | Automatically re-engage the lock after every successful write |
-| `DATA_DIR` | `data` | Where to persist the settings baseline (`baseline.json`) |
-| `AUTH_PASSWORD` | — | UI/API login password. Empty = no auth (trusted LAN) |
+| `DATA_DIR` | `data` | Where to persist the settings baseline (`baseline.json`) and the auth database (`auth.db`) |
 | `AUTH_SESSION_TTL_DAYS` | `30` | Session cookie lifetime |
 | `MQTT_URL` | — | MQTT broker address (`mqtt://user:pass@host:1883`). Empty = MQTT disabled |
 | `MQTT_ENABLE_CONTROL` | `false` | Writable HA entities (bypass the UI lock) |
@@ -212,13 +211,20 @@ The full list of MQTT variables is in [`server/.env.example`](server/.env.exampl
 
 ### 🔑 Authentication
 
-With `AUTH_PASSWORD` set, the entire UI, API and WebSocket require login (a `/login`
-page, HttpOnly cookie; sessions survive restarts — `server/data/sessions.json` stores
-only SHA-256 token hashes). After 5 wrong passwords from one IP — a 10-minute lockout.
+The app always requires login. Users and passwords are stored in `data/auth.db`.
 
-> **Before port-forwarding on your router**, make sure to set `AUTH_PASSWORD`. Bare
-> HTTP exposed to the internet leaks the password and cookies in plain text — from
-> outside, prefer a VPN (WireGuard) or a TLS reverse proxy (caddy/nginx + Let's Encrypt).
+- Two roles: **admin** (full access) and **viewer** (Overview and Statistics only).
+- On first start, **admin/admin** and **user/user** are created — both must change
+  their password on first login.
+- The admin manages users on the **"Users"** page (create, change role, reset
+  password, delete). The last remaining admin can't be deleted or demoted.
+- Anti-brute-force: after 5 wrong passwords from one IP — a 10-minute lockout.
+- Forgot your password? `cd server && DATA_DIR=data npx tsx scripts/reset-password.ts <username> <newpass>`.
+
+> **Before port-forwarding on your router**, put a TLS reverse proxy (Caddy/nginx +
+> Let's Encrypt) in front, or use a VPN (WireGuard). Bare HTTP exposed to the internet
+> leaks the session cookie in plain text. `AUTH_SESSION_TTL_DAYS` controls the session
+> lifetime (days).
 
 ---
 

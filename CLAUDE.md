@@ -18,11 +18,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm install        # ставит зависимости всех воркспейсов разом (это монорепо)
 npm run dev        # server :3000 (форсит INVERTER_TRANSPORT=mock) + web :3001 (Next.js HMR, проксирует /api на :3000)
 npm run build      # СТРОГО в порядке shared → server → web
-npm run check      # selfcheck протокола + stats (server) + typecheck (web)
+npm run check      # selfcheck протокола + stats + auth (server) + typecheck (web)
 ./deploy.sh        # локальная сборка → rsync на Pi → npm ci → рестарт systemd → health-check
 ```
 
-- **`npm run check -w server` гоняет ОБА selfcheck-скрипта**: `scripts/selfcheck.ts` (протокол) и `scripts/selfcheck-stats.ts` (SQLite-статистика). Ни один из них — не typecheck.
+- **`npm run check -w server` гоняет ТРИ selfcheck-скрипта**: `scripts/selfcheck.ts` (протокол), `scripts/selfcheck-stats.ts` (SQLite-статистика) и `scripts/selfcheck-auth.ts` (авторизация). Ни один из них — не typecheck.
 - **Основной «тест» — `server/scripts/selfcheck.ts`** (запускается как часть `npm run check -w server`, а также отдельно `cd server && npx tsx scripts/selfcheck.ts`). Это не typecheck: он через `assert` сверяет **эталонные Modbus-кадры, снятые с живого инвертора** (запрос `01 03 00 C9 00 01 54 34` → ответ `01 03 02 00 03 F8 45` и др.), CRC-16/Modbus, декодеры регистров и билдеры сеттеров. Джестов/витестов нет. **После правок в `server/src/protocol/*` обязательно гоняй selfcheck.**
 - **`server/scripts/selfcheck-stats.ts`** — аналогично через `assert` проверяет схему/свёртки/retention SQLite-статистики (`src/stats/db.ts`, `recorder.ts`). **После правок в `server/src/stats/*` обязательно гоняй его.**
 - `npm run check` для сервера — это два selfcheck-скрипта, а НЕ проверка типов. Типы сервера проверяются только сборкой (`tsc` в `npm run build`). Веб проверяется отдельно (`tsc --noEmit`).
@@ -79,6 +79,18 @@ npm run check      # selfcheck протокола + stats (server) + typecheck (
 - `/api/raw`: `R`-команды всегда, `W`-команды гейтятся теми же проверками, что и `control()` — иначе это была бы дыра в обход блокировки.
 - MQTT-управление (`MQTT_ENABLE_CONTROL=true`) намеренно обходит UI-блокировку через `opts.bypassLock` — сам этот флаг и есть осознанная авторизация; он не трогает UI-lock.
 - Все сеттеры проходят whitelist регистров + валидацию значений; ошибка записи = Modbus-исключение от инвертора.
+
+### Авторизация (`server/src/auth/`)
+- `hash.ts` — scrypt-хеширование паролей (встроенный `crypto`, без зависимостей).
+- `db.ts` — `AuthDb` на `node:sqlite` (`data/auth.db`): пользователи + сессии, сидинг
+  admin/user при пустой БД.
+- `policy.ts` — чистая `canAccess(role, required)` (тестируется selfcheck-auth).
+- `service.ts` — класс `Auth`: логин/сессии/смена пароля, анти-brute-force по IP.
+- Две роли: `admin` (всё) / `viewer` (только `/` и `/stats`). Ограничения — и на
+  сервере (middleware 403 + редиректы страниц), и в UI (навигация по роли).
+- Форс смены пароля: `must_change_password=1` блокирует весь `/api` кроме
+  `me`/`change-password`/`logout`, пока пароль не изменён.
+- Тесты — `scripts/selfcheck-auth.ts` (входит в `npm run check -w server`).
 
 ### `web/` — Next.js (App Router)
 - **Прод = статический экспорт** (`output: "export"` в `next.config.ts`) в `web/out/`, который раздаёт сам Express. **Dev** = `next dev -p 3001` + rewrites `/api/*` → `http://localhost:3000` (см. `next.config.ts`). Отсюда же `web/lib/api.ts::wsUrl()` разводит dev (`ws://localhost:3000`) и прод.
