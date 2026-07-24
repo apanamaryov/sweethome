@@ -4,7 +4,9 @@ import express from "express";
 import { WebSocketServer, WebSocket } from "ws";
 import { Inverter } from "./inverter";
 import { Config } from "./config";
-import { Auth, tokenFromCookieHeader } from "./auth";
+import { Auth, tokenFromCookieHeader } from "./auth/service";
+import { canAccess } from "./auth/policy";
+import type { SessionInfo } from "./auth/db";
 import {
   OUTPUT_SOURCE_PRIORITY,
   CHARGER_SOURCE_PRIORITY,
@@ -15,6 +17,12 @@ import {
 import { Snapshot } from "@inverter/shared";
 import { GAUGE_FIELDS, GaugeField } from "./stats/db";
 import { StatsRecorder } from "./stats/recorder";
+
+declare module "express-serve-static-core" {
+  interface Request {
+    user?: SessionInfo & { tokenHash: string };
+  }
+}
 
 const CONTROL_TYPES: ControlType[] = [
   "outputSourcePriority",
@@ -29,36 +37,42 @@ export function createServer(inverter: Inverter, cfg: Config, stats: StatsRecord
   const app = express();
   app.use(express.json());
 
-  const auth = new Auth(cfg.dataDir, cfg.auth.password, cfg.auth.sessionTtlDays);
-  if (!auth.enabled) {
-    console.log("[inverter-monitor] auth disabled (set AUTH_PASSWORD to protect the UI/API)");
-  }
+  const auth = new Auth(cfg.dataDir, cfg.auth.sessionTtlDays);
   const reqToken = (req: express.Request) => tokenFromCookieHeader(req.headers.cookie);
 
-  // The UI shell redirects to the login page when there is no session; static
-  // assets themselves (css/js/login page) stay open — they contain no data.
-  app.get(["/", "/index.html", "/settings", "/diagnostics", "/stats"], (req, res, next) => {
-    if (auth.verifyToken(reqToken(req))) return next();
-    res.redirect("/login");
-  });
+  // Страничные редиректы: без сессии → /login; must_change → /change-password;
+  // admin-страницы для viewer → /. Статика (css/js/страницы) отдаётся свободно —
+  // данные защищены на уровне /api.
+  const ADMIN_PAGES = new Set(["/settings", "/diagnostics", "/users"]);
+  app.get(
+    ["/", "/index.html", "/settings", "/diagnostics", "/stats", "/users", "/change-password"],
+    (req, res, next) => {
+      const u = auth.verify(reqToken(req));
+      if (!u) return res.redirect("/login");
+      if (u.mustChangePassword) {
+        return req.path === "/change-password" ? next() : res.redirect("/change-password");
+      }
+      if (ADMIN_PAGES.has(req.path) && u.role !== "admin") return res.redirect("/");
+      next();
+    }
+  );
 
-  // Статика Next.js (web/out); extensions позволяет отдавать /settings как settings.html.
+  // Статика Next.js (web/out); extensions отдаёт /settings как settings.html.
   const publicDir = path.join(__dirname, "..", "..", "web", "out");
   app.use(express.static(publicDir, { extensions: ["html"] }));
 
   app.post("/api/login", (req, res) => {
-    if (!auth.enabled) return res.json({ ok: true });
-    const { password } = req.body ?? {};
-    if (typeof password !== "string") {
-      return res.status(400).json({ ok: false, error: "password must be a string" });
+    const { username, password } = req.body ?? {};
+    if (typeof username !== "string" || typeof password !== "string") {
+      return res.status(400).json({ ok: false, error: "username and password must be strings" });
     }
     try {
-      const token = auth.login(password, req.socket.remoteAddress ?? "unknown");
-      if (!token) {
-        return res.status(401).json({ ok: false, code: "bad_password", error: "Wrong password" });
+      const result = auth.login(username, password, req.socket.remoteAddress ?? "unknown");
+      if (!result) {
+        return res.status(401).json({ ok: false, code: "bad_password", error: "Wrong credentials" });
       }
-      res.setHeader("Set-Cookie", auth.cookie(token));
-      res.json({ ok: true });
+      res.setHeader("Set-Cookie", auth.cookie(result.token));
+      res.json({ ok: true, role: result.user.role, mustChangePassword: result.user.mustChangePassword });
     } catch (e) {
       const err = e as Error & { code?: number; retryMinutes?: number };
       if (err.code === 429) {
@@ -76,19 +90,60 @@ export function createServer(inverter: Inverter, cfg: Config, stats: StatsRecord
     res.json({ ok: true });
   });
 
-  // Everything else under /api requires a session.
+  // Зона авторизации: любой валидный пользователь.
   app.use("/api", (req, res, next) => {
-    if (auth.verifyToken(reqToken(req))) return next();
-    res.status(401).json({ ok: false, error: "Unauthorized" });
+    const u = auth.verify(reqToken(req));
+    if (!u) return res.status(401).json({ ok: false, error: "Unauthorized" });
+    req.user = u;
+    next();
   });
+
+  // Доступны даже при must_change (иначе смену пароля не выполнить).
+  app.get("/api/me", (req, res) => {
+    const u = req.user!;
+    res.json({ username: u.username, role: u.role, mustChangePassword: u.mustChangePassword });
+  });
+
+  app.post("/api/change-password", (req, res) => {
+    try {
+      const { currentPassword, newPassword } = req.body ?? {};
+      if (typeof currentPassword !== "string" || typeof newPassword !== "string") {
+        return res.status(400).json({ ok: false, error: "currentPassword and newPassword required" });
+      }
+      auth.changePassword(reqToken(req)!, currentPassword, newPassword);
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(400).json({ ok: false, error: (e as Error).message });
+    }
+  });
+
+  // Форс смены пароля: до смены всё остальное под /api закрыто.
+  app.use("/api", (req, res, next) => {
+    if (req.user!.mustChangePassword) {
+      return res.status(403).json({ ok: false, code: "must_change_password", error: "Password change required" });
+    }
+    next();
+  });
+
+  // Admin-only зона.
+  app.use(
+    ["/api/control", "/api/lock", "/api/raw", "/api/baseline", "/api/baseline/recapture", "/api/users"],
+    (req, res, next) => {
+      if (!canAccess(req.user!.role, "admin")) {
+        return res.status(403).json({ ok: false, code: "forbidden", error: "Admins only" });
+      }
+      next();
+    }
+  );
 
   app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
   app.get("/api/snapshot", (_req, res) => res.json(inverter.getSnapshot()));
 
-  app.get("/api/meta", (_req, res) => {
+  app.get("/api/meta", (req, res) => {
+    const u = req.user!;
     res.json({
-      authEnabled: auth.enabled,
+      session: { username: u.username, role: u.role, mustChangePassword: u.mustChangePassword },
       allowControl: cfg.allowControl,
       outputSourcePriority: OUTPUT_SOURCE_PRIORITY,
       chargerSourcePriority: CHARGER_SOURCE_PRIORITY,
@@ -280,7 +335,7 @@ export function createServer(inverter: Inverter, cfg: Config, stats: StatsRecord
   inverter.on("snapshot", broadcast);
 
   wss.on("connection", (ws, req) => {
-    if (!auth.verifyToken(tokenFromCookieHeader(req.headers.cookie))) {
+    if (!auth.verify(tokenFromCookieHeader(req.headers.cookie))) {
       ws.close(4401, "Unauthorized");
       return;
     }
