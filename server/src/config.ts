@@ -23,9 +23,8 @@ export interface Config {
     rawDays: number; //    retention сырых 5-сек снапшотов
     minuteDays: number; // retention поминутных агрегатов
   };
-  /** Web/API authentication. */
+  /** Web/API authentication (всегда включена). */
   auth: {
-    password: string | null; // null = auth disabled (open LAN mode)
     sessionTtlDays: number;
   };
   /** MQTT / Home Assistant integration. */
@@ -76,7 +75,6 @@ export function loadConfig(): Config {
       minuteDays: envInt("STATS_MINUTE_DAYS", 730),
     },
     auth: {
-      password: process.env.AUTH_PASSWORD || null,
       sessionTtlDays: envInt("AUTH_SESSION_TTL_DAYS", 30),
     },
     mqtt: {
