@@ -1,6 +1,11 @@
 import assert from "assert";
 import { hashPassword, verifyPassword, validatePassword } from "../src/auth/hash";
 import { AuthDb, normalizeUsername } from "../src/auth/db";
+import { canAccess } from "../src/auth/policy";
+import { Auth } from "../src/auth/service";
+import fs from "fs";
+import os from "os";
+import path from "path";
 
 // ---------- 1. Хеширование паролей (scrypt) ----------
 const h = hashPassword("s3cret");
@@ -66,5 +71,36 @@ adb.createSession("hashC", admin.id, T + 5000, T);
 assert.ok(adb.getSession("hashC"), "сессия создана перед удалением пользователя");
 adb.deleteUser(admin.id);
 assert.ok(!adb.getSession("hashC"), "ON DELETE CASCADE удалил сессию при удалении пользователя");
+
+// ---------- 5. Матрица прав (чистая функция) ----------
+assert.ok(canAccess(null, "public"), "public доступен без сессии");
+assert.ok(!canAccess(null, "auth"), "auth недоступен без сессии");
+assert.ok(!canAccess(null, "admin"), "admin недоступен без сессии");
+assert.ok(canAccess("viewer", "auth"), "viewer видит auth-зону");
+assert.ok(!canAccess("viewer", "admin"), "viewer НЕ видит admin-зону");
+assert.ok(canAccess("admin", "auth"), "admin видит auth-зону");
+assert.ok(canAccess("admin", "admin"), "admin видит admin-зону");
+
+// ---------- 6. Auth: login / change-password / brute-force ----------
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "authtest-"));
+const auth = new Auth(tmp, 30);
+assert.strictEqual(auth.login("admin", "wrong", "1.1.1.1"), null, "неверный пароль → null");
+const ok = auth.login("admin", "admin", "1.1.1.1")!;
+assert.ok(ok && ok.token, "верный логин выдаёт токен");
+assert.strictEqual(ok.user.role, "admin");
+assert.strictEqual(ok.user.mustChangePassword, true);
+const v = auth.verify(ok.token)!;
+assert.strictEqual(v.username, "admin", "verify возвращает пользователя");
+// смена пароля снимает must_change и меняет пароль
+auth.changePassword(ok.token, "admin", "admin123");
+assert.strictEqual(auth.verify(ok.token)!.mustChangePassword, false, "must_change снят");
+assert.strictEqual(auth.login("admin", "admin", "2.2.2.2"), null, "старый пароль больше не работает");
+assert.ok(auth.login("admin", "admin123", "2.2.2.2"), "новый пароль работает");
+assert.throws(() => auth.changePassword(ok.token, "admin123", "123"), "слабый новый пароль отклонён");
+// brute-force: 5 промахов с одного IP → 429
+for (let i = 0; i < 5; i++) auth.login("admin", "x", "9.9.9.9");
+assert.throws(() => auth.login("admin", "admin123", "9.9.9.9"), /retry/i, "блокировка по IP");
+auth.db.close();
+fs.rmSync(tmp, { recursive: true, force: true });
 
 console.log("selfcheck-auth: OK");
