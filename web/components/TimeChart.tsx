@@ -9,6 +9,19 @@ export interface ChartSeries {
   stroke: string;
   /** "pct" — правая ось 0–100 (для SOC); по умолчанию левая "y". */
   scale?: string;
+  /** Единица измерения для подписи текущего значения в легенде (Вт, В, % …). */
+  unit?: string;
+}
+
+/** Последнее непустое значение серии, округлённое до 0.1 (для легенды). */
+function latest(data: uPlot.AlignedData, seriesIdx: number): string {
+  const col = data[seriesIdx] as ReadonlyArray<number | null> | undefined;
+  if (!col) return "—";
+  for (let i = col.length - 1; i >= 0; i--) {
+    const v = col[i];
+    if (v != null && !Number.isNaN(v)) return String(Number(v.toFixed(1)));
+  }
+  return "—";
 }
 
 /** Обёртка uPlot: data — [timestamps(сек), ...значения по сериям]. */
@@ -30,6 +43,9 @@ export default function TimeChart({
       {
         width: el.clientWidth || 600,
         height,
+        // Встроенная легенда uPlot «живая» — без курсора (и всегда на тач-экране)
+        // показывает «--». Вместо неё рисуем свою с текущими значениями (ниже).
+        legend: { show: false },
         series: [
           {},
           ...series.map((s) => ({
@@ -59,6 +75,23 @@ export default function TimeChart({
       u.destroy();
     };
   }, [data, series, height]);
+
   if (!data[0]?.length) return <div className="muted">—</div>;
-  return <div className="chart" ref={ref} />;
+  return (
+    <>
+      <div className="chart-legend">
+        {series.map((s, i) => (
+          <span key={s.label} className="lg-item">
+            <span className="lg-swatch" style={{ background: s.stroke }} />
+            {s.label}
+            <b className="lg-val">
+              {latest(data, i + 1)}
+              {s.unit ? ` ${s.unit}` : ""}
+            </b>
+          </span>
+        ))}
+      </div>
+      <div className="chart" ref={ref} />
+    </>
+  );
 }

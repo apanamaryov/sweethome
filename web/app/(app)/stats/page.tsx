@@ -102,18 +102,18 @@ export default function StatsPage() {
   }, [from, to, evType]);
 
   const powerSeries: ChartSeries[] = [
-    { label: t.stSeriesPv, stroke: "#f59e0b" },
-    { label: t.stSeriesLoad, stroke: "#3b82f6" },
-    { label: t.stSeriesGrid, stroke: "#8b5cf6" },
-    { label: t.stSeriesBatt, stroke: "#10b981" },
+    { label: t.stSeriesPv, stroke: "#f59e0b", unit: t.capW },
+    { label: t.stSeriesLoad, stroke: "#3b82f6", unit: t.capW },
+    { label: t.stSeriesGrid, stroke: "#8b5cf6", unit: t.capW },
+    { label: t.stSeriesBatt, stroke: "#10b981", unit: t.capW },
   ];
   const battSeries: ChartSeries[] = [
-    { label: t.stSeriesSoc, stroke: "#10b981", scale: "pct" },
-    { label: t.stSeriesBattV, stroke: "#3b82f6" },
+    { label: t.stSeriesSoc, stroke: "#10b981", scale: "pct", unit: "%" },
+    { label: t.stSeriesBattV, stroke: "#3b82f6", unit: t.capV },
   ];
   const tempSeries: ChartSeries[] = [
-    { label: t.stSeriesTempDcdc, stroke: "#f59e0b" },
-    { label: t.stSeriesTempInv, stroke: "#ef4444" },
+    { label: t.stSeriesTempDcdc, stroke: "#f59e0b", unit: "°C" },
+    { label: t.stSeriesTempInv, stroke: "#ef4444", unit: "°C" },
   ];
 
   const evLabel = (type: string): string =>

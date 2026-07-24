@@ -547,7 +547,20 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
   overflow: hidden; /* канвас uPlot строго по ширине рамки, без выпирания */
 }
 .chart-box .chart { width: 100%; }
-.chart-box .u-legend { color: var(--ink); }
+
+/* Своя легенда: маркер серии + текущее (последнее) значение. Встроенная
+   легенда uPlot без наведения показывает «--» и на телефоне бесполезна. */
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 14px;
+  margin: 0 2px 6px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.chart-legend .lg-item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.chart-legend .lg-swatch { width: 11px; height: 11px; flex: 0 0 auto; border: 1px solid #0002; }
+.chart-legend .lg-val { font-weight: 700; font-variant-numeric: tabular-nums; }
 
 /* Таблицы (8 колонок у суточных) шире телефона — скроллятся ВНУТРИ своей
    рамки, а не растягивают всю страницу по горизонтали. */
