@@ -64,6 +64,7 @@ function NavTabs() {
   const pathname = usePathname();
   const tabs = [
     { href: "/", label: t.navDashboard },
+    { href: "/stats", label: t.navStats },
     { href: "/settings", label: t.navSettings },
     { href: "/diagnostics", label: t.navDiagnostics },
   ];

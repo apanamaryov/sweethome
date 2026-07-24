@@ -507,3 +507,16 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
   border-color: var(--ink);
   color: var(--paper-0);
 }
+
+/* --- Статистика --- */
+.stats-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.stats-controls .seg { display: inline-flex; gap: 2px; }
+.stats-controls .seg button { padding: 6px 12px; }
+.stats-controls .seg button.active { font-weight: 700; text-decoration: underline; }
+.stats-section { margin-bottom: 20px; }
+.stats-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.stats-table th, .stats-table td { text-align: right; padding: 4px 8px; border-bottom: 1px solid #8884; }
+.stats-table th:first-child, .stats-table td:first-child { text-align: left; }
+.stats-bar { display: inline-block; height: 10px; background: #f59e0b; border-radius: 2px; vertical-align: middle; }
+.stats-events td { text-align: left; white-space: nowrap; }
+.stats-events td:last-child { white-space: normal; }
