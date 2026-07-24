@@ -42,7 +42,12 @@ function shift(kind: PeriodKind, anchor: Date, dir: 1 | -1): Date {
   const d = new Date(anchor);
   if (kind === "day") d.setDate(d.getDate() + dir);
   else if (kind === "week") d.setDate(d.getDate() + 7 * dir);
-  else d.setMonth(d.getMonth() + dir);
+  else {
+    // Сначала на 1-е число: setMonth с 29–31-го числа перескакивает месяц
+    // (31 июля +1 мес → «31 сентября» → 1 октября).
+    d.setDate(1);
+    d.setMonth(d.getMonth() + dir);
+  }
   return d;
 }
 
@@ -77,6 +82,8 @@ export default function StatsPage() {
     let alive = true;
     setRows(null);
     setError(null);
+    setDaily([]);
+    setEvents([]);
     Promise.all([
       fetchSeries([...SERIES_FIELDS], from.getTime(), to.getTime()),
       fetchDaily(dayKey(from), dayKey(new Date(to.getTime() - 1))),
