@@ -18,14 +18,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm install        # ставит зависимости всех воркспейсов разом (это монорепо)
 npm run dev        # server :3000 (форсит INVERTER_TRANSPORT=mock) + web :3001 (Next.js HMR, проксирует /api на :3000)
 npm run build      # СТРОГО в порядке shared → server → web
-npm run check      # selfcheck протокола + stats + auth + auth-http (server) + typecheck (web)
+npm run check      # jest: протокол + stats + auth + auth-http (server) + typecheck (web)
 ./deploy.sh        # локальная сборка → rsync на Pi → npm ci → рестарт systemd → health-check
 ```
 
-- **`npm run check -w server` гоняет ЧЕТЫРЕ selfcheck-скрипта**: `scripts/selfcheck.ts` (протокол), `scripts/selfcheck-stats.ts` (SQLite-статистика), `scripts/selfcheck-auth.ts` (хеши/роли/флоу авторизации, юнит) и `scripts/selfcheck-auth-http.ts` (авторизация сквозь реальный `createServer` по HTTP: гейты, роли, форс смены пароля). Ни один из них — не typecheck.
-- **Основной «тест» — `server/scripts/selfcheck.ts`** (запускается как часть `npm run check -w server`, а также отдельно `cd server && npx tsx scripts/selfcheck.ts`). Это не typecheck: он через `assert` сверяет **эталонные Modbus-кадры, снятые с живого инвертора** (запрос `01 03 00 C9 00 01 54 34` → ответ `01 03 02 00 03 F8 45` и др.), CRC-16/Modbus, декодеры регистров и билдеры сеттеров. Джестов/витестов нет. **После правок в `server/src/protocol/*` обязательно гоняй selfcheck.**
-- **`server/scripts/selfcheck-stats.ts`** — аналогично через `assert` проверяет схему/свёртки/retention SQLite-статистики (`src/stats/db.ts`, `recorder.ts`). **После правок в `server/src/stats/*` обязательно гоняй его.**
-- `npm run check` для сервера — это четыре selfcheck-скрипта, а НЕ проверка типов. Типы сервера проверяются только сборкой (`tsc` в `npm run build`). Веб проверяется отдельно (`tsc --noEmit`).
+- **`npm run check -w server` (= `npm test -w server`) гоняет jest**: протокол (`src/protocol/modbus.test.ts`, `smg.test.ts`), SQLite-статистика (`src/stats/db.test.ts`), хеши/роли/флоу авторизации (`src/auth/hash.test.ts`, `policy.test.ts`, `db.test.ts`, `service.test.ts`) и авторизация сквозь реальный `createServer` по HTTP (`src/server.http.test.ts`: гейты, роли, форс смены пароля). Ни один из них — не typecheck.
+- **Тесты лежат рядом с исходниками** (`*.test.ts`) — миграция с четырёх ручных `assert`-скриптов `scripts/selfcheck*.ts` на jest завершена. Протокольные тесты сверяют **эталонные Modbus-кадры, снятые с живого инвертора** (запрос `01 03 00 C9 00 01 54 34` → ответ `01 03 02 00 03 F8 45` и др.), CRC-16/Modbus, декодеры регистров и билдеры сеттеров. **После правок в `server/src/protocol/*` обязательно гоняй `npm test -w server`.**
+- **`src/stats/db.test.ts`** аналогично проверяет схему/свёртки/retention SQLite-статистики (`src/stats/db.ts`, `recorder.ts`). **После правок в `server/src/stats/*` обязательно гоняй тесты.**
+- `npm run check` для сервера — это jest, а НЕ проверка типов. Типы сервера проверяются только сборкой (`tsc` в `npm run build`). Веб проверяется отдельно (`tsc --noEmit`).
 - Деплой на Pi — `PI_HOST=pi@… SSH_KEY=~/.ssh/… ./deploy.sh`; учитывай, что скрипт пересобирает всё локально, заливает артефакты и **рестартует живой systemd-сервис** на Pi. Конкретный адрес/ключ — вне репозитория (локальное окружение владельца).
 - Node: root `engines` и `server` `engines` — оба **≥ 24** (нужен встроенный `node:sqlite` для статистики). Сам Pi уже на **Node 24** (Raspberry Pi OS Trixie, arm64) — совпадает с заявленным минимумом.
 
@@ -60,7 +60,7 @@ npm run check      # selfcheck протокола + stats + auth + auth-http (se
 ### `server/` — слои снизу вверх
 1. **`src/protocol/`** — Modbus RTU + карта SMG II.
    - `modbus.ts` — CRC-16/Modbus (poly 0xA001, init 0xFFFF, LE в кадре), `buildReadRequest`/`buildWriteRequest` (fn 0x03/0x10), `parseReadResponse`/`parseWriteResponse`, `expectedResponseLength`, `ModbusError` с кодом исключения, `toSigned` (S_WORD).
-   - `smg.ts` — блоки чтения (`STATUS_BLOCKS`/`ALARM_BLOCKS`/`SETTINGS_BLOCKS` — только документированные диапазоны, без «дыр»), декодеры (`decodeStatus`/`decodeSettings`/`decodeFlags`/`decodeAlarms`/`decodeMode`), сеттеры (`buildControlWrite`). **Масштабирование — делением** (`/10`, `/100`), не умножением на 0.1 — иначе float-хвосты (232.70000000000002) ломают selfcheck и UI.
+   - `smg.ts` — блоки чтения (`STATUS_BLOCKS`/`ALARM_BLOCKS`/`SETTINGS_BLOCKS` — только документированные диапазоны, без «дыр»), декодеры (`decodeStatus`/`decodeSettings`/`decodeFlags`/`decodeAlarms`/`decodeMode`), сеттеры (`buildControlWrite`). **Масштабирование — делением** (`/10`, `/100`), не умножением на 0.1 — иначе float-хвосты (232.70000000000002) ломают jest-тесты и UI.
 2. **`src/transport/`** — общий интерфейс `Transport` + две реализации: `serial` (`serialport`, optionalDependency c `isAvailable()`-проверкой) и `mock` (**полноценный эмулятор Modbus-slave**: отвечает на fn 0x03 из внутренней карты регистров с правдоподобной динамикой, принимает записи fn 0x10). `transact(frame, timeout, expectedLen)` — чтение завершается по накоплению `expectedLen` байт ЛИБО по кадру-исключению (5 байт, бит 0x80 у функции). `detect.ts`: mock всегда последним; onboard-UART'ы Pi отфильтровываются — только USB-serial, если явно не задан `INVERTER_SERIAL_DEVICE`.
 3. **`src/inverter.ts`** — ядро. **Вся работа с транспортом сериализована через одну очередь-промис (`enqueue`) с пейсингом 120 мс** между командами. Поллинг: статус+аварии каждый цикл (7 блоковых чтений), настройки раз в ~6 циклов и всегда на первом цикле после коннекта; probe при коннекте — чтение регистра 201 с валидацией режима; автопереподключение после 3 подряд ошибок; **захват baseline** (один раз на устройство, сохраняется на диск); блокировка записи. `rawQuery` понимает текстовые команды `"R <адрес> [количество]"` (всегда) и `"W <адрес> <значение>"` (под теми же гейтами, что `control()`).
 3½. **`src/stats/`** — статистика в SQLite через встроенный `node:sqlite` (Node ≥ 24, нативных
@@ -69,7 +69,7 @@ npm run check      # selfcheck протокола + stats + auth + auth-http (se
    буфер с флашем раз в 60 с (щадит SD), деривация событий из диффа снапшотов (смена режима,
    потеря/возврат сети, аварии, связь, **старт/стоп зарядки от солнца** по гистерезису
    Шмитта на `pvChargingPower`). Никогда не пишет в инвертор. Тесты —
-   `scripts/selfcheck-stats.ts` (входит в `npm run check -w server`).
+   `src/stats/db.test.ts` (jest, входит в `npm run check -w server`).
 4. **`src/server.ts`** — Express (REST под `/api` + раздача статики `web/out`) и WebSocket (`/ws`, push каждого `Snapshot`). `Inverter` — `EventEmitter`, сервер и MQTT подписаны на событие `"snapshot"`.
 5. **`src/mqtt.ts`** — публикация в MQTT с автодискавери Home Assistant (по умолчанию выключено, `MQTT_URL` пуст).
 6. **`src/config.ts`** — вся конфигурация только из env (см. `.env.example`): `INVERTER_BAUD` default **9600**, `MODBUS_SLAVE_ID` default 1, transport `auto|serial|mock`.
@@ -86,13 +86,13 @@ npm run check      # selfcheck протокола + stats + auth + auth-http (se
 - `hash.ts` — scrypt-хеширование паролей (встроенный `crypto`, без зависимостей).
 - `db.ts` — `AuthDb` на `node:sqlite` (`data/auth.db`): пользователи + сессии, сидинг
   admin/user при пустой БД.
-- `policy.ts` — чистая `canAccess(role, required)` (тестируется selfcheck-auth).
+- `policy.ts` — чистая `canAccess(role, required)` (тестируется `policy.test.ts`).
 - `service.ts` — класс `Auth`: логин/сессии/смена пароля, анти-brute-force по IP.
 - Две роли: `admin` (всё) / `viewer` (только `/` и `/stats`). Ограничения — и на
   сервере (middleware 403 + редиректы страниц), и в UI (навигация по роли).
 - Форс смены пароля: `must_change_password=1` блокирует весь `/api` кроме
   `me`/`change-password`/`logout`, пока пароль не изменён.
-- Тесты — `scripts/selfcheck-auth.ts` (входит в `npm run check -w server`).
+- Тесты — `hash.test.ts`, `policy.test.ts`, `db.test.ts`, `service.test.ts` (jest, входят в `npm run check -w server`); HTTP-флоу — `src/server.http.test.ts`.
 
 ### `web/` — Next.js (App Router)
 - **Прод = статический экспорт** (`output: "export"` в `next.config.ts`) в `web/out/`, который раздаёт сам Express. **Dev** = `next dev -p 3001` + rewrites `/api/*` → `http://localhost:3000` (см. `next.config.ts`). Отсюда же `web/lib/api.ts::wsUrl()` разводит dev (`ws://localhost:3000`) и прод.

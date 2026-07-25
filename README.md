@@ -74,7 +74,8 @@ settings — 300–343.
 | `web` | `web/` | Mobile UI on Next.js; the static export is served by the same Express server |
 
 Protocol correctness is pinned by reference frames captured from a live inverter
-(`01 03 00 C9 00 01 54 34` → `01 03 02 00 03 F8 45`) — see `server/scripts/selfcheck.ts`.
+(`01 03 00 C9 00 01 54 34` → `01 03 02 00 03 F8 45`) — see
+`server/src/protocol/modbus.test.ts` and `smg.test.ts`.
 
 ---
 
@@ -112,18 +113,20 @@ npm run dev    # server :3000 (mock data) + UI :3001 (Next.js, HMR)
 Open `http://localhost:3001` — in dev mode the UI proxies `/api/*` to the server
 on `:3000` (see `web/next.config.ts`).
 
-Before committing, run the static checks (web typecheck + protocol selfcheck):
+Before committing, run the static checks (web typecheck + server jest suite):
 
 ```bash
 npm run check
 ```
 
-> `npm run check` runs the web typecheck plus four assertion-based selfchecks (not
-> typechecks): **`selfcheck.ts`** (reference Modbus frames captured from a live
-> inverter, CRC, register decoders/setters), **`selfcheck-stats.ts`** (SQLite
-> rollups/retention and event derivation), **`selfcheck-auth.ts`** and
-> **`selfcheck-auth-http.ts`** (password hashing, roles, the full auth flow over
-> HTTP). Run the relevant one after changes under `server/src/*`.
+> `npm run check` runs the web typecheck plus the server's jest suite (`npm test -w
+> server`, not a typecheck): protocol (`src/protocol/modbus.test.ts`, `smg.test.ts`
+> — reference Modbus frames captured from a live inverter, CRC, register
+> decoders/setters), stats (`src/stats/db.test.ts` — SQLite rollups/retention and
+> event derivation), auth (`src/auth/hash.test.ts`, `policy.test.ts`, `db.test.ts`,
+> `service.test.ts`) and the full auth flow over HTTP
+> (`src/server.http.test.ts`). Tests live next to the sources they cover; run
+> `npm test -w server` after changes under `server/src/*`. Requires Node ≥ 24.
 
 ---
 
@@ -356,7 +359,7 @@ you need to"**:
 
 - RS232 transport (FTDI FT231X with true RS232 levels) + Modbus RTU 9600, slave 1.
 - Register reads: mode (201), grid voltage (202 → 232.7 V), battery (215 → 52.2 V), SOC (229 → 72 %) — the values match reality.
-- The request/response reference frames are pinned in the selfcheck.
+- The request/response reference frames are pinned in the jest tests.
 
 **Without hardware (mock, full cycle):**
 
@@ -381,13 +384,13 @@ inverter-monitor/
 │   └── src/{types.ts, api.ts, auth.ts, index.ts}   # shared types + control contract + auth types
 ├── server/
 │   ├── .env.example  systemd/inverter-monitor.service
-│   ├── scripts/{selfcheck,selfcheck-stats,selfcheck-auth,selfcheck-auth-http}.ts
 │   ├── scripts/reset-password.ts             # CLI password reset
 │   ├── src/{index,config,inverter,server,mqtt,store}.ts
 │   ├── src/auth/{hash,db,policy,service}.ts  # scrypt, AuthDb (node:sqlite), roles, sessions
 │   ├── src/stats/{db,recorder}.ts            # SQLite history, rollups, event derivation
 │   ├── src/protocol/{modbus,smg}.ts          # Modbus RTU + SMG II register map
-│   └── src/transport/{types,serial,mock,detect}.ts
+│   ├── src/transport/{types,serial,mock,detect}.ts
+│   └── src/**/*.test.ts                      # jest — co-located with the sources they cover
 └── web/
     ├── next.config.ts
     ├── app/{layout.tsx, login/, change-password/, (app)/{page,stats,settings,diagnostics,users}}
