@@ -148,6 +148,8 @@ export default function StatsPage() {
         "conn-lost": t.stEvConnLost,
         "conn-restored": t.stEvConnRestored,
         "device-changed": t.stEvDeviceChanged,
+        "solar-charge-start": t.stEvSolarStart,
+        "solar-charge-stop": t.stEvSolarStop,
       } as Record<string, string>
     )[type] ?? type);
 
@@ -176,6 +178,9 @@ export default function StatsPage() {
         return String(d.device ?? d.transport ?? "");
       case "device-changed":
         return `${d.from} → ${d.to}`;
+      case "solar-charge-start":
+      case "solar-charge-stop":
+        return `${d.pvChargingPower ?? "—"} ${t.capW}`;
       default:
         return e.detail;
     }
@@ -314,7 +319,8 @@ export default function StatsPage() {
         <select value={evType} onChange={(e) => setEvType(e.target.value)}>
           <option value="">{t.stEvAll}</option>
           {["mode-change", "grid-loss", "grid-restore", "fault-set", "fault-clear",
-            "warning-set", "warning-clear", "conn-lost", "conn-restored", "device-changed"].map((k) => (
+            "warning-set", "warning-clear", "conn-lost", "conn-restored", "device-changed",
+            "solar-charge-start", "solar-charge-stop"].map((k) => (
             <option key={k} value={k}>{evLabel(k)}</option>
           ))}
         </select>

@@ -179,6 +179,28 @@ rec.flush(B + 27_000); // повторный флаш ничего не дубл
 assert.strictEqual(n(db3.all("SELECT COUNT(*) AS n FROM samples")), 5);
 assert.strictEqual(n(db3.all("SELECT COUNT(*) AS n FROM events")), 6);
 
+// ---------- 10b. Recorder: события зарядки от солнца (гистерезис Шмитта) ----------
+const dbS = new StatsDb(":memory:");
+const recS = new StatsRecorder(dbS, { pollIntervalMs: 5000, rawDays: 30, minuteDays: 730 });
+const S = Date.parse("2026-07-24T08:00:00");
+recS.handleSnapshot(snap(S, { status: { pvChargingPower: 0 } })); //           ночь: prev=false, без события
+recS.handleSnapshot(snap(S + 5000, { status: { pvChargingPower: 30 } })); //   30 в зоне 20–50 — не стартует
+recS.handleSnapshot(snap(S + 10000, { status: { pvChargingPower: 200 } })); // >50 → solar-charge-start
+recS.handleSnapshot(snap(S + 15000, { status: { pvChargingPower: 40 } })); //  40 > стоп-порога — держится
+recS.handleSnapshot(snap(S + 20000, { status: { pvChargingPower: 5 } })); //   <20 → solar-charge-stop
+recS.flush(S + 21_000);
+const solarTypes = dbS.queryEvents({ limit: 100, offset: 0 }).map((e) => e.type).sort();
+assert.deepStrictEqual(
+  solarTypes,
+  ["solar-charge-start", "solar-charge-stop"],
+  "гистерезис: старт при >50 Вт, стоп при <20 Вт, без дребезга в зоне 20–50"
+);
+assert.strictEqual(
+  JSON.parse(dbS.queryEvents({ type: "solar-charge-start", limit: 1, offset: 0 })[0].detail).pvChargingPower,
+  200,
+  "detail несёт мощность заряда"
+);
+
 // ---------- 11. Потолок pending-событий ----------
 // pollIntervalMs=600000 → maxBuffered=1: из трёх mode-change выживает последний.
 const db4 = new StatsDb(":memory:");

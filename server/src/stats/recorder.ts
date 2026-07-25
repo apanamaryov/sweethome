@@ -17,6 +17,12 @@ export interface RecorderOpts {
 
 const FAULT_SET = new Set(FAULTS);
 
+// Зарядка от солнца — по регистру 224 (pvChargingPower, PV-мощность в заряд).
+// Гистерезис (Шмитт): старт выше START, стоп ниже STOP — чтобы дребезг у нуля
+// (рассвет/закат, набегающие облака) не плодил пары событий.
+const SOLAR_CHARGE_START_W = 50;
+const SOLAR_CHARGE_STOP_W = 20;
+
 /**
  * Копит снапшоты в памяти и раз в flushIntervalMs пишет их одной транзакцией,
  * попутно доводя свёртки и retention. События выводит из диффа соседних снапшотов.
@@ -30,6 +36,7 @@ export class StatsRecorder {
   private prevGrid: boolean | null = null;
   private prevConnected: boolean | null = null;
   private prevWarnings: Set<string> | null = null;
+  private prevSolarCharging: boolean | null = null;
   private prevDeviceId: string | null = null;
   private readonly flushIntervalMs: number;
   private readonly gridPresentVolts: number;
@@ -84,6 +91,7 @@ export class StatsRecorder {
       this.prevMode = null;
       this.prevGrid = null;
       this.prevWarnings = null;
+      this.prevSolarCharging = null;
       return;
     }
     const devId = snap.connection.deviceId;
@@ -117,6 +125,16 @@ export class StatsRecorder {
             this.push(ts, FAULT_SET.has(w) ? "fault-clear" : "warning-clear", { bit: w });
       }
       this.prevWarnings = cur;
+    }
+    if (snap.status) {
+      const pcp = snap.status.pvChargingPower;
+      let charging = this.prevSolarCharging ?? false;
+      if (!charging && pcp > SOLAR_CHARGE_START_W) charging = true;
+      else if (charging && pcp < SOLAR_CHARGE_STOP_W) charging = false;
+      if (this.prevSolarCharging !== null && charging !== this.prevSolarCharging) {
+        this.push(ts, charging ? "solar-charge-start" : "solar-charge-stop", { pvChargingPower: pcp });
+      }
+      this.prevSolarCharging = charging;
     }
   }
 
