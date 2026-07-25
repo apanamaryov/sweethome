@@ -325,7 +325,7 @@ export class StatsDb {
     return this.exportStmt[kind].all(afterTs, to, limit) as Array<Record<string, unknown>>;
   }
 
-  /** Сырой SELECT для selfcheck и диагностики. */
+  /** Сырой SELECT для тестов и диагностики. */
   all(sql: string, ...params: Array<string | number>): Array<Record<string, unknown>> {
     return this.db.prepare(sql).all(...params) as Array<Record<string, unknown>>;
   }
