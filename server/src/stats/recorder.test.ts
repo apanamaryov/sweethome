@@ -15,7 +15,7 @@ function status(over: Partial<Record<SampleField, number>> = {}): InverterStatus
 function snapshot(
   ts: number,
   statusOver: Partial<Record<SampleField, number>> = {},
-  opts: { mode?: DeviceMode; warnings?: string[]; connected?: boolean } = {}
+  opts: { mode?: DeviceMode; warnings?: string[]; connected?: boolean; deviceId?: string } = {}
 ): Snapshot {
   const connected = opts.connected ?? true;
   return {
@@ -24,7 +24,7 @@ function snapshot(
       connected,
       transport: "mock",
       device: null,
-      deviceId: "dev-1",
+      deviceId: opts.deviceId ?? "dev-1",
       mock: true,
       lastError: null,
     },
@@ -56,8 +56,9 @@ function events(db: StatsDb): Array<{ type: string; detail: string }> {
   }>;
 }
 
-function makeRecorder(opts: Partial<RecorderOpts> = {}) {
+function makeRecorder(opts: Partial<RecorderOpts> = {}, seedDeviceId?: string) {
   const db = new StatsDb(":memory:");
+  if (seedDeviceId) db.setMeta("device_id", seedDeviceId);
   const recorder = new StatsRecorder(db, {
     pollIntervalMs: 5000,
     rawDays: 30,
@@ -408,5 +409,89 @@ describe("StatsRecorder — never writes to the inverter", () => {
     expect((db.all("SELECT COUNT(*) AS n FROM events")[0] as { n: number }).n).toBeGreaterThan(0);
 
     recorder.stop(); // closes the db; must be last
+  });
+});
+
+describe("StatsRecorder — maxBuffered cap on buffered samples (recorder.ts:65)", () => {
+  it("with pollIntervalMs=600_000 (maxBuffered=1), keeps only the most recent buffered sample", () => {
+    // pollIntervalMs=600_000 -> maxBuffered = max(1, ceil(600_000/600_000)) = 1: the sample
+    // buffer is capped at 1 entry via `while (buf.length > maxBuffered) buf.shift()`, so of
+    // three snapshots pushed before any flush, only the last one should ever reach the DB.
+    // Anchored to a real Date.now() so flush()'s internal prune (rawDays=30) doesn't delete
+    // the freshly-buffered sample (see "buffered flush" describe block above for the same trick).
+    const T0 = Date.now();
+    const { db, recorder, source } = makeRecorder({ pollIntervalMs: 600_000 });
+
+    source.emit("snapshot", snapshot(T0 + 1_000, { pvPower: 100 }));
+    source.emit("snapshot", snapshot(T0 + 2_000, { pvPower: 200 }));
+    source.emit("snapshot", snapshot(T0 + 3_000, { pvPower: 300 }));
+    recorder.flush();
+
+    const rows = db.all("SELECT ts, pvPower FROM samples ORDER BY ts") as Array<{
+      ts: number;
+      pvPower: number;
+    }>;
+    expect(rows).toEqual([{ ts: T0 + 3_000, pvPower: 300 }]);
+
+    recorder.stop();
+  });
+});
+
+describe("StatsRecorder — maxBuffered cap on pending events (recorder.ts:72, selfcheck-stats.ts section 11)", () => {
+  it("with pollIntervalMs=600_000 (maxBuffered=1), keeps only the most recent pending event", () => {
+    // Migrated 1:1 from selfcheck-stats.ts section 11: three mode-change diffs get pushed
+    // to `pending`, but it's capped at maxBuffered=1, so only the last one survives the flush.
+    const { db, recorder, source } = makeRecorder({ pollIntervalMs: 600_000 });
+
+    source.emit("snapshot", snapshot(1_000, {}, { mode: "Line" })); // baseline, no event
+    source.emit("snapshot", snapshot(2_000, {}, { mode: "Battery" })); // change 1: Line -> Battery
+    source.emit("snapshot", snapshot(3_000, {}, { mode: "Line" })); // change 2: Battery -> Line
+    source.emit("snapshot", snapshot(4_000, {}, { mode: "Battery" })); // change 3: Line -> Battery
+    recorder.flush();
+
+    const rows = events(db);
+    expect(rows).toHaveLength(1); // pending capped at maxBuffered
+    expect(rows[0].type).toBe("mode-change");
+    expect(JSON.parse(rows[0].detail)).toEqual({ from: "Line", to: "Battery" }); // the last one survived
+
+    recorder.stop();
+  });
+});
+
+describe("StatsRecorder — device-changed event across a device_id change (recorder.ts:97-102,152-153, selfcheck-stats.ts section 12)", () => {
+  it("fires device-changed when the first snapshot's deviceId differs from meta.device_id seeded before construction, and persists the new id", () => {
+    // Migrated 1:1 from selfcheck-stats.ts section 12: a prior device_id is seeded via
+    // meta (simulating a restart with a previously-known device), then the recorder is
+    // constructed (reads it into prevDeviceId) and fed a snapshot from a different device.
+    const { db, recorder, source } = makeRecorder({}, "old-dev");
+
+    source.emit("snapshot", snapshot(1_000, {}, { deviceId: "smg-test" }));
+    recorder.flush();
+
+    const rows = events(db);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].type).toBe("device-changed");
+    expect(JSON.parse(rows[0].detail)).toEqual({ from: "old-dev", to: "smg-test" });
+    expect(db.getMeta("device_id")).toBe("smg-test"); // meta.device_id updated
+
+    recorder.stop();
+  });
+
+  it("does NOT fire device-changed on a fresh DB with no prior device_id, but silently seeds meta from the first snapshot", () => {
+    // Real behavior beyond the selfcheck's scenario: recorder.ts guards the event on
+    // `this.prevDeviceId` being truthy (line 99: `if (this.prevDeviceId && devId !== this.prevDeviceId)`).
+    // On a brand-new DB, getMeta("device_id") is null, so prevDeviceId starts null/falsy and
+    // the very first device seen never fires an event -- yet flush() (line 152) still
+    // persists it to meta.device_id, since that check only compares against the DB's stored
+    // value, not against whether an event fired.
+    const { db, recorder, source } = makeRecorder(); // no seedDeviceId -> meta.device_id starts unset
+
+    source.emit("snapshot", snapshot(1_000, {}, { deviceId: "smg-test" }));
+    recorder.flush();
+
+    expect(events(db).some((e) => e.type === "device-changed")).toBe(false);
+    expect(db.getMeta("device_id")).toBe("smg-test");
+
+    recorder.stop();
   });
 });

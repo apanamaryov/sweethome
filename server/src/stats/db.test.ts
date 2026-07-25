@@ -45,6 +45,138 @@ describe("StatsDb — insert samples/events", () => {
   });
 });
 
+describe("StatsDb — querySeries", () => {
+  // Same 3-sample fixture as the "insert samples/events" test above
+  // (selfcheck-stats.ts section 1), reused here for section 2.
+  let db: StatsDb;
+  beforeEach(() => {
+    db = new StatsDb(":memory:");
+    db.transaction(() => {
+      db.insertSample(sample(60_000, { pvPower: 720, batteryCapacity: 70 }));
+      db.insertSample(sample(65_000, { pvPower: 1440, batteryCapacity: 71 }));
+      db.insertSample(sample(70_000, { pvPower: 2160, batteryCapacity: 72 }));
+    });
+  });
+  afterEach(() => db.close());
+
+  it("returns raw series values in time order, aliasing the time column as `t`", () => {
+    // Migrated 1:1 from selfcheck-stats.ts section 2.
+    const rows = db.querySeries(["pvPower"], 0, 100_000, "raw");
+    expect(rows.map((r) => r.pvPower)).toEqual([720, 1440, 2160]);
+    expect(rows[0].t).toBe(60_000);
+  });
+
+  it("downsamples to maxPoints when the raw series has more rows than requested", () => {
+    // Migrated 1:1 from selfcheck-stats.ts section 2.
+    const thin = db.querySeries(["pvPower"], 0, 100_000, "raw", 2);
+    expect(thin).toHaveLength(2);
+  });
+});
+
+describe("StatsDb — queryEvents", () => {
+  // Same fixture as above, plus the section-1 grid-loss event at ts=61_000.
+  let db: StatsDb;
+  beforeEach(() => {
+    db = new StatsDb(":memory:");
+    db.transaction(() => {
+      db.insertSample(sample(60_000, { pvPower: 720, batteryCapacity: 70 }));
+      db.insertSample(sample(65_000, { pvPower: 1440, batteryCapacity: 71 }));
+      db.insertSample(sample(70_000, { pvPower: 2160, batteryCapacity: 72 }));
+      db.insertEvent({ ts: 61_000, type: "grid-loss", detail: JSON.stringify({ gridVoltage: 12 }) });
+    });
+  });
+  afterEach(() => db.close());
+
+  it("returns all events within limit/offset when no filter is given", () => {
+    // Migrated 1:1 from selfcheck-stats.ts section 4.
+    expect(db.queryEvents({ limit: 10, offset: 0 })).toHaveLength(1);
+  });
+
+  it("filters by type", () => {
+    // Migrated 1:1 from selfcheck-stats.ts section 4.
+    expect(db.queryEvents({ type: "grid-loss", limit: 10, offset: 0 })[0].ts).toBe(61_000);
+  });
+
+  it("returns nothing for a type that matches no event", () => {
+    // Migrated 1:1 from selfcheck-stats.ts section 4.
+    expect(db.queryEvents({ type: "other", limit: 10, offset: 0 })).toHaveLength(0);
+  });
+});
+
+describe("StatsDb — CSV export (exportColumns/exportChunk)", () => {
+  // Same 3-sample fixture as the querySeries block above (selfcheck-stats.ts section 5).
+  let db: StatsDb;
+  beforeEach(() => {
+    db = new StatsDb(":memory:");
+    db.transaction(() => {
+      db.insertSample(sample(60_000, { pvPower: 720, batteryCapacity: 70 }));
+      db.insertSample(sample(65_000, { pvPower: 1440, batteryCapacity: 71 }));
+      db.insertSample(sample(70_000, { pvPower: 2160, batteryCapacity: 72 }));
+    });
+  });
+  afterEach(() => db.close());
+
+  it("exportColumns lists `ts` first for raw and includes `pv_wh` for minute", () => {
+    // Migrated 1:1 from selfcheck-stats.ts section 5.
+    expect(db.exportColumns("raw")[0]).toBe("ts");
+    expect(db.exportColumns("minute")).toContain("pv_wh");
+  });
+
+  it("exportChunk returns every row when afterTs is before all samples", () => {
+    // Migrated 1:1 from selfcheck-stats.ts section 5.
+    expect(db.exportChunk("raw", -1, 100_000, 10)).toHaveLength(3);
+  });
+
+  it("exportChunk continues strictly after afterTs (exclusive lower bound)", () => {
+    // Migrated 1:1 from selfcheck-stats.ts section 5.
+    expect(db.exportChunk("raw", 65_000, 100_000, 10)).toHaveLength(1);
+  });
+});
+
+describe("StatsDb — queryEnergy (hour/day buckets)", () => {
+  let db: StatsDb;
+  afterEach(() => db.close());
+
+  it("buckets energy by hour and by local day, matching the hand-computed golden sums", () => {
+    // Migrated 1:1 from selfcheck-stats.ts section 13.
+    db = new StatsDb(":memory:");
+    const H = (s: string) => Date.parse(s); // local time of the test environment
+    // 720 W * (5000ms / 3.6e6) = 1 Wh per snapshot; one snapshot per minute.
+    const eSample = (ts: number) => sample(ts, { pvPower: 720, mainsPower: 720 });
+    db.transaction(() => {
+      // Day 1, hour 10 — 3 minutes; hour 11 — 2 minutes.
+      db.insertSample(eSample(H("2026-07-23T10:00:00")));
+      db.insertSample(eSample(H("2026-07-23T10:01:00")));
+      db.insertSample(eSample(H("2026-07-23T10:02:00")));
+      db.insertSample(eSample(H("2026-07-23T11:00:00")));
+      db.insertSample(eSample(H("2026-07-23T11:05:00")));
+      // Day 2, hour 10 — 4 minutes.
+      db.insertSample(eSample(H("2026-07-24T10:00:00")));
+      db.insertSample(eSample(H("2026-07-24T10:01:00")));
+      db.insertSample(eSample(H("2026-07-24T10:02:00")));
+      db.insertSample(eSample(H("2026-07-24T10:03:00")));
+    });
+    db.rollupMinutes(H("2026-07-24T12:00:00"), 5000);
+
+    const from = H("2026-07-23T00:00:00");
+    const to = H("2026-07-24T23:59:59");
+    const r3 = (x: number) => Number(x.toFixed(3));
+
+    const hrs = db.queryEnergy(from, to, "hour");
+    expect(hrs).toHaveLength(3);
+    expect(r3(hrs.reduce((s, b) => s + b.pv_wh, 0))).toBe(9);
+    expect(r3(hrs.reduce((s, b) => s + b.grid_wh, 0))).toBe(9);
+    expect(hrs[0].t).toBe(Math.floor(H("2026-07-23T10:00:00") / 3_600_000) * 3_600_000);
+
+    const days = db.queryEnergy(from, to, "day");
+    expect(days).toHaveLength(2);
+    expect(r3(days[0].pv_wh)).toBe(5);
+    expect(r3(days[1].pv_wh)).toBe(4);
+    expect(days[0].t).toBe(new Date(2026, 6, 23).getTime());
+    expect(days[1].t).toBe(new Date(2026, 6, 24).getTime());
+  });
+});
+
 describe("StatsDb — rollupMinutes", () => {
   let db: StatsDb;
   afterEach(() => db.close());
