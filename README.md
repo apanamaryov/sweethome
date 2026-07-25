@@ -29,7 +29,8 @@ ever leaves your LAN.
 - 🌍 **Three interface languages** — Ukrainian, Russian, English; switching without a page reload.
 - 🔒 **Safe control** — read-only by default; writes require an explicit unlock, a register whitelist, automatic re-locking, and an "as-found" settings baseline with drift highlighting.
 - 🏠 **Home Assistant integration** over MQTT with auto-discovery — entities appear in HA by themselves, no YAML needed.
-- 🔑 **Authentication** (optional) — password login, HttpOnly sessions, brute-force protection.
+- 🔑 **Users & roles** — always-on login with two roles (admin / viewer), forced password change on first use, admin-managed accounts, scrypt-hashed passwords in SQLite, HttpOnly sessions and brute-force protection.
+- 📊 **Statistics & history** — SQLite telemetry log with a per-metric power chart set, daily kWh totals, energy bars, and an event log (mode changes, grid loss, solar charge start/stop, faults).
 - 🚀 **One-script deploy** — local build → rsync to the Pi → systemd restart → health check.
 
 ---
@@ -117,10 +118,12 @@ Before committing, run the static checks (web typecheck + protocol selfcheck):
 npm run check
 ```
 
-> For the server, `npm run check` runs **`server/scripts/selfcheck.ts`** — not a
-> typecheck but a verification of reference Modbus frames (captured from a live
-> inverter), CRC, register decoders and setters. Run it after any change under
-> `server/src/protocol/*`.
+> `npm run check` runs the web typecheck plus four assertion-based selfchecks (not
+> typechecks): **`selfcheck.ts`** (reference Modbus frames captured from a live
+> inverter, CRC, register decoders/setters), **`selfcheck-stats.ts`** (SQLite
+> rollups/retention and event derivation), **`selfcheck-auth.ts`** and
+> **`selfcheck-auth-http.ts`** (password hashing, roles, the full auth flow over
+> HTTP). Run the relevant one after changes under `server/src/*`.
 
 ---
 
@@ -171,7 +174,7 @@ What the script does:
 1. `npm run build` (shared → server → web) and `npm run check`.
 2. `rsync` uploads the built artifacts to the Pi — `shared/dist`, `server/dist`, `server/systemd`, `server/.env.example`, the `web/out` static files — plus the workspace `package.json`/`package-lock.json`.
 3. Over SSH on the Pi: `npm ci -w server --omit=dev`, updates the systemd unit and restarts `inverter-monitor`.
-4. Checks `GET /api/health` (up to a minute for the restart); `200` without auth or `401` with auth — both mean "the server is alive".
+4. Checks `GET /api/health` (up to a minute for the restart); a `401` without a session (auth is always on) means the server is alive.
 
 - `PI_HOST` — user and address of your Pi (defaults to `pi@raspberrypi.local`).
 - `SSH_KEY` — path to a private key if the ssh agent doesn't pick one up.
@@ -238,8 +241,12 @@ The app always requires login. Users and passwords are stored in `data/auth.db`.
 - **Current settings & baseline** — a "Current / Baseline" table with drift highlighting (including SOC thresholds for lithium batteries), function switches, a "Re-read baseline" button.
 - **Control** — lock status and an Unlock/Lock button; output source priority, charging priority, max charging current, max AC charging current. Every change requires confirmation; the lock re-engages automatically after a write.
 - **Diagnostics** — read/write arbitrary Modbus registers (`R 201 10`, `W 331 1`).
+- **Statistics** (`/stats`) — charts, daily totals and the event log (see [Statistics](#-statistics)).
+- **Users** (`/users`, admin only) — create accounts, change roles, reset passwords, delete.
 
-Everything updates in real time over WebSocket with automatic reconnection.
+Navigation adapts to the role: an **admin** sees every page; a **viewer** sees only
+Overview and Statistics (enforced server-side, not merely hidden in the UI). Everything
+updates in real time over WebSocket with automatic reconnection.
 
 ---
 
@@ -247,8 +254,11 @@ Everything updates in real time over WebSocket with automatic reconnection.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/api/login` | `{password}` — log in, sets a session cookie |
+| `POST` | `/api/login` | `{username, password}` — log in, sets a session cookie |
 | `POST` | `/api/logout` | Log out, revokes the session |
+| `GET` | `/api/me` | Current user — `{username, role, mustChangePassword}` |
+| `POST` | `/api/change-password` | `{currentPassword, newPassword}` — change your own password |
+| `GET`·`POST`·`PATCH`·`DELETE` | `/api/users…` | User management (admin only) — list / create / change role / reset password / delete |
 | `GET` | `/api/health` | Liveness check |
 | `GET` | `/api/snapshot` | Current snapshot (status, mode, settings, warnings) |
 | `GET` | `/api/meta` | Value maps for the controls |
@@ -279,12 +289,14 @@ to disk once a minute (to spare the SD card). Tiered retention: raw 5-second sna
 — 30 days (`STATS_RAW_DAYS`), per-minute aggregates — 2 years (`STATS_MINUTE_DAYS`),
 daily summaries and the event log — kept indefinitely. Disable with `STATS_ENABLED=false`.
 
-The **/stats** page in the web UI: power/battery/temperature charts, daily kWh totals,
-an event log (mode changes, grid loss, faults, connectivity), CSV export.
+The **/stats** page in the web UI: a separate power chart per metric (PV, load, grid,
+battery), battery and temperature charts, daily kWh totals, energy bars (solar
+generated / taken from the grid), and an event log (mode changes, grid loss/restore,
+**solar charge start/stop**, faults, connectivity), plus CSV export.
 
-API: `GET /api/stats/series|daily|events|export.csv` (session-authenticated, same as
-the rest of the API). If the database is unavailable — `503`; core monitoring keeps
-running regardless.
+API: `GET /api/stats/series|daily|energy|events|export.csv` (session-authenticated,
+same as the rest of the API). If the database is unavailable — `503`; core monitoring
+keeps running regardless.
 
 > On Node 24.11.0, the built-in `node:sqlite` module prints an `ExperimentalWarning`
 > to stderr at server startup — harmless, safe to ignore.
@@ -366,18 +378,21 @@ inverter-monitor/
 ├── deploy.sh                     # build → rsync → npm ci → restart → health
 ├── CLAUDE.md                     # guide for Claude Code
 ├── shared/
-│   └── src/{types.ts, api.ts, index.ts}   # shared types + control contract
+│   └── src/{types.ts, api.ts, auth.ts, index.ts}   # shared types + control contract + auth types
 ├── server/
 │   ├── .env.example  systemd/inverter-monitor.service
-│   ├── scripts/selfcheck.ts      # reference Modbus frames, CRC, decoders, setters
-│   ├── src/{index,config,inverter,server,auth,mqtt,store}.ts
-│   ├── src/protocol/{modbus,smg}.ts       # Modbus RTU + SMG II register map
+│   ├── scripts/{selfcheck,selfcheck-stats,selfcheck-auth,selfcheck-auth-http}.ts
+│   ├── scripts/reset-password.ts             # CLI password reset
+│   ├── src/{index,config,inverter,server,mqtt,store}.ts
+│   ├── src/auth/{hash,db,policy,service}.ts  # scrypt, AuthDb (node:sqlite), roles, sessions
+│   ├── src/stats/{db,recorder}.ts            # SQLite history, rollups, event derivation
+│   ├── src/protocol/{modbus,smg}.ts          # Modbus RTU + SMG II register map
 │   └── src/transport/{types,serial,mock,detect}.ts
 └── web/
     ├── next.config.ts
-    ├── app/{layout.tsx, login/, (app)/{page,settings,diagnostics}}
-    ├── components/{Panel,ConfirmDialog,LangSwitch,BatteryRing}.tsx
-    └── lib/{api,format,snapshot,meta,toast}.ts + i18n/{dict,index}
+    ├── app/{layout.tsx, login/, change-password/, (app)/{page,stats,settings,diagnostics,users}}
+    ├── components/{Panel,ConfirmDialog,LangSwitch,BatteryRing,TimeChart}.tsx
+    └── lib/{api,format,snapshot,meta,stats,toast}.ts + i18n/{dict,index}
 ```
 
 ---
