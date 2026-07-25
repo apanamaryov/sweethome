@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Работает на Raspberry Pi.
 
 Полное функциональное описание, API, конфигурация, траблшутинг — в `README.md` (подробный,
-на украинском, поддерживай его при изменениях фич). Этот файл — только про архитектуру и
+англоязычный, поддерживай его при изменениях фич). Этот файл — только про архитектуру и
 рабочий процесс.
 
 ## Команды (из корня репозитория)
@@ -18,14 +18,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm install        # ставит зависимости всех воркспейсов разом (это монорепо)
 npm run dev        # server :3000 (форсит INVERTER_TRANSPORT=mock) + web :3001 (Next.js HMR, проксирует /api на :3000)
 npm run build      # СТРОГО в порядке shared → server → web
-npm run check      # selfcheck протокола + stats + auth (server) + typecheck (web)
+npm run check      # selfcheck протокола + stats + auth + auth-http (server) + typecheck (web)
 ./deploy.sh        # локальная сборка → rsync на Pi → npm ci → рестарт systemd → health-check
 ```
 
-- **`npm run check -w server` гоняет ТРИ selfcheck-скрипта**: `scripts/selfcheck.ts` (протокол), `scripts/selfcheck-stats.ts` (SQLite-статистика) и `scripts/selfcheck-auth.ts` (авторизация). Ни один из них — не typecheck.
+- **`npm run check -w server` гоняет ЧЕТЫРЕ selfcheck-скрипта**: `scripts/selfcheck.ts` (протокол), `scripts/selfcheck-stats.ts` (SQLite-статистика), `scripts/selfcheck-auth.ts` (хеши/роли/флоу авторизации, юнит) и `scripts/selfcheck-auth-http.ts` (авторизация сквозь реальный `createServer` по HTTP: гейты, роли, форс смены пароля). Ни один из них — не typecheck.
 - **Основной «тест» — `server/scripts/selfcheck.ts`** (запускается как часть `npm run check -w server`, а также отдельно `cd server && npx tsx scripts/selfcheck.ts`). Это не typecheck: он через `assert` сверяет **эталонные Modbus-кадры, снятые с живого инвертора** (запрос `01 03 00 C9 00 01 54 34` → ответ `01 03 02 00 03 F8 45` и др.), CRC-16/Modbus, декодеры регистров и билдеры сеттеров. Джестов/витестов нет. **После правок в `server/src/protocol/*` обязательно гоняй selfcheck.**
 - **`server/scripts/selfcheck-stats.ts`** — аналогично через `assert` проверяет схему/свёртки/retention SQLite-статистики (`src/stats/db.ts`, `recorder.ts`). **После правок в `server/src/stats/*` обязательно гоняй его.**
-- `npm run check` для сервера — это два selfcheck-скрипта, а НЕ проверка типов. Типы сервера проверяются только сборкой (`tsc` в `npm run build`). Веб проверяется отдельно (`tsc --noEmit`).
+- `npm run check` для сервера — это четыре selfcheck-скрипта, а НЕ проверка типов. Типы сервера проверяются только сборкой (`tsc` в `npm run build`). Веб проверяется отдельно (`tsc --noEmit`).
 - Деплой на Pi — `PI_HOST=pi@… SSH_KEY=~/.ssh/… ./deploy.sh`; учитывай, что скрипт пересобирает всё локально, заливает артефакты и **рестартует живой systemd-сервис** на Pi. Конкретный адрес/ключ — вне репозитория (локальное окружение владельца).
 - Node: root `engines` и `server` `engines` — оба **≥ 24** (нужен встроенный `node:sqlite` для статистики). Сам Pi уже на **Node 24** (Raspberry Pi OS Trixie, arm64) — совпадает с заявленным минимумом.
 
@@ -66,8 +66,10 @@ npm run check      # selfcheck протокола + stats + auth (server) + type
 3½. **`src/stats/`** — статистика в SQLite через встроенный `node:sqlite` (Node ≥ 24, нативных
    зависимостей нет). `db.ts` — схема (samples 30 дней / samples_minute 2 года / daily+events
    бессрочно), свёртки по watermark, retention; `recorder.ts` — подписка на `"snapshot"`,
-   буфер с флашем раз в 60 с (щадит SD), деривация событий из диффа снапшотов. Никогда не
-   пишет в инвертор. Тесты — `scripts/selfcheck-stats.ts` (входит в `npm run check -w server`).
+   буфер с флашем раз в 60 с (щадит SD), деривация событий из диффа снапшотов (смена режима,
+   потеря/возврат сети, аварии, связь, **старт/стоп зарядки от солнца** по гистерезису
+   Шмитта на `pvChargingPower`). Никогда не пишет в инвертор. Тесты —
+   `scripts/selfcheck-stats.ts` (входит в `npm run check -w server`).
 4. **`src/server.ts`** — Express (REST под `/api` + раздача статики `web/out`) и WebSocket (`/ws`, push каждого `Snapshot`). `Inverter` — `EventEmitter`, сервер и MQTT подписаны на событие `"snapshot"`.
 5. **`src/mqtt.ts`** — публикация в MQTT с автодискавери Home Assistant (по умолчанию выключено, `MQTT_URL` пуст).
 6. **`src/config.ts`** — вся конфигурация только из env (см. `.env.example`): `INVERTER_BAUD` default **9600**, `MODBUS_SLAVE_ID` default 1, transport `auto|serial|mock`.
@@ -94,8 +96,8 @@ npm run check      # selfcheck протокола + stats + auth (server) + type
 
 ### `web/` — Next.js (App Router)
 - **Прод = статический экспорт** (`output: "export"` в `next.config.ts`) в `web/out/`, который раздаёт сам Express. **Dev** = `next dev -p 3001` + rewrites `/api/*` → `http://localhost:3000` (см. `next.config.ts`). Отсюда же `web/lib/api.ts::wsUrl()` разводит dev (`ws://localhost:3000`) и прод.
-- Роут-группа `app/(app)/` — авторизованная оболочка (дашборд, settings, diagnostics); `app/login/` открыта. Сервер редиректит страничные маршруты на `/login` при отсутствии сессии, но статику (css/js/страница логина) отдаёт свободно — в ней нет данных.
-- Данные в UI — `web/lib/snapshot.tsx` (подписка на WS с реконнектом и пометкой stale), `meta.tsx` (справочники управления с ретраем), `format.ts`, `toast.tsx`.
+- Роут-группа `app/(app)/` — авторизованная оболочка (дашборд, `stats`, `settings`, `diagnostics`, `users`); `app/login/` и `app/change-password/` открыты. Навигация и доступ зависят от роли (см. «Авторизация»): viewer видит только дашборд и `stats`. Сервер редиректит страничные маршруты (`/login` без сессии; `/change-password` при форсе смены пароля; `/` для viewer на admin-страницах), но статику (css/js/страницы) отдаёт свободно — данные защищены на уровне `/api`.
+- Данные в UI — `web/lib/snapshot.tsx` (подписка на WS с реконнектом и пометкой stale), `meta.tsx` (справочники управления с ретраем; несёт текущего юзера/роль в `ApiMeta.session`), `stats.ts` (клиент `/api/stats/*`), `format.ts`, `toast.tsx`.
 - **i18n** (`web/lib/i18n/`): типизированный словарь UA/RU/EN. Стартовый язык жёстко `uk`, чтобы совпасть с SSG-пререндером (иначе hydration mismatch); реальный выбор подхватывается из `localStorage` уже после маунта. Словарь локализует и **имена битов fault/warning** (английские строки из `smg.ts` — это ключи `dict.warnings`), и **флаги-переключатели** (ключи `lcdHome`/`ecoMode`/… из `FLAG_DEFS`) — при изменении строк в `smg.ts` синхронизируй `dict.ts`.
 
 ## Железо (контекст для отладки связи)
@@ -105,7 +107,7 @@ npm run check      # selfcheck протокола + stats + auth (server) + type
 
 ## Деплой на Pi (важные детали)
 - Сборка **целиком локальная**; Pi только `npm ci -w server --omit=dev` + рестарт systemd. Pi ничего не компилирует.
-- На Pi конфиг и данные лежат под `server/` (`server/.env`, `server/data/{baseline.json,sessions.json}`); systemd-юнит имеет `WorkingDirectory=…/server`.
+- На Pi конфиг и данные лежат под `server/` (`server/.env`, `server/data/{baseline.json, auth.db, stats.db}`); systemd-юнит имеет `WorkingDirectory=…/server`. `auth.db`/`stats.db` создаются автоматически при первом старте; `deploy.sh` каталог `data/` не трогает.
 - `systemctl enable` (автозапуск после ребута Pi) — разовая ручная операция, `deploy.sh` его не делает.
 
 ## Git-workflow
