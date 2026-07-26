@@ -111,11 +111,11 @@ export default function StatsPage() {
 
   // Мощность — по одному графику на показатель (общий график с 4 линиями
   // разных масштабов читался плохо).
-  const powerCharts: { field: string; label: string; stroke: string }[] = [
+  const powerCharts: { field: string; label: string; stroke: string; title?: string }[] = [
     { field: "pvPower", label: t.stSeriesPv, stroke: "#f59e0b" },
     { field: "acOutputActivePower", label: t.stSeriesLoad, stroke: "#3b82f6" },
     { field: "mainsPower", label: t.stSeriesGrid, stroke: "#8b5cf6" },
-    { field: "batteryPower", label: t.stSeriesBatt, stroke: "#10b981" },
+    { field: "batteryPower", label: t.stSeriesBatt, stroke: "#10b981", title: t.stChartBattPower },
   ];
   const battSeries: ChartSeries[] = [
     { label: t.stSeriesSoc, stroke: "#10b981", scale: "pct", unit: "%" },
@@ -221,7 +221,7 @@ export default function StatsPage() {
         <>
           {powerCharts.map((c) => (
             <section className="stats-section" key={c.field}>
-              <h3>{c.label}</h3>
+              <h3>{c.title ?? c.label}</h3>
               <div className="chart-box">
                 <TimeChart
                   data={aligned(rows, [c.field])}
