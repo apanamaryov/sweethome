@@ -124,6 +124,19 @@ describe("server.ts (HTTP integration via supertest)", () => {
     });
   });
 
+  describe("GET /api/stats/solar-window", () => {
+    it("без сессии → 401", async () => {
+      const res = await request(server).get("/api/stats/solar-window");
+      expect(res.status).toBe(401);
+    });
+
+    it("с сессией, но статистика выключена (stats=null) → 503", async () => {
+      const cookie = await freshSessionCookie("admin", "admin", "admin123");
+      const res = await request(server).get("/api/stats/solar-window").set("Cookie", cookie);
+      expect(res.status).toBe(503);
+    });
+  });
+
   describe("must_change_password gate", () => {
     it("blocks /api/snapshot and /api/control but allows me/change-password/logout", async () => {
       const cookie = await loginAs("admin", "admin");

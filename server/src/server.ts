@@ -17,7 +17,7 @@ import {
   ControlType,
 } from "@inverter/shared";
 import { Snapshot } from "@inverter/shared";
-import { GAUGE_FIELDS, GaugeField } from "./stats/db";
+import { GAUGE_FIELDS, GaugeField, localDay } from "./stats/db";
 import { StatsRecorder } from "./stats/recorder";
 
 declare module "express-serve-static-core" {
@@ -325,6 +325,24 @@ export function createServer(inverter: Inverter, cfg: Config, stats: StatsRecord
         return res.status(400).json({ ok: false, error: "from/to must be YYYY-MM-DD" });
       }
       res.json(stats.db.queryDaily(from, to));
+    } catch (e) {
+      console.error("[inverter-monitor] stats query failed:", (e as Error).message);
+      res.status(503).json({ ok: false, error: "stats unavailable" });
+    }
+  });
+
+  app.get("/api/stats/solar-window", (req, res) => {
+    try {
+      if (!stats) return res.status(503).json({ ok: false, error: "stats unavailable" });
+      const dayRe = /^\d{4}-\d{2}-\d{2}$/;
+      const now = Date.now();
+      const today = localDay(now);
+      const day = req.query.day ? String(req.query.day) : today;
+      if (!dayRe.test(day)) {
+        return res.status(400).json({ ok: false, error: "day must be YYYY-MM-DD" });
+      }
+      const win = stats.db.querySolarWindow(day, day === today ? now : undefined);
+      res.json({ day, ...win });
     } catch (e) {
       console.error("[inverter-monitor] stats query failed:", (e as Error).message);
       res.status(503).json({ ok: false, error: "stats unavailable" });
