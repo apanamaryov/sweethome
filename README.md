@@ -30,7 +30,7 @@ ever leaves your LAN.
 - 🔒 **Safe control** — read-only by default; writes require an explicit unlock, a register whitelist, automatic re-locking, and an "as-found" settings baseline with drift highlighting.
 - 🏠 **Home Assistant integration** over MQTT with auto-discovery — entities appear in HA by themselves, no YAML needed.
 - 🔑 **Users & roles** — always-on login with two roles (admin / viewer), forced password change on first use, admin-managed accounts, scrypt-hashed passwords in SQLite, HttpOnly sessions and brute-force protection.
-- 📊 **Statistics & history** — SQLite telemetry log with a per-metric power chart set, daily kWh totals, energy bars, and an event log (mode changes, grid loss, solar charge start/stop, faults).
+- 📊 **Statistics & history** — SQLite telemetry log with a per-metric power chart set, daily kWh totals, energy bars, a "Solar today" window (start/end of stable PV output), and an event log (mode changes, grid loss, faults).
 - 🚀 **One-script deploy** — local build → rsync to the Pi → systemd restart → health check.
 
 ---
@@ -212,6 +212,8 @@ ssh pi@<pi-address> sudo systemctl enable inverter-monitor
 | `AUTH_SESSION_TTL_DAYS` | `30` | Session cookie lifetime |
 | `MQTT_URL` | — | MQTT broker address (`mqtt://user:pass@host:1883`). Empty = MQTT disabled |
 | `MQTT_ENABLE_CONTROL` | `false` | Writable HA entities (bypass the UI lock) |
+| `STATS_SOLAR_THRESHOLD_W` | `200` | PV power threshold (W) for the solar-day window (start/end of stable output) |
+| `STATS_SOLAR_DWELL_MIN` | `15` | Minutes of sustained output/silence required before flagging the solar-day start/end |
 
 The full list of MQTT variables is in [`server/.env.example`](server/.env.example).
 
@@ -239,12 +241,13 @@ The app always requires login. Users and passwords are stored in `data/auth.db`.
 - **Header** — connection status (Connected / Demo data / No connection), current mode (Grid / Battery / Bypass / Charging / …), last update time.
 - **Battery** — state of charge (SoC ring), voltage, charge/discharge current, state.
 - **Solar (PV)** — power, voltage, current.
+- **Solar today** — start/end of today's stable solar window (idle / active / ended), backed by `GET /api/stats/solar-window`.
 - **Load** — active power, apparent power (VA), load %, voltage/frequency.
 - **Grid** — consumed power, voltage, frequency, inverter temperature.
 - **Current settings & baseline** — a "Current / Baseline" table with drift highlighting (including SOC thresholds for lithium batteries), function switches, a "Re-read baseline" button.
 - **Control** — lock status and an Unlock/Lock button; output source priority, charging priority, max charging current, max AC charging current. Every change requires confirmation; the lock re-engages automatically after a write.
 - **Diagnostics** — read/write arbitrary Modbus registers (`R 201 10`, `W 331 1`).
-- **Statistics** (`/stats`) — charts, daily totals and the event log (see [Statistics](#-statistics)).
+- **Statistics** (`/stats`) — charts, daily totals with solar start/end columns, and the event log (see [Statistics](#-statistics)).
 - **Users** (`/users`, admin only) — create accounts, change roles, reset passwords, delete.
 
 Navigation adapts to the role: an **admin** sees every page; a **viewer** sees only
@@ -293,13 +296,20 @@ to disk once a minute (to spare the SD card). Tiered retention: raw 5-second sna
 daily summaries and the event log — kept indefinitely. Disable with `STATS_ENABLED=false`.
 
 The **/stats** page in the web UI: a separate power chart per metric (PV, load, grid,
-battery), battery and temperature charts, daily kWh totals, energy bars (solar
-generated / taken from the grid), and an event log (mode changes, grid loss/restore,
-**solar charge start/stop**, faults, connectivity), plus CSV export.
+battery), battery and temperature charts, daily kWh totals with **solar start/end
+columns**, energy bars (solar generated / taken from the grid), and an event log (mode
+changes, grid loss/restore, faults, connectivity), plus CSV export.
 
-API: `GET /api/stats/series|daily|energy|events|export.csv` (session-authenticated,
-same as the rest of the API). If the database is unavailable — `503`; core monitoring
-keeps running regardless.
+The **solar day window** — when PV output stably starts and stops for the day — is
+computed retrospectively from the per-minute PV series (threshold
+`STATS_SOLAR_THRESHOLD_W`, dwell time `STATS_SOLAR_DWELL_MIN`) and stored per day
+(`solar_start_ts`/`solar_end_ts`, part of `/api/stats/daily`). Today's live window —
+including while it's still in progress — is served by `GET /api/stats/solar-window`
+and shown as a "Solar today" panel on the dashboard.
+
+API: `GET /api/stats/series|daily|energy|events|solar-window|export.csv`
+(session-authenticated, same as the rest of the API). If the database is unavailable
+— `503`; core monitoring keeps running regardless.
 
 > On Node 24.11.0, the built-in `node:sqlite` module prints an `ExperimentalWarning`
 > to stderr at server startup — harmless, safe to ignore.

@@ -47,7 +47,7 @@ export type SolarState = "idle" | "active" | "ended";
 export interface SolarWindow {
   day: string;
   start: number | null; // unix ms
-  end: number | null; //   unix ms
+  end: number | null; // unix ms
   state: SolarState;
 }
 

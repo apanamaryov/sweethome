@@ -67,9 +67,12 @@ npm run check      # jest: протокол + stats + auth + auth-http (server) 
    зависимостей нет). `db.ts` — схема (samples 30 дней / samples_minute 2 года / daily+events
    бессрочно), свёртки по watermark, retention; `recorder.ts` — подписка на `"snapshot"`,
    буфер с флашем раз в 60 с (щадит SD), деривация событий из диффа снапшотов (смена режима,
-   потеря/возврат сети, аварии, связь, **старт/стоп зарядки от солнца** по гистерезису
-   Шмитта на `pvChargingPower`). Никогда не пишет в инвертор. Тесты —
-   `src/stats/db.test.ts` (jest, входит в `npm run check -w server`).
+   потеря/возврат сети, аварии, связь, device-changed). **Окно солнечного дня** (начало/конец
+   устойчивой выработки PV) считается отдельно — ретроспективно из поминутного ряда
+   `samples_minute` в `db.ts` (`computeSolarWindow` в `solar.ts` + `querySolarWindow`),
+   хранится в `daily` (`solar_start_ts`/`solar_end_ts`) и отдаётся эндпоинтом
+   `/api/stats/solar-window`. Никогда не пишет в инвертор. Тесты —
+   `src/stats/db.test.ts`, `src/stats/solar.test.ts` (jest, входит в `npm run check -w server`).
 4. **`src/server.ts`** — Express (REST под `/api` + раздача статики `web/out`) и WebSocket (`/ws`, push каждого `Snapshot`). `Inverter` — `EventEmitter`, сервер и MQTT подписаны на событие `"snapshot"`.
 5. **`src/mqtt.ts`** — публикация в MQTT с автодискавери Home Assistant (по умолчанию выключено, `MQTT_URL` пуст).
 6. **`src/config.ts`** — вся конфигурация только из env (см. `.env.example`): `INVERTER_BAUD` default **9600**, `MODBUS_SLAVE_ID` default 1, transport `auto|serial|mock`.
