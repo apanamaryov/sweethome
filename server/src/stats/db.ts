@@ -136,23 +136,28 @@ export class StatsDb {
     if (v < 2) this.migrateV2();
   }
 
-  /** v1→v2: столбцы окна солнечного дня + разовый бэкофилл истории из samples_minute. */
+  /** v1→v2: столбцы окна солнечного дня + разовый бэкофилл истории из samples_minute.
+   *  Вся миграция — в одной транзакции: при обрыве процесса между ALTER и
+   *  PRAGMA user_version откат вернёт схему к v1 целиком, и следующий старт
+   *  чисто повторит миграцию (без «duplicate column name» на повторном ALTER). */
   private migrateV2(): void {
-    this.db.exec(`
-      ALTER TABLE daily ADD COLUMN solar_start_ts INTEGER;
-      ALTER TABLE daily ADD COLUMN solar_end_ts INTEGER;
-    `);
-    const days = this.db
-      .prepare(`SELECT DISTINCT ${DAY_EXPR} AS day FROM samples_minute ORDER BY 1`)
-      .all() as Array<{ day: string }>;
-    const upd = this.db.prepare(
-      "UPDATE daily SET solar_start_ts = ?, solar_end_ts = ? WHERE day = ?"
-    );
-    for (const { day } of days) {
-      const w = this.windowForDay(day);
-      upd.run(w.start, w.end, day);
-    }
-    this.db.exec("PRAGMA user_version = 2");
+    this.transaction(() => {
+      this.db.exec(`
+        ALTER TABLE daily ADD COLUMN solar_start_ts INTEGER;
+        ALTER TABLE daily ADD COLUMN solar_end_ts INTEGER;
+      `);
+      const days = this.db
+        .prepare(`SELECT DISTINCT ${DAY_EXPR} AS day FROM samples_minute ORDER BY 1`)
+        .all() as Array<{ day: string }>;
+      const upd = this.db.prepare(
+        "UPDATE daily SET solar_start_ts = ?, solar_end_ts = ? WHERE day = ?"
+      );
+      for (const { day } of days) {
+        const w = this.windowForDay(day);
+        upd.run(w.start, w.end, day);
+      }
+      this.db.exec("PRAGMA user_version = 2");
+    });
   }
 
   private prepare(): void {
