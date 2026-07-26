@@ -4,6 +4,7 @@ import { useT } from "@/lib/i18n";
 import { useSnapshot } from "@/lib/snapshot";
 import { fmt } from "@/lib/format";
 import { BatteryRing } from "@/components/BatteryRing";
+import { SolarToday } from "@/components/SolarToday";
 
 export default function DashboardPage() {
   const t = useT();
@@ -57,6 +58,7 @@ export default function DashboardPage() {
             <span className="cap">{t.unit_A}</span>
           </div>
         </div>
+        <SolarToday />
       </section>
 
       <section className="card card-load">

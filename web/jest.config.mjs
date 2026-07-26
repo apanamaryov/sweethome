@@ -8,6 +8,10 @@ const config = {
   setupFilesAfterEnv: ["<rootDir>/jest.setup.ts"],
   moduleNameMapper: {
     "^@inverter/shared$": "<rootDir>/../shared/src/index.ts",
+    // next/jest только резолвит "@/*" через SWC-транспиляцию import-стейтментов;
+    // строковый аргумент jest.mock("@/...") этой трансформации не подвергается,
+    // поэтому нужен явный маппер для рантайм-резолва jest (см. web/components/SolarToday.test.tsx).
+    "^@/(.*)$": "<rootDir>/$1",
   },
   collectCoverageFrom: [
     "lib/**/*.{ts,tsx}",
