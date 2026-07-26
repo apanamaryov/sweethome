@@ -109,7 +109,7 @@ function baseConfig(mqttOverrides: Partial<Config["mqtt"]> = {}): Config {
     startupLocked: true,
     autoRelock: true,
     dataDir: "data",
-    stats: { enabled: true, rawDays: 30, minuteDays: 730 },
+    stats: { enabled: true, rawDays: 30, minuteDays: 730, solarThresholdW: 200, solarDwellMin: 15 },
     auth: { sessionTtlDays: 30 },
     mqtt: {
       url: "mqtt://broker:1883",

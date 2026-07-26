@@ -1,5 +1,6 @@
 import { DatabaseSync, StatementSync } from "node:sqlite";
 import { InverterStatus } from "@inverter/shared";
+import { computeSolarWindow, SolarParams, SolarWindow } from "./solar";
 
 /** Числовые поля InverterStatus в сырой таблице (порядок = порядок колонок). */
 export const SAMPLE_FIELDS = [
@@ -73,8 +74,11 @@ const MINUTE_COLS = [
 ];
 const DAY_EXPR = "strftime('%Y-%m-%d', ts / 1000, 'unixepoch', 'localtime')";
 
+const DEFAULT_SOLAR: SolarParams = { thresholdW: 200, dwellMin: 15 };
+
 export class StatsDb {
   private db: DatabaseSync;
+  private solar: SolarParams;
   private insSample!: StatementSync;
   private insEvent!: StatementSync;
   private getMetaStmt!: StatementSync;
@@ -83,8 +87,10 @@ export class StatsDb {
   private dailyStmt!: StatementSync;
   private dailyQueryStmt!: StatementSync;
   private exportStmt!: { raw: StatementSync; minute: StatementSync };
+  private solarUpdStmt!: StatementSync;
 
-  constructor(file: string) {
+  constructor(file: string, solar: SolarParams = DEFAULT_SOLAR) {
+    this.solar = solar;
     this.db = new DatabaseSync(file);
     this.db.exec("PRAGMA journal_mode = WAL");
     this.db.exec("PRAGMA synchronous = NORMAL");
@@ -98,34 +104,55 @@ export class StatsDb {
 
   private migrate(): void {
     const v = (this.db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
-    if (v >= 1) return;
+    if (v < 1) {
+      this.db.exec(`
+        CREATE TABLE samples (
+          ts INTEGER PRIMARY KEY,
+          mode TEXT NOT NULL,
+          ${SAMPLE_FIELDS.map((f) => `${f} REAL`).join(",\n        ")}
+        );
+        CREATE TABLE samples_minute (
+          ts INTEGER PRIMARY KEY,
+          sample_count INTEGER NOT NULL,
+          ${GAUGE_FIELDS.map((f) => `${f}_avg REAL, ${f}_min REAL, ${f}_max REAL`).join(",\n        ")},
+          ${ENERGY_COLS.map((c) => `${c} REAL`).join(", ")}
+        );
+        CREATE TABLE daily (
+          day TEXT PRIMARY KEY,
+          ${ENERGY_COLS.map((c) => `${c} REAL`).join(", ")},
+          soc_min REAL, soc_max REAL, grid_loss_count INTEGER, sample_count INTEGER
+        );
+        CREATE TABLE events (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          ts INTEGER NOT NULL,
+          type TEXT NOT NULL,
+          detail TEXT NOT NULL
+        );
+        CREATE INDEX idx_events_ts ON events(ts);
+        CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        PRAGMA user_version = 1;
+      `);
+    }
+    if (v < 2) this.migrateV2();
+  }
+
+  /** v1→v2: столбцы окна солнечного дня + разовый бэкофилл истории из samples_minute. */
+  private migrateV2(): void {
     this.db.exec(`
-      CREATE TABLE samples (
-        ts INTEGER PRIMARY KEY,
-        mode TEXT NOT NULL,
-        ${SAMPLE_FIELDS.map((f) => `${f} REAL`).join(",\n        ")}
-      );
-      CREATE TABLE samples_minute (
-        ts INTEGER PRIMARY KEY,
-        sample_count INTEGER NOT NULL,
-        ${GAUGE_FIELDS.map((f) => `${f}_avg REAL, ${f}_min REAL, ${f}_max REAL`).join(",\n        ")},
-        ${ENERGY_COLS.map((c) => `${c} REAL`).join(", ")}
-      );
-      CREATE TABLE daily (
-        day TEXT PRIMARY KEY,
-        ${ENERGY_COLS.map((c) => `${c} REAL`).join(", ")},
-        soc_min REAL, soc_max REAL, grid_loss_count INTEGER, sample_count INTEGER
-      );
-      CREATE TABLE events (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        ts INTEGER NOT NULL,
-        type TEXT NOT NULL,
-        detail TEXT NOT NULL
-      );
-      CREATE INDEX idx_events_ts ON events(ts);
-      CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-      PRAGMA user_version = 1;
+      ALTER TABLE daily ADD COLUMN solar_start_ts INTEGER;
+      ALTER TABLE daily ADD COLUMN solar_end_ts INTEGER;
     `);
+    const days = this.db
+      .prepare(`SELECT DISTINCT ${DAY_EXPR} AS day FROM samples_minute ORDER BY 1`)
+      .all() as Array<{ day: string }>;
+    const upd = this.db.prepare(
+      "UPDATE daily SET solar_start_ts = ?, solar_end_ts = ? WHERE day = ?"
+    );
+    for (const { day } of days) {
+      const w = this.windowForDay(day);
+      upd.run(w.start, w.end, day);
+    }
+    this.db.exec("PRAGMA user_version = 2");
   }
 
   private prepare(): void {
@@ -163,6 +190,9 @@ export class StatsDb {
       WHERE ts >= $dayStart AND ts < $dayEnd AND ${DAY_EXPR} = $day
     `);
     this.dailyQueryStmt = this.db.prepare("SELECT * FROM daily WHERE day >= ? AND day <= ? ORDER BY day");
+    this.solarUpdStmt = this.db.prepare(
+      "UPDATE daily SET solar_start_ts = ?, solar_end_ts = ? WHERE day = ?"
+    );
     this.exportStmt = {
       raw: this.db.prepare(`SELECT ${SAMPLE_COLS.join(", ")} FROM samples WHERE ts > ? AND ts <= ? ORDER BY ts LIMIT ?`),
       minute: this.db.prepare(`SELECT ${MINUTE_COLS.join(", ")} FROM samples_minute WHERE ts > ? AND ts <= ? ORDER BY ts LIMIT ?`),
@@ -219,7 +249,11 @@ export class StatsDb {
          WHERE ts >= ? AND ${DAY_EXPR} > ? AND ${DAY_EXPR} < ? ORDER BY 1`
       )
       .all(minTs, last, today) as Array<{ day: string }>;
-    for (const { day } of days) this.dailyStmt.run({ day, dayStart: dayStartMs(day), dayEnd: nextDayStartMs(day) });
+    for (const { day } of days) {
+      this.dailyStmt.run({ day, dayStart: dayStartMs(day), dayEnd: nextDayStartMs(day) });
+      const w = this.windowForDay(day); // закрытый день → ретроспектива
+      this.solarUpdStmt.run(w.start, w.end, day);
+    }
     // Watermark — календарное «вчера» от today (не now-24ч: на 25-часовом дне
     // осеннего перевода это выражение может вернуть сам today и навсегда
     // пропустить его свёртку).
@@ -254,6 +288,22 @@ export class StatsDb {
 
   queryDaily(fromDay: string, toDay: string): Array<Record<string, unknown>> {
     return this.dailyQueryStmt.all(fromDay, toDay) as Array<Record<string, unknown>>;
+  }
+
+  /** Окно солнечного дня по минуткам локального дня `day`. Общий движок для
+   *  свёртки, бэкофилла и live-запроса. `nowMs` задаётся только для «сегодня». */
+  private windowForDay(day: string, nowMs?: number): SolarWindow {
+    const rows = this.db
+      .prepare(
+        "SELECT ts, pvPower_avg AS pv FROM samples_minute WHERE ts >= ? AND ts < ? ORDER BY ts"
+      )
+      .all(dayStartMs(day), nextDayStartMs(day)) as Array<{ ts: number; pv: number | null }>;
+    const points = rows.map((r) => ({ ts: Number(r.ts), pv: Number(r.pv) || 0 }));
+    return computeSolarWindow(points, this.solar, nowMs);
+  }
+
+  querySolarWindow(day: string, nowMs?: number): SolarWindow {
+    return this.windowForDay(day, nowMs);
   }
 
   /**

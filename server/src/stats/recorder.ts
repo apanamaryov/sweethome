@@ -178,7 +178,10 @@ export class StatsRecorder {
 export function createStats(cfg: Config): StatsRecorder | null {
   if (!cfg.stats.enabled) return null;
   try {
-    const db = new StatsDb(path.join(cfg.dataDir, "stats.db"));
+    const db = new StatsDb(path.join(cfg.dataDir, "stats.db"), {
+      thresholdW: cfg.stats.solarThresholdW,
+      dwellMin: cfg.stats.solarDwellMin,
+    });
     return new StatsRecorder(db, {
       pollIntervalMs: cfg.pollIntervalMs,
       rawDays: cfg.stats.rawDays,

@@ -219,7 +219,7 @@ function baseConfig(overrides: Partial<Config> = {}): Config {
     startupLocked: true,
     autoRelock: true,
     dataDir: tmp,
-    stats: { enabled: false, rawDays: 30, minuteDays: 730 },
+    stats: { enabled: false, rawDays: 30, minuteDays: 730, solarThresholdW: 200, solarDwellMin: 15 },
     auth: { sessionTtlDays: 30 },
     mqtt: {
       url: null,

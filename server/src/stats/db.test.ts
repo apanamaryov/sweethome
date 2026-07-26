@@ -1,4 +1,4 @@
-import { StatsDb, SAMPLE_FIELDS, SampleField, SampleRow, prevCalendarDay } from "./db";
+import { StatsDb, SAMPLE_FIELDS, SampleField, SampleRow, prevCalendarDay, dayStartMs } from "./db";
 
 /** Сэмпл со всеми нулевыми полями + переопределения (см. selfcheck-stats.ts). */
 function sample(ts: number, over: Partial<Record<SampleField, number>> = {}, mode = "Battery"): SampleRow {
@@ -381,5 +381,71 @@ describe("StatsDb — retention (prune)", () => {
 
     expect(n(db.all("SELECT COUNT(*) AS n FROM daily"))).toBe(1);
     expect(n(db.all("SELECT COUNT(*) AS n FROM events"))).toBe(1);
+  });
+});
+
+describe("StatsDb — окно солнечного дня", () => {
+  let db: StatsDb;
+  afterEach(() => db.close());
+
+  const MIN = 60_000;
+
+  /** Залить N минут подряд с заданным pvPower, начиная с ts0 (по одному сэмплу на минуту). */
+  function seedMinutes(d: StatsDb, ts0: number, n: number, pv: number) {
+    d.transaction(() => {
+      for (let i = 0; i < n; i++) d.insertSample(sample(ts0 + i * MIN, { pvPower: pv }));
+    });
+  }
+
+  it("свежая БД: таблица daily имеет столбцы solar_start_ts / solar_end_ts", () => {
+    db = new StatsDb(":memory:");
+    const cols = db.all("PRAGMA table_info(daily)").map((r) => r.name);
+    expect(cols).toEqual(expect.arrayContaining(["solar_start_ts", "solar_end_ts"]));
+  });
+
+  it("querySolarWindow (ретроспектива): 16-минутный прогон → ended, start/end по минутам", () => {
+    db = new StatsDb(":memory:", { thresholdW: 200, dwellMin: 15 });
+    const day = "2026-01-15";
+    const t8 = dayStartMs(day) + 8 * 60 * MIN;
+    seedMinutes(db, t8, 16, 800); // 16 надпороговых минут ≥ dwell
+    db.rollupMinutes(t8 + 60 * MIN, 60_000); // свернуть в samples_minute
+    const w = db.querySolarWindow(day);
+    expect(w.state).toBe("ended");
+    expect(w.start).toBe(t8);
+    expect(w.end).toBe(t8 + 15 * MIN);
+  });
+
+  it("querySolarWindow (live): передан nowMs вскоре после последней минуты → active", () => {
+    db = new StatsDb(":memory:", { thresholdW: 200, dwellMin: 15 });
+    const day = "2026-01-15";
+    const t8 = dayStartMs(day) + 8 * 60 * MIN;
+    seedMinutes(db, t8, 20, 800);
+    const upto = t8 + 20 * MIN;
+    db.rollupMinutes(upto, 60_000);
+    const w = db.querySolarWindow(day, upto + 5 * MIN); // 5 мин после последней минуты
+    expect(w.state).toBe("active");
+    expect(w.start).toBe(t8);
+    expect(w.end).toBeNull();
+  });
+
+  it("querySolarWindow: тёмный день → idle", () => {
+    db = new StatsDb(":memory:", { thresholdW: 200, dwellMin: 15 });
+    const day = "2026-01-15";
+    const t8 = dayStartMs(day) + 8 * 60 * MIN;
+    seedMinutes(db, t8, 30, 50); // всё ниже порога
+    db.rollupMinutes(t8 + 60 * MIN, 60_000);
+    expect(db.querySolarWindow(day)).toEqual({ start: null, end: null, state: "idle" });
+  });
+
+  it("rollupDaily пишет solar_start_ts / solar_end_ts в строку daily", () => {
+    db = new StatsDb(":memory:", { thresholdW: 200, dwellMin: 15 });
+    const day = "2026-01-15";
+    const t8 = dayStartMs(day) + 8 * 60 * MIN;
+    seedMinutes(db, t8, 16, 800);
+    db.rollupMinutes(t8 + 60 * MIN, 60_000);
+    db.rollupDaily(dayStartMs("2026-01-17")); // «сейчас» — позже, чтобы day был закрыт
+    const row = db.all("SELECT solar_start_ts, solar_end_ts FROM daily WHERE day = ?", day)[0];
+    expect(Number(row.solar_start_ts)).toBe(t8);
+    expect(Number(row.solar_end_ts)).toBe(t8 + 15 * MIN);
   });
 });
