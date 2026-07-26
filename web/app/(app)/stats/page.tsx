@@ -148,8 +148,6 @@ export default function StatsPage() {
         "conn-lost": t.stEvConnLost,
         "conn-restored": t.stEvConnRestored,
         "device-changed": t.stEvDeviceChanged,
-        "solar-charge-start": t.stEvSolarStart,
-        "solar-charge-stop": t.stEvSolarStop,
       } as Record<string, string>
     )[type] ?? type);
 
@@ -178,9 +176,6 @@ export default function StatsPage() {
         return String(d.device ?? d.transport ?? "");
       case "device-changed":
         return `${d.from} → ${d.to}`;
-      case "solar-charge-start":
-      case "solar-charge-stop":
-        return `${d.pvChargingPower ?? "—"} ${t.capW}`;
       default:
         return e.detail;
     }
@@ -188,6 +183,8 @@ export default function StatsPage() {
 
   const maxWh = Math.max(1, ...daily.map((r) => Math.max(r.pv_wh, r.load_wh, r.grid_wh)));
   const fmtT = (ms: number) => new Date(ms).toLocaleString(t.langLocale);
+  const hhmm = (ms: number | null) =>
+    ms == null ? "—" : new Date(ms).toLocaleTimeString(t.langLocale, { hour: "2-digit", minute: "2-digit" });
   const periodLabel =
     kind === "day"
       ? from.toLocaleDateString(t.langLocale)
@@ -283,6 +280,8 @@ export default function StatsPage() {
                 <tr>
                   <th>{t.stThDay}</th>
                   <th></th>
+                  <th>{t.stThSolarStart}</th>
+                  <th>{t.stThSolarEnd}</th>
                   <th>{t.stThPv}</th>
                   <th>{t.stThLoad}</th>
                   <th>{t.stThGrid}</th>
@@ -298,6 +297,8 @@ export default function StatsPage() {
                     <td className="stats-bar-cell">
                       <span className="stats-bar" style={{ width: `${(r.pv_wh / maxWh) * 100}%` }} />
                     </td>
+                    <td>{hhmm(r.solar_start_ts)}</td>
+                    <td>{hhmm(r.solar_end_ts)}</td>
                     <td>{kwh(r.pv_wh)}</td>
                     <td>{kwh(r.load_wh)}</td>
                     <td>{kwh(r.grid_wh)}</td>
@@ -319,8 +320,7 @@ export default function StatsPage() {
         <select value={evType} onChange={(e) => setEvType(e.target.value)}>
           <option value="">{t.stEvAll}</option>
           {["mode-change", "grid-loss", "grid-restore", "fault-set", "fault-clear",
-            "warning-set", "warning-clear", "conn-lost", "conn-restored", "device-changed",
-            "solar-charge-start", "solar-charge-stop"].map((k) => (
+            "warning-set", "warning-clear", "conn-lost", "conn-restored", "device-changed"].map((k) => (
             <option key={k} value={k}>{evLabel(k)}</option>
           ))}
         </select>

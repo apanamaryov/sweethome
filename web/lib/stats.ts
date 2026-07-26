@@ -9,6 +9,8 @@ export interface DailyRow {
   grid_wh: number;
   batt_charge_wh: number;
   batt_discharge_wh: number;
+  solar_start_ts: number | null;
+  solar_end_ts: number | null;
   soc_min: number | null;
   soc_max: number | null;
   grid_loss_count: number;
@@ -38,6 +40,19 @@ export function fetchSeries(fields: string[], from: number, to: number): Promise
 
 export function fetchDaily(fromDay: string, toDay: string): Promise<DailyRow[]> {
   return getJson(`/api/stats/daily?from=${fromDay}&to=${toDay}`);
+}
+
+export type SolarState = "idle" | "active" | "ended";
+
+export interface SolarWindow {
+  day: string;
+  start: number | null; // unix ms
+  end: number | null; //   unix ms
+  state: SolarState;
+}
+
+export function fetchSolarWindow(day?: string): Promise<SolarWindow> {
+  return getJson(`/api/stats/solar-window${day ? `?day=${day}` : ""}`);
 }
 
 export function fetchEvents(from: number, to: number, type?: string): Promise<StatsEvent[]> {

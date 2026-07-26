@@ -58,6 +58,8 @@ const SAMPLE_DAILY: DailyRow[] = [
     grid_wh: 500,
     batt_charge_wh: 800,
     batt_discharge_wh: 300,
+    solar_start_ts: Date.UTC(2026, 6, 25, 6, 40, 0),
+    solar_end_ts: Date.UTC(2026, 6, 25, 18, 20, 0),
     soc_min: 60,
     soc_max: 95,
     grid_loss_count: 0,
