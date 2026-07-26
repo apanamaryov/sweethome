@@ -60,7 +60,13 @@ describe("loadConfig — defaults on empty env", () => {
   it("defaults the nested stats/auth/mqtt groups", () => {
     const cfg = loadConfig();
 
-    expect(cfg.stats).toEqual({ enabled: true, rawDays: 30, minuteDays: 730 });
+    expect(cfg.stats).toEqual({
+      enabled: true,
+      rawDays: 30,
+      minuteDays: 730,
+      solarThresholdW: 200,
+      solarDwellMin: 15,
+    });
     expect(cfg.auth).toEqual({ sessionTtlDays: 30 });
     expect(cfg.mqtt).toEqual({
       url: null,

@@ -22,6 +22,8 @@ export interface Config {
     enabled: boolean;
     rawDays: number; //    retention сырых 5-сек снапшотов
     minuteDays: number; // retention поминутных агрегатов
+    solarThresholdW: number; // порог PV (Вт) для окна солнечного дня
+    solarDwellMin: number; //  устойчивость окна, мин
   };
   /** Web/API authentication (всегда включена). */
   auth: {
@@ -73,6 +75,8 @@ export function loadConfig(): Config {
       enabled: envBool("STATS_ENABLED", true),
       rawDays: envInt("STATS_RAW_DAYS", 30),
       minuteDays: envInt("STATS_MINUTE_DAYS", 730),
+      solarThresholdW: envInt("STATS_SOLAR_THRESHOLD_W", 200),
+      solarDwellMin: envInt("STATS_SOLAR_DWELL_MIN", 15),
     },
     auth: {
       sessionTtlDays: envInt("AUTH_SESSION_TTL_DAYS", 30),
