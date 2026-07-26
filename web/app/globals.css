@@ -209,6 +209,22 @@ body.stale .topbar { opacity: 0.45; filter: contrast(0.75); transition: opacity 
 .sub-metrics { display: flex; gap: 16px; margin-top: 10px; flex-wrap: wrap; }
 .sub-metrics > div { display: flex; align-items: baseline; gap: 4px; font-family: var(--mono); font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .cap { font-family: var(--serif); font-size: 12px; color: var(--ink-faint); font-style: italic; }
+.solar-today {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline);
+}
+.solar-today .st-val {
+  font-family: var(--mono);
+  font-size: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--sun-deep);
+}
 
 /* ---------- батарея: секторное кольцо вокруг цифры заряда ---------- */
 /* 20 секторов по 5%; заполненные заливаются сплошной печатной краской —

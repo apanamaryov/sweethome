@@ -42,4 +42,13 @@ describe("SolarToday", () => {
     renderWith({ day: "2026-07-26", start: null, end: null, state: "idle" });
     expect(await screen.findByText(/ещё не началось|ще не почалося|not started yet/)).toBeInTheDocument();
   });
+
+  it("рендерит заголовок панели, а значение — в отдельном .st-val (хук для видимого стиля)", async () => {
+    renderWith({ day: "2026-07-26", start: null, end: null, state: "idle" });
+    expect(await screen.findByText(/Солнце сегодня|Сонце сьогодні|Solar today/)).toBeInTheDocument();
+    // значение вынесено в элемент с классом st-val — именно на него навешан CSS,
+    // делающий панель видимой (регресс-гард на баг «панели не видно»).
+    const val = await screen.findByText(/ещё не началось|ще не почалося|not started yet/);
+    expect(val).toHaveClass("st-val");
+  });
 });

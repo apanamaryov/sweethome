@@ -34,7 +34,7 @@ export function SolarToday() {
   return (
     <div className="solar-today">
       <span className="cap">{t.solarTodayTitle}</span>
-      <strong>{body}</strong>
+      <strong className="st-val">{body}</strong>
     </div>
   );
 }
