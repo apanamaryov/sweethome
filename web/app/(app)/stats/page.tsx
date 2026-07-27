@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import uPlot from "uplot";
 import TimeChart, { ChartSeries } from "@/components/TimeChart";
+import { SolarWindowPanel } from "@/components/SolarWindowPanel";
 import { useT, warnLabel } from "@/lib/i18n";
 import {
   DailyRow,
@@ -218,6 +219,8 @@ export default function StatsPage() {
           <a href={`/api/stats/export.csv?${exportQs}&res=minute`} download>{t.stExportMinute}</a>
         </span>
       </div>
+
+      {!error && <SolarWindowPanel kind={kind} day={dayKey(anchor)} daily={daily} />}
 
       {error && <div className="banner">{t.stUnavailable}</div>}
       {!error && rows === null && <div className="muted">{t.stLoading}</div>}

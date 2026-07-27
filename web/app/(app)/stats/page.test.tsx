@@ -80,6 +80,7 @@ function mockStatsFetch(overrides: {
   daily?: DailyRow[];
   energy?: EnergyBucket[];
   events?: StatsEvent[];
+  solarWindow?: { day: string; start: number | null; end: number | null; state: string };
 }) {
   global.fetch = jest.fn((input: RequestInfo | URL) => {
     const url = String(input);
@@ -89,6 +90,9 @@ function mockStatsFetch(overrides: {
     if (url.includes("/api/stats/daily")) return jsonOk(overrides.daily ?? []);
     if (url.includes("/api/stats/energy")) return jsonOk(overrides.energy ?? []);
     if (url.includes("/api/stats/events")) return jsonOk(overrides.events ?? []);
+    if (url.includes("/api/stats/solar-window")) {
+      return jsonOk(overrides.solarWindow ?? { day: "2026-07-25", start: null, end: null, state: "idle" });
+    }
     return Promise.reject(new Error(`unexpected fetch: ${url}`));
   }) as unknown as typeof fetch;
 }
@@ -117,6 +121,49 @@ describe("StatsPage", () => {
     expect(screen.getByRole("button", { name: t.stPeriodMonth })).toBeInTheDocument();
     expect(screen.getByText(t.stExportRaw)).toBeInTheDocument();
     expect(screen.getByText(t.stExportMinute)).toBeInTheDocument();
+  });
+
+  it("shows the solar window of the selected day and asks the API for that very day", async () => {
+    mockStatsFetch({
+      rows: SAMPLE_ROWS,
+      daily: SAMPLE_DAILY,
+      solarWindow: {
+        day: "2026-07-25",
+        start: new Date(2026, 6, 25, 6, 40).getTime(),
+        end: new Date(2026, 6, 25, 18, 20).getTime(),
+        state: "ended",
+      },
+    });
+    const { container } = await renderStats();
+
+    const panel = container.querySelector(".solar-panel")!;
+    expect(panel).toBeInTheDocument();
+    expect(panel.textContent).toContain(t.solarPanelTitle);
+    expect(panel.textContent).toContain("06:40");
+    expect(panel.textContent).toContain("18:20");
+
+    const asked = (global.fetch as jest.Mock).mock.calls
+      .map((c) => String(c[0]))
+      .filter((u) => u.includes("/api/stats/solar-window"));
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatch(/day=\d{4}-\d{2}-\d{2}/);
+  });
+
+  it("switches to a range summary built from the daily rows when the period is a week", async () => {
+    mockStatsFetch({ rows: SAMPLE_ROWS, daily: SAMPLE_DAILY });
+    const { container } = await renderStats();
+
+    await userEvent.click(screen.getByRole("button", { name: t.stPeriodWeek }));
+
+    await waitFor(() => expect(container.querySelector(".solar-panel-range")).toBeInTheDocument());
+    const panel = container.querySelector(".solar-panel-range")!;
+    expect(panel.textContent).toContain(t.solarEarliest);
+    expect(panel.textContent).toContain(t.solarLatest);
+    expect(panel.textContent).toContain(t.solarAvgDur);
+    // Время суток показывается в локальной зоне (как и колонки суточной таблицы),
+    // поэтому ожидание считается из той же метки, а не хардкодится.
+    const start = new Date(SAMPLE_DAILY[0].solar_start_ts!);
+    expect(panel.textContent).toContain(`${start.getHours()}:${String(start.getMinutes()).padStart(2, "0")}`);
   });
 
   it("renders per-metric charts, the daily table and the events table from loaded data", async () => {
