@@ -614,3 +614,34 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
 .user-card-actions button { flex: 1 1 140px; }
 /* форма добавления — вертикальная колонка с равномерными отступами */
 .users-add { display: flex; flex-direction: column; gap: 10px; }
+
+/* ---------- API-токены (та же страница) ---------- */
+.tokens-list { display: flex; flex-direction: column; gap: 10px; }
+.token-card {
+  border: 1px solid var(--hairline);
+  background: var(--paper-0);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.token-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.token-name { font-weight: 700; font-size: 16px; word-break: break-word; }
+.token-prefix { font-family: var(--code); font-size: 13px; color: var(--ink-faint); }
+/* метаданные — мелкой строкой, переносятся на узком экране */
+.token-meta { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 13px; color: var(--ink-soft); }
+.token-card-actions { display: flex; justify-content: flex-end; }
+/* значение показывается один раз — выделяем и даём перенести длинную строку */
+.token-issued { margin-bottom: 12px; }
+.token-issued code {
+  display: block;
+  font-family: var(--code);
+  font-size: 13px;
+  word-break: break-all;
+  padding: 10px 12px;
+  border: 1.5px solid var(--ink);
+  background: var(--paper-0);
+}
+.tokens-add { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.token-scope { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.token-scope input { width: auto; flex: 0 0 auto; }
