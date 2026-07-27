@@ -1,19 +1,14 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { diffSettings } from "@inverter/shared";
 import type { McpContext } from "../server";
 import { summarizeSnapshot } from "../format";
 
-export interface ToolResult<T> {
-  content: Array<{ type: "text"; text: string }>;
-  structuredContent?: T;
-  isError?: boolean;
-}
-
 /** Обёртка: превращает исключение шлюза в ответ isError, а не в обрыв протокола. */
-export async function guard<T>(
-  fn: () => Promise<{ structuredContent: T; text: string }>
-): Promise<ToolResult<T>> {
+export async function guard(
+  fn: () => Promise<{ structuredContent: Record<string, unknown>; text: string }>
+): Promise<CallToolResult> {
   try {
     const { structuredContent, text } = await fn();
     return { content: [{ type: "text", text }], structuredContent };
