@@ -3,6 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { ControlType } from "@inverter/shared";
 import { canWrite, type McpContext } from "../server";
+import { NOOP_LOGGER, type Logger } from "../logging";
 
 const CONTROL_TYPES = [
   "outputSourcePriority",
@@ -24,20 +25,27 @@ function explain(e: Error): string {
   return msg;
 }
 
+/** Записи логируются всегда: журнал клиента должен видеть, что агент менял. */
 async function guardWrite(
-  fn: () => Promise<{ structuredContent: Record<string, unknown>; text: string }>
+  fn: () => Promise<{ structuredContent: Record<string, unknown>; text: string }>,
+  logger: Logger
 ): Promise<CallToolResult> {
   try {
     const { structuredContent, text } = await fn();
+    logger.info("control", structuredContent);
     return { content: [{ type: "text", text }], structuredContent };
   } catch (e) {
-    return { content: [{ type: "text", text: `Error: ${explain(e as Error)}` }], isError: true };
+    const message = explain(e as Error);
+    logger.error("control", { error: message });
+    return { content: [{ type: "text", text: `Error: ${message}` }], isError: true };
   }
 }
 
-export function registerControlTools(server: McpServer, ctx: McpContext): void {
+export function registerControlTools(server: McpServer, ctx: McpContext, logger: Logger = NOOP_LOGGER): void {
   if (!canWrite(ctx)) return; // без прав инструменты записи не существуют
   const gw = ctx.gateway;
+  const run = (fn: () => Promise<{ structuredContent: Record<string, unknown>; text: string }>) =>
+    guardWrite(fn, logger);
 
   server.registerTool(
     "set_control",
@@ -55,7 +63,7 @@ export function registerControlTools(server: McpServer, ctx: McpContext): void {
       annotations: WRITE_ANNOTATIONS,
     },
     async ({ type, value, preview }) =>
-      guardWrite(async () => {
+      run(async () => {
         if (preview) {
           const p = await gw.previewControl(type as ControlType, value);
           return {
@@ -84,7 +92,7 @@ export function registerControlTools(server: McpServer, ctx: McpContext): void {
       annotations: WRITE_ANNOTATIONS,
     },
     async ({ locked }) =>
-      guardWrite(async () => {
+      run(async () => {
         const r = await gw.setLock(locked);
         return {
           structuredContent: { ...r },
@@ -105,7 +113,7 @@ export function registerControlTools(server: McpServer, ctx: McpContext): void {
       annotations: WRITE_ANNOTATIONS,
     },
     async () =>
-      guardWrite(async () => {
+      run(async () => {
         const b = await gw.recaptureBaseline();
         return {
           structuredContent: { ...b } as unknown as Record<string, unknown>,
@@ -129,7 +137,7 @@ export function registerControlTools(server: McpServer, ctx: McpContext): void {
       annotations: WRITE_ANNOTATIONS,
     },
     async ({ address, value, preview }) =>
-      guardWrite(async () => {
+      run(async () => {
         if (preview) {
           const current = await gw.raw(`R ${address} 1`);
           return {

@@ -4,23 +4,29 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { diffSettings } from "@inverter/shared";
 import type { McpContext } from "../server";
 import { summarizeSnapshot } from "../format";
+import { NOOP_LOGGER, type Logger } from "../logging";
 
 /** Обёртка: превращает исключение шлюза в ответ isError, а не в обрыв протокола. */
 export async function guard(
-  fn: () => Promise<{ structuredContent: Record<string, unknown>; text: string }>
+  fn: () => Promise<{ structuredContent: Record<string, unknown>; text: string }>,
+  logger: Logger = NOOP_LOGGER
 ): Promise<CallToolResult> {
   try {
     const { structuredContent, text } = await fn();
     return { content: [{ type: "text", text }], structuredContent };
   } catch (e) {
-    return { content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true };
+    const message = (e as Error).message;
+    logger.error("gateway", { error: message });
+    return { content: [{ type: "text", text: `Error: ${message}` }], isError: true };
   }
 }
 
 const SECTIONS = ["connection", "status", "settings", "flags", "warnings", "baseline"] as const;
 
-export function registerReadTools(server: McpServer, ctx: McpContext): void {
+export function registerReadTools(server: McpServer, ctx: McpContext, logger: Logger = NOOP_LOGGER): void {
   const gw = ctx.gateway;
+  const run = (fn: () => Promise<{ structuredContent: Record<string, unknown>; text: string }>) =>
+    guard(fn, logger);
 
   server.registerTool(
     "get_snapshot",
@@ -38,7 +44,7 @@ export function registerReadTools(server: McpServer, ctx: McpContext): void {
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
     async ({ sections }) =>
-      guard(async () => {
+      run(async () => {
         const snap = await gw.snapshot();
         const want = new Set<string>(sections ?? SECTIONS);
         const out: Record<string, unknown> = {
@@ -66,7 +72,7 @@ export function registerReadTools(server: McpServer, ctx: McpContext): void {
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
     async () =>
-      guard(async () => {
+      run(async () => {
         const snap = await gw.snapshot();
         const d = diffSettings(snap.info, snap.flags, snap.baseline);
         const drifted = [...d.settings.filter((r) => r.drifted), ...d.flags.filter((r) => r.drifted)];
@@ -87,7 +93,7 @@ export function registerReadTools(server: McpServer, ctx: McpContext): void {
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
     async () =>
-      guard(async () => {
+      run(async () => {
         const snap = await gw.snapshot();
         const active = snap.warnings?.active ?? [];
         return {
@@ -107,7 +113,7 @@ export function registerReadTools(server: McpServer, ctx: McpContext): void {
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
     async () =>
-      guard(async () => {
+      run(async () => {
         const meta = await gw.meta();
         const caps = gw.capabilities();
         return {
@@ -137,7 +143,7 @@ export function registerReadTools(server: McpServer, ctx: McpContext): void {
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
     async () =>
-      guard(async () => {
+      run(async () => {
         const snap = await gw.snapshot();
         const ageMs = Date.now() - snap.timestamp;
         const h = {
@@ -173,7 +179,7 @@ export function registerReadTools(server: McpServer, ctx: McpContext): void {
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
     async ({ address, count }) =>
-      guard(async () => {
+      run(async () => {
         const n = count ?? 1;
         const reply = await gw.raw(`R ${address} ${n}`);
         return { structuredContent: { address, count: n, reply }, text: reply };

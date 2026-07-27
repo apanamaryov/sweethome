@@ -3,6 +3,9 @@ import type { InverterGateway } from "./gateway/types";
 import { registerReadTools } from "./tools/read";
 import { registerStatsTools } from "./tools/stats";
 import { registerControlTools } from "./tools/control";
+import { registerResources } from "./resources";
+import { registerPrompts } from "./prompts";
+import { createLogger } from "./logging";
 
 export interface McpContext {
   gateway: InverterGateway;
@@ -32,8 +35,18 @@ export function buildMcpServer(ctx: McpContext): McpServer {
     }
   );
 
-  registerReadTools(server, ctx);
-  registerStatsTools(server, ctx);
-  registerControlTools(server, ctx);
+  const logger = createLogger(server);
+  registerReadTools(server, ctx, logger);
+  registerStatsTools(server, ctx, logger);
+  registerControlTools(server, ctx, logger);
+  registerPrompts(server, ctx);
+
+  // Подписки держат слушателя у шлюза — снимаем его при закрытии сервера.
+  const stopResources = registerResources(server, ctx);
+  const closeServer = server.close.bind(server);
+  server.close = async () => {
+    stopResources();
+    await closeServer();
+  };
   return server;
 }

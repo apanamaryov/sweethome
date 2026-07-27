@@ -5,6 +5,7 @@ import type { McpContext } from "../server";
 import { parseDay, parseTime } from "../time";
 import { downsample } from "../downsample";
 import { guard } from "./read";
+import { NOOP_LOGGER, type Logger } from "../logging";
 
 /** Величины, доступные в /api/stats/series (совпадает с GAUGE_FIELDS сервера). */
 const GAUGE_FIELDS = [
@@ -25,9 +26,11 @@ const WH_IN_KWH = 1000;
 
 const timeArg = z.union([z.string(), z.number()]);
 
-export function registerStatsTools(server: McpServer, ctx: McpContext): void {
+export function registerStatsTools(server: McpServer, ctx: McpContext, logger: Logger = NOOP_LOGGER): void {
   const stats = ctx.gateway.stats;
   if (!stats) return; // статистика выключена — инструментов просто нет
+  const run = (fn: () => Promise<{ structuredContent: Record<string, unknown>; text: string }>) =>
+    guard(fn, logger);
 
   server.registerTool(
     "get_series",
@@ -46,7 +49,7 @@ export function registerStatsTools(server: McpServer, ctx: McpContext): void {
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
     async ({ fields, from, to, res, maxPoints }) =>
-      guard(async () => {
+      run(async () => {
         const now = Date.now();
         const f = parseTime(from, now);
         const t = parseTime(to ?? "now", now);
@@ -85,7 +88,7 @@ export function registerStatsTools(server: McpServer, ctx: McpContext): void {
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
     async ({ from, to }) =>
-      guard(async () => {
+      run(async () => {
         const now = Date.now();
         const rows = await stats.daily(parseDay(from, now), parseDay(to ?? "today", now));
         return {
@@ -109,7 +112,7 @@ export function registerStatsTools(server: McpServer, ctx: McpContext): void {
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
     async ({ from, to, bucket }) =>
-      guard(async () => {
+      run(async () => {
         const now = Date.now();
         const f = parseTime(from, now);
         const t = parseTime(to ?? "now", now);
@@ -138,7 +141,7 @@ export function registerStatsTools(server: McpServer, ctx: McpContext): void {
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
     async ({ from, to, type, limit, offset }) =>
-      guard(async () => {
+      run(async () => {
         const now = Date.now();
         const lim = limit ?? 100;
         const rows = await stats.events({
@@ -167,7 +170,7 @@ export function registerStatsTools(server: McpServer, ctx: McpContext): void {
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
     async ({ day }) =>
-      guard(async () => {
+      run(async () => {
         const w = await stats.solarWindow(parseDay(day ?? "today", Date.now()));
         const hhmm = (ms: number | null) => (ms === null ? "—" : new Date(ms).toLocaleTimeString());
         const text =
@@ -194,7 +197,7 @@ export function registerStatsTools(server: McpServer, ctx: McpContext): void {
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
     async ({ from, to }) =>
-      guard(async () => {
+      run(async () => {
         const now = Date.now();
         const f = parseTime(from ?? "-1d", now);
         const t = parseTime(to ?? "now", now);
