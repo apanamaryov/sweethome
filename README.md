@@ -229,6 +229,23 @@ The app always requires login. Users and passwords are stored in `data/auth.db`.
 - Anti-brute-force: after 5 wrong passwords from one IP — a 10-minute lockout.
 - Forgot your password? `cd server && DATA_DIR=data npx tsx scripts/reset-password.ts <username> <newpass>`.
 
+**API tokens.** Machine clients (the MCP server, scripts) authenticate with
+`Authorization: Bearer inv_…` instead of a session cookie. An admin issues them in the
+**API tokens** section of the Users page, or from the Pi:
+
+```bash
+cd server && DATA_DIR=data npx tsx scripts/issue-token.ts "mcp laptop" --write --days 90
+```
+
+A token inherits its owner's role and carries scopes: `read` (everything that role may
+read) and optionally `write` (control, lock, raw writes, baseline recapture). Without the
+`write` scope those endpoints answer `403 scope_required`; `POST /api/control` with
+`{"preview": true}` stays available, since it only reports what *would* be written.
+Tokens are stored as sha256 — the value is shown exactly once — and they can never reach
+`/api/users` or `/api/tokens`: managing access requires a UI session. A token belonging to
+a user who still must change their password is rejected. `GET /api/me` reports
+`auth: "session" | "token"` and the active scopes; `/ws` accepts the same Bearer header.
+
 > **Before port-forwarding on your router**, put a TLS reverse proxy (Caddy/nginx +
 > Let's Encrypt) in front, or use a VPN (WireGuard). Bare HTTP exposed to the internet
 > leaks the session cookie in plain text. `AUTH_SESSION_TTL_DAYS` controls the session

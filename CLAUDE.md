@@ -95,7 +95,15 @@ npm run check      # jest: протокол + stats + auth + auth-http (server) 
   сервере (middleware 403 + редиректы страниц), и в UI (навигация по роли).
 - Форс смены пароля: `must_change_password=1` блокирует весь `/api` кроме
   `me`/`change-password`/`logout`, пока пароль не изменён.
-- Тесты — `hash.test.ts`, `policy.test.ts`, `db.test.ts`, `service.test.ts` (jest, входят в `npm run check -w server`); HTTP-флоу — `src/server.http.test.ts`.
+- **API-токены** (таблица `api_tokens` в `auth.db`, `Authorization: Bearer inv_…`, sha256
+  в БД, скоупы `read`/`write`): middleware `/api` пробует cookie, затем Bearer и кладёт в
+  `req.auth` поля `kind`/`scopes`/`tokenName`. Мутирующие роуты (`control`, `lock`,
+  `raw` с `W`, `baseline/recapture`) требуют скоуп `write` — кроме `POST /api/control`
+  с `preview: true`, это чтение (`Inverter.previewControl`). `/api/users` и `/api/tokens`
+  по токену закрыты (`code: session_required`) — управление доступами только из UI-сессии.
+  Токен владельца под форсом смены пароля отклоняется. Выдача: UI на `/users`,
+  `POST /api/tokens` или `scripts/issue-token.ts`. `/ws` принимает тот же Bearer.
+- Тесты — `hash.test.ts`, `policy.test.ts`, `db.test.ts`, `service.test.ts`, `tokens.test.ts` (jest, входят в `npm run check -w server`); HTTP-флоу — `src/server.http.test.ts`.
 
 ### `web/` — Next.js (App Router)
 - **Прод = статический экспорт** (`output: "export"` в `next.config.ts`) в `web/out/`, который раздаёт сам Express. **Dev** = `next dev -p 3001` + rewrites `/api/*` → `http://localhost:3000` (см. `next.config.ts`). Отсюда же `web/lib/api.ts::wsUrl()` разводит dev (`ws://localhost:3000`) и прод.
