@@ -31,6 +31,7 @@ ever leaves your LAN.
 - 🏠 **Home Assistant integration** over MQTT with auto-discovery — entities appear in HA by themselves, no YAML needed.
 - 🔑 **Users & roles** — always-on login with two roles (admin / viewer), forced password change on first use, admin-managed accounts, scrypt-hashed passwords in SQLite, HttpOnly sessions and brute-force protection.
 - 📊 **Statistics & history** — SQLite telemetry log with a per-metric power chart set, daily kWh totals, energy bars, a "Solar today" window (start/end of stable PV output), and an event log (mode changes, grid loss, faults).
+- 🤖 **MCP server for LLM agents** — tools, resources and prompts over stdio or an HTTP endpoint, with write access gated behind scoped tokens.
 - 🚀 **One-script deploy** — local build → rsync to the Pi → systemd restart → health check.
 
 ---
@@ -71,6 +72,7 @@ settings — 300–343.
 | `inverter` | `server/src/inverter.ts` | Timer-driven polling, command queue (single port, 120 ms pacing), auto-reconnect, baseline, write lock |
 | `server` | `server/src/server.ts` | Express (REST + static files) and WebSocket (live push) |
 | `mqtt` | `server/src/mqtt.ts` | MQTT publishing with Home Assistant auto-discovery |
+| `mcp` | `mcp/src` | MCP server for LLM agents: tools/resources/prompts behind an `InverterGateway`, stdio binary and the core used by `/mcp` |
 | `web` | `web/` | Mobile UI on Next.js; the static export is served by the same Express server |
 
 Protocol correctness is pinned by reference frames captured from a live inverter
@@ -89,6 +91,7 @@ Protocol correctness is pinned by reference frames captured from a live inverter
 - [API](#-api)
 - [Statistics](#-statistics)
 - [Home Assistant (MQTT)](#-home-assistant-mqtt)
+- [MCP (LLM agents)](#-mcp-llm-agents)
 - [Control safety & write lock](#-control-safety--write-lock)
 - [What's been verified](#-whats-been-verified)
 - [Project structure](#️-project-structure)
@@ -99,9 +102,10 @@ Protocol correctness is pinned by reference frames captured from a live inverter
 
 ## 🚀 Quick start (development)
 
-An npm-workspaces monorepo: `shared/` (shared types and the API contract), `server/`
-(Express + WebSocket, the Modbus protocol) and `web/` (Next.js UI). Development and
-builds happen on a regular machine (not on the Pi); Node ≥ 24.
+An npm-workspaces monorepo: `shared/` (shared types, the API contract and the register
+map), `mcp/` (the MCP server for agents), `server/` (Express + WebSocket, the Modbus
+protocol) and `web/` (Next.js UI). Development and builds happen on a regular machine
+(not on the Pi); Node ≥ 24. Build order is fixed: `shared → mcp → server → web`.
 
 ```bash
 git clone https://github.com/apanamaryov/sweethome.git inverter-monitor
@@ -175,8 +179,8 @@ PI_HOST=pi@<pi-address> SSH_KEY=~/.ssh/<key> ./deploy.sh
 What the script does:
 
 1. `npm run build` (shared → server → web) and `npm run check`.
-2. `rsync` uploads the built artifacts to the Pi — `shared/dist`, `server/dist`, `server/systemd`, `server/.env.example`, the `web/out` static files — plus the workspace `package.json`/`package-lock.json`.
-3. Over SSH on the Pi: `npm ci -w server --omit=dev`, updates the systemd unit and restarts `inverter-monitor`.
+2. `rsync` uploads the built artifacts to the Pi — `shared/dist`, `mcp/dist`, `server/dist`, `server/systemd`, `server/.env.example`, the `web/out` static files — plus the workspace `package.json`/`package-lock.json`.
+3. Over SSH on the Pi: `npm ci -w server -w mcp --omit=dev`, updates the systemd unit and restarts `inverter-monitor`.
 4. Checks `GET /api/health` (up to a minute for the restart); a `401` without a session (auth is always on) means the server is alive.
 
 - `PI_HOST` — user and address of your Pi (defaults to `pi@raspberrypi.local`).
@@ -365,6 +369,70 @@ commands — `inverter/<node>/set/<param>`, discovery — `homeassistant/<compon
 
 ---
 
+## 🤖 MCP (LLM agents)
+
+The service ships an **MCP server** so agents (Claude Code, Claude Desktop, any MCP client)
+can read the inverter, dig through history and — with an explicitly scoped token — change
+settings. Two ways to connect, the same tools behind both.
+
+**1. Over the network** — the service exposes `POST/GET/DELETE /mcp` (Streamable HTTP),
+authorized by the same Bearer token as `/api`:
+
+```
+http://<pi-address>:3000/mcp     header: Authorization: Bearer inv_…
+```
+
+**2. Locally over stdio** — for clients that prefer spawning a process:
+
+```json
+{
+  "mcpServers": {
+    "inverter": {
+      "command": "node",
+      "args": ["/path/to/inverter-monitor/mcp/dist/bin/stdio.js"],
+      "env": {
+        "INVERTER_MCP_URL": "http://<pi-address>:3000",
+        "INVERTER_MCP_TOKEN": "inv_…"
+      }
+    }
+  }
+}
+```
+
+**Tools.** Reading: `get_snapshot`, `get_settings_diff`, `get_alarms`, `get_meta`,
+`get_health`, `read_registers`. History: `get_series`, `get_daily`, `get_energy`,
+`get_events`, `get_solar_window`, `summarize_period`, `export_csv`. Writing (admin token
+with the `write` scope only): `set_control`, `set_lock`, `recapture_baseline`,
+`write_register`. Time arguments accept unix ms, ISO 8601, `now` or offsets like `-24h`;
+series are downsampled to a point cap and always say so.
+
+**Resources.** `inverter://snapshot` (subscribable — the client is notified as new polls
+arrive), `settings`, `baseline`, `alarms`, `events/recent`, plus two documents an agent
+cannot get anywhere else: `inverter://registers/map` (the SMG II register map with units,
+scales and access) and `inverter://docs/control-contract` (what may be written and why
+each setting is risky). Templates: `inverter://stats/daily/{day}` and
+`inverter://stats/export/{res}/{from}/{to}.csv` (capped at 5 MB).
+
+**Prompts.** `diagnose-connection`, `daily-report` (day argument completes from the days
+that actually have data), `battery-health-check`, `plan-setting-change`.
+
+**Safety.** Write tools are not even listed unless the token is an admin one with the
+`write` scope and `ALLOW_CONTROL` is on. Writes still require the lock to be released and
+re-lock afterwards, exactly like the UI, and every write is recorded in the event log with
+its source (`token:<name>`, `ui:<user>` or `mqtt`) — visible on the **Statistics** page.
+`INVERTER_MCP_READ_ONLY=true` hides write tools locally even for a write-capable token.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `MCP_ENABLED` | `true` | Serve `/mcp` |
+| `MCP_MAX_SESSIONS` | `8` | Concurrent MCP sessions (Pi 3B) |
+| `INVERTER_MCP_URL` | `http://localhost:3000` | stdio: service address |
+| `INVERTER_MCP_TOKEN` | — | stdio: token, required |
+| `INVERTER_MCP_TIMEOUT_MS` | `10000` | stdio: request timeout |
+| `INVERTER_MCP_READ_ONLY` | `false` | stdio: hide write tools |
+
+---
+
 ## 🔒 Control safety & write lock
 
 The application is designed around the principle of **"read, but never overwrite until
@@ -408,11 +476,17 @@ inverter-monitor/
 ├── deploy.sh                     # build → rsync → npm ci → restart → health
 ├── CLAUDE.md                     # guide for Claude Code
 ├── shared/
-│   └── src/{types.ts, api.ts, auth.ts, index.ts}   # shared types + control contract + auth types
+│   └── src/{types,api,auth,registers,settings}.ts  # типы, контракт управления, карта регистров, diffSettings
+├── mcp/
+│   └── src/{server,resources,prompts,logging,time,downsample,format}.ts
+│       ├── gateway/{types,http}.ts        # InverterGateway + HTTP-реализация
+│       ├── tools/{read,stats,control}.ts  # инструменты MCP
+│       └── bin/stdio.ts                   # bin inverter-mcp
 ├── server/
 │   ├── .env.example  systemd/inverter-monitor.service
 │   ├── scripts/reset-password.ts             # CLI password reset
 │   ├── src/{index,config,inverter,server,mqtt,store}.ts
+│   ├── src/mcp/{local-gateway,http}.ts       # /mcp: шлюз без HTTP-хопа + Streamable HTTP
 │   ├── src/auth/{hash,db,policy,service}.ts  # scrypt, AuthDb (node:sqlite), roles, sessions
 │   ├── src/stats/{db,recorder}.ts            # SQLite history, rollups, event derivation
 │   ├── src/protocol/{modbus,smg}.ts          # Modbus RTU + SMG II register map

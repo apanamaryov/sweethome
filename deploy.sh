@@ -22,6 +22,7 @@ echo "==> rsync на $PI_HOST:$PI_DIR"
 rsync -az --relative --delete -e "$RSYNC_SSH" \
   package.json package-lock.json \
   shared/package.json shared/dist \
+  mcp/package.json mcp/dist \
   server/package.json server/dist server/systemd server/.env.example \
   web/package.json web/out \
   "$PI_HOST:$PI_DIR/"
@@ -34,7 +35,7 @@ cd "$PI_DIR"
 if [ -d data ] && [ ! -e server/data ]; then mv data server/data; fi
 if [ -f .env ] && [ ! -e server/.env ]; then mv .env server/.env; fi
 rm -rf dist src public
-npm ci -w server --omit=dev
+npm ci -w server -w mcp --omit=dev
 sudo cp server/systemd/inverter-monitor.service /etc/systemd/system/inverter-monitor.service
 sudo systemctl daemon-reload
 sudo systemctl restart inverter-monitor
