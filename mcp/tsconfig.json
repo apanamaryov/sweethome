@@ -10,6 +10,8 @@
     "outDir": "dist",
     "rootDir": "src",
     "strict": true,
+    // требование ts-jest при module: node16
+    "isolatedModules": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
