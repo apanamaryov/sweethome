@@ -183,3 +183,69 @@ describe("AuthDb — sessions", () => {
     expect(db.getSession("hashC")).toBeNull();
   });
 });
+
+describe("AuthDb — api_tokens", () => {
+  let db: AuthDb;
+  afterEach(() => db.close());
+
+  function freshDb(): AuthDb {
+    const d = new AuthDb(":memory:");
+    return d;
+  }
+
+  it("creates a token row and reads it back by hash", () => {
+    db = freshDb();
+    const user = db.createUser("bot", "secret1", "admin", false, T);
+    const rec = db.createToken("mcp laptop", "hash-1", "inv_abcd", user.id, ["read", "write"], T, null);
+
+    expect(rec).toMatchObject({
+      name: "mcp laptop",
+      prefix: "inv_abcd",
+      scopes: ["read", "write"],
+      createdAt: T,
+      lastUsedAt: null,
+      expiresAt: null,
+    });
+
+    const info = db.getToken("hash-1");
+    expect(info).toMatchObject({
+      tokenId: rec.id,
+      name: "mcp laptop",
+      userId: user.id,
+      username: "bot",
+      role: "admin",
+      mustChangePassword: false,
+      scopes: ["read", "write"],
+      expiresAt: null,
+    });
+    expect(db.getToken("nope")).toBeNull();
+  });
+
+  it("lists tokens, deletes them, and cascades on user deletion", () => {
+    db = freshDb();
+    const user = db.createUser("bot", "secret1", "admin", false, T);
+    const a = db.createToken("a", "hash-a", "inv_a", user.id, ["read"], T, null);
+    db.createToken("b", "hash-b", "inv_b", user.id, ["read"], T + 1000, T + 9999);
+
+    expect(db.listTokens().map((t) => t.name)).toEqual(["a", "b"]);
+
+    db.deleteToken(a.id);
+    expect(db.listTokens().map((t) => t.name)).toEqual(["b"]);
+
+    db.deleteUser(user.id);
+    expect(db.listTokens()).toEqual([]);
+  });
+
+  it("touches last_used_at and prunes expired tokens", () => {
+    db = freshDb();
+    const user = db.createUser("bot", "secret1", "viewer", false, T);
+    db.createToken("live", "hash-live", "inv_l", user.id, ["read"], T, null);
+    db.createToken("dead", "hash-dead", "inv_d", user.id, ["read"], T, T + 5000);
+
+    db.touchToken("hash-live", T + 7000);
+    expect(db.getToken("hash-live")!.lastUsedAt).toBe(T + 7000);
+
+    db.pruneExpiredTokens(T + 6000);
+    expect(db.listTokens().map((t) => t.name)).toEqual(["live"]);
+  });
+});

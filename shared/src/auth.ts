@@ -16,3 +16,30 @@ export interface PublicUser {
   mustChangePassword: boolean;
   createdAt: number;
 }
+
+/** Скоупы API-токенов: read — чтение, write — управляющие записи. */
+export type TokenScope = "read" | "write";
+
+/** Запись токена для admin-UI (без самого значения токена). */
+export interface PublicApiToken {
+  id: number;
+  name: string;
+  prefix: string;
+  scopes: TokenScope[];
+  createdAt: number;
+  lastUsedAt: number | null;
+  expiresAt: number | null;
+}
+
+/** Ответ POST /api/tokens: значение токена отдаётся ровно один раз. */
+export interface CreatedApiToken {
+  ok: true;
+  token: string;
+  record: PublicApiToken;
+}
+
+/** Ответ GET /api/me. */
+export interface MeResponse extends SessionUser {
+  auth: "session" | "token";
+  scopes: TokenScope[];
+}
