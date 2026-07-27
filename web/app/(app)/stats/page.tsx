@@ -148,6 +148,7 @@ export default function StatsPage() {
         "conn-lost": t.stEvConnLost,
         "conn-restored": t.stEvConnRestored,
         "device-changed": t.stEvDeviceChanged,
+        control: t.stEvControl,
       } as Record<string, string>
     )[type] ?? type);
 
@@ -176,6 +177,11 @@ export default function StatsPage() {
         return String(d.device ?? d.transport ?? "");
       case "device-changed":
         return `${d.from} → ${d.to}`;
+      case "control": {
+        // Явная запись в инвертор: что менялось и кто это сделал.
+        const what = d.type ? `${String(d.type)} = ${String(d.value)}` : `reg ${String(d.register)} := ${String(d.rawValue)}`;
+        return `${what} · ${String(d.source ?? "—")}`;
+      }
       default:
         return e.detail;
     }
@@ -320,7 +326,7 @@ export default function StatsPage() {
         <select value={evType} onChange={(e) => setEvType(e.target.value)}>
           <option value="">{t.stEvAll}</option>
           {["mode-change", "grid-loss", "grid-restore", "fault-set", "fault-clear",
-            "warning-set", "warning-clear", "conn-lost", "conn-restored", "device-changed"].map((k) => (
+            "warning-set", "warning-clear", "conn-lost", "conn-restored", "device-changed", "control"].map((k) => (
             <option key={k} value={k}>{evLabel(k)}</option>
           ))}
         </select>

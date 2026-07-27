@@ -5,6 +5,13 @@ import { renderWithProviders, restoreLocation } from "@/test-utils/renderWithPro
 import { DICTS } from "@/lib/i18n/dict";
 import UsersPage from "./page";
 
+// Панель токенов ходит в /api/tokens и покрыта своими тестами
+// (components/TokensPanel.test.tsx); здесь она подменяется маркером, чтобы её
+// запросы не смешивались с fetch-моками этой страницы.
+jest.mock("@/components/TokensPanel", () => ({
+  TokensPanel: () => <div data-testid="tokens-panel" />,
+}));
+
 const t = DICTS.uk;
 
 const USERS: PublicUser[] = [
@@ -36,6 +43,12 @@ async function render(fetchImpl: jest.Mock) {
 }
 
 describe("UsersPage", () => {
+  it("renders the API tokens section below the user management ones", async () => {
+    await render(jest.fn().mockResolvedValue(jsonOk(USERS)));
+
+    expect(screen.getByTestId("tokens-panel")).toBeInTheDocument();
+  });
+
   it("loads and renders the user list with role selects and per-user actions", async () => {
     await render(jest.fn().mockResolvedValue(jsonOk(USERS)));
 

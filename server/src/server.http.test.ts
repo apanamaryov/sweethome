@@ -7,6 +7,7 @@ import { WebSocket } from "ws";
 import { loadConfig } from "./config";
 import { Inverter } from "./inverter";
 import { createServer } from "./server";
+import { Auth } from "./auth/service";
 
 /**
  * Migrated from scripts/selfcheck-auth-http.ts: that script hand-rolls http.request
@@ -154,7 +155,13 @@ describe("server.ts (HTTP integration via supertest)", () => {
 
       res = await request(server).get("/api/me").set("Cookie", cookie);
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ username: "admin", role: "admin", mustChangePassword: true });
+      expect(res.body).toEqual({
+        username: "admin",
+        role: "admin",
+        mustChangePassword: true,
+        auth: "session",
+        scopes: ["read", "write"],
+      });
 
       res = await request(server)
         .post("/api/change-password")
@@ -332,6 +339,165 @@ describe("server.ts (HTTP integration via supertest)", () => {
 
       expect(code).toBe(4401);
       await closeClient(ws);
+    });
+
+    it("accepts a handshake authorized by a Bearer token", async () => {
+      const port = await listen();
+      const token = issue(["read"]);
+
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const raw = await waitForEvent<Buffer>(ws, "message");
+      expect(JSON.parse(raw.toString()).type).toBe("snapshot");
+
+      await closeClient(ws);
+    });
+
+    it("closes with 4401 for a bogus Bearer token", async () => {
+      const port = await listen();
+
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, {
+        headers: { Authorization: "Bearer inv_nope" },
+      });
+      const code = await waitForEvent<number>(ws, "close");
+      expect(code).toBe(4401);
+      await closeClient(ws);
+    });
+  });
+
+  /** Выдать токен через тот же auth.db, который использует сервер. */
+  function issue(scopes: Array<"read" | "write">, username = "admin"): string {
+    const a = new Auth(tmp, 30);
+    const u = a.db.getByUsername(username)!;
+    a.db.setPassword(u.id, "secret1", false, Date.now()); // снять форс смены пароля
+    const { token } = a.issueToken(`test-${scopes.join("-")}-${Date.now()}`, u.id, scopes);
+    a.db.close();
+    return token;
+  }
+
+  describe("Bearer tokens", () => {
+    it("accepts a valid token on read endpoints and reports auth kind in /api/me", async () => {
+      const token = issue(["read"]);
+      const res = await request(server).get("/api/me").set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ username: "admin", role: "admin", auth: "token", scopes: ["read"] });
+
+      const snap = await request(server).get("/api/snapshot").set("Authorization", `Bearer ${token}`);
+      expect(snap.status).toBe(200);
+    });
+
+    it("reports session auth with full scopes for cookie logins", async () => {
+      const cookie = await freshSessionCookie("admin", "admin", "secret1");
+      const res = await request(server).get("/api/me").set("Cookie", cookie);
+      expect(res.body).toMatchObject({ auth: "session", scopes: ["read", "write"] });
+    });
+
+    it("rejects a missing or bogus token with 401", async () => {
+      expect((await request(server).get("/api/snapshot")).status).toBe(401);
+      const res = await request(server).get("/api/snapshot").set("Authorization", "Bearer inv_nope");
+      expect(res.status).toBe(401);
+    });
+
+    it("refuses writes for a read-only token but allows preview", async () => {
+      const token = issue(["read"]);
+
+      const lock = await request(server)
+        .post("/api/lock")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ locked: false });
+      expect(lock.status).toBe(403);
+      expect(lock.body.code).toBe("scope_required");
+
+      const write = await request(server)
+        .post("/api/control")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ type: "chargerSourcePriority", value: 3 });
+      expect(write.status).toBe(403);
+
+      const preview = await request(server)
+        .post("/api/control")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ type: "chargerSourcePriority", value: 3, preview: true });
+      expect(preview.status).toBe(200);
+      expect(preview.body).toMatchObject({ ok: true, preview: true, register: 331 });
+
+      const rawWrite = await request(server)
+        .post("/api/raw")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ command: "W 331 3" });
+      expect(rawWrite.status).toBe(403);
+      expect(rawWrite.body.code).toBe("scope_required");
+    });
+
+    it("allows writes for a write-scoped token once unlocked", async () => {
+      const token = issue(["read", "write"]);
+      const unlock = await request(server)
+        .post("/api/lock")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ locked: false });
+      expect(unlock.status).toBe(200);
+      expect(unlock.body.locked).toBe(false);
+    });
+
+    it("never lets a token reach user or token management", async () => {
+      const token = issue(["read", "write"]);
+      for (const p of ["/api/users", "/api/tokens"]) {
+        const res = await request(server).get(p).set("Authorization", `Bearer ${token}`);
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe("session_required");
+      }
+    });
+  });
+
+  describe("/api/tokens", () => {
+    it("creates, lists and revokes tokens from an admin session", async () => {
+      const cookie = await freshSessionCookie("admin", "admin", "secret1");
+
+      const created = await request(server)
+        .post("/api/tokens")
+        .set("Cookie", cookie)
+        .send({ name: "mcp", scopes: ["read", "write"], expiresInDays: 30 });
+      expect(created.status).toBe(200);
+      expect(created.body.token).toMatch(/^inv_/);
+      expect(created.body.record).toMatchObject({ name: "mcp", scopes: ["read", "write"] });
+      expect(created.body.record.expiresAt).toBeGreaterThan(Date.now());
+
+      const list = await request(server).get("/api/tokens").set("Cookie", cookie);
+      expect(list.status).toBe(200);
+      expect(list.body).toHaveLength(1);
+      expect(list.body[0].token).toBeUndefined(); // значение не хранится и не отдаётся
+      expect(list.body[0].prefix).toBe(created.body.token.slice(0, 12));
+
+      const del = await request(server)
+        .delete(`/api/tokens/${created.body.record.id}`)
+        .set("Cookie", cookie);
+      expect(del.status).toBe(200);
+      expect((await request(server).get("/api/tokens").set("Cookie", cookie)).body).toEqual([]);
+
+      // отозванный токен больше не работает
+      const after = await request(server)
+        .get("/api/snapshot")
+        .set("Authorization", `Bearer ${created.body.token}`);
+      expect(after.status).toBe(401);
+    });
+
+    it("validates the payload", async () => {
+      const cookie = await freshSessionCookie("admin", "admin", "secret1");
+      const noName = await request(server).post("/api/tokens").set("Cookie", cookie).send({ scopes: ["read"] });
+      expect(noName.status).toBe(400);
+
+      const badScope = await request(server)
+        .post("/api/tokens")
+        .set("Cookie", cookie)
+        .send({ name: "x", scopes: ["admin"] });
+      expect(badScope.status).toBe(400);
+    });
+
+    it("is admin-only", async () => {
+      const cookie = await freshSessionCookie("user", "user", "secret1");
+      const res = await request(server).get("/api/tokens").set("Cookie", cookie);
+      expect(res.status).toBe(403);
     });
   });
 });

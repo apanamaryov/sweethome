@@ -17,8 +17,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 npm install        # ставит зависимости всех воркспейсов разом (это монорепо)
 npm run dev        # server :3000 (форсит INVERTER_TRANSPORT=mock) + web :3001 (Next.js HMR, проксирует /api на :3000)
-npm run build      # СТРОГО в порядке shared → server → web
-npm run check      # jest: протокол + stats + auth + auth-http (server) + typecheck (web)
+npm run build      # СТРОГО в порядке shared → mcp → server → web
+npm run check      # jest: mcp + протокол/stats/auth/auth-http (server) + typecheck (web)
 ./deploy.sh        # локальная сборка → rsync на Pi → npm ci → рестарт systemd → health-check
 ```
 
@@ -50,12 +50,36 @@ npm run check      # jest: протокол + stats + auth + auth-http (server) 
 
 ## Архитектура
 
-Монорепо на npm workspaces: `shared/`, `server/`, `web/`. Порядок сборки не случаен — `server` и `web` импортируют `@inverter/shared` из его **собранного `dist/`**, поэтому shared всегда собирается первым.
+Монорепо на npm workspaces: `shared/`, `mcp/`, `server/`, `web/`. Порядок сборки не случаен — `mcp`, `server` и `web` импортируют `@inverter/shared` из его **собранного `dist/`**, а `server` ещё и `@inverter/mcp` из `mcp/dist`, поэтому порядок строго `shared → mcp → server → web`.
 
 ### `shared/` — контракт между сервером и вебом
 `@inverter/shared` — единственный источник правды и для типов данных (`Snapshot`, `InverterStatus`, `InverterRatedInfo`, `Baseline` и т.д. в `types.ts`), и для **whitelist-контракта управления** (`api.ts`: тип `ControlType`, карты `OUTPUT_SOURCE_PRIORITY`/`CHARGER_SOURCE_PRIORITY`, массивы допустимых токов, `ApiMeta`). И сервер, и веб тянут значения отсюда — не дублируй enum'ы на стороне.
 
-**Добавление новой управляющей команды** трогает несколько файлов согласованно: `shared/src/api.ts` (в `ControlType` + при необходимости в `ApiMeta`) → `server/src/protocol/smg.ts` (ветка в `buildControlWrite`: регистр + масштаб + валидация) → `server/src/server.ts` (`CONTROL_TYPES`) → `web/` (UI). Пропустишь один — рассинхрон.
+**Добавление новой управляющей команды** трогает несколько файлов согласованно: `shared/src/api.ts` (в `ControlType` + при необходимости в `ApiMeta`) → `server/src/protocol/smg.ts` (ветка в `buildControlWrite`: регистр + масштаб + валидация) → `server/src/server.ts` (`CONTROL_TYPES`) → `web/` (UI) → `mcp/src/tools/control.ts` (`CONTROL_TYPES` + описание) и `mcp/src/prompts.ts` (список для completion) → `shared/src/registers.ts` (строка регистра, иначе упадёт `server/src/protocol/registers.test.ts`). Пропустишь один — рассинхрон.
+
+`shared` дополнительно держит **карту регистров** (`registers.ts`: `REGISTER_DOCS` + `registerDocsMarkdown()`) и **чистую `diffSettings`** (`settings.ts`) — их потребляет MCP; согласованность карты с декодерами проверяет `server/src/protocol/registers.test.ts`.
+
+### `mcp/` — MCP-сервер для агентов
+`@inverter/mcp` — ядро инструментов/ресурсов/промптов, не знающее о транспорте: всё общение
+с сервисом идёт через интерфейс `InverterGateway` (`mcp/src/gateway/types.ts`). Реализаций
+две: `HttpGateway` (`gateway/http.ts` — REST + WS под Bearer, для stdio-бинаря
+`mcp/dist/bin/stdio.js`) и `LocalGateway` (`server/src/mcp/local-gateway.ts` — прямые вызовы
+`Inverter`/`StatsDb` для эндпоинта `/mcp`, без HTTP-хопа). Инструменты: `tools/read.ts`
+(снапшот, дифф настроек, аварии, meta, health, чтение регистров), `tools/stats.ts` (ряды,
+сутки, энергия, события, окно солнца, сводка, CSV-ссылка), `tools/control.ts` (запись).
+
+- **Набор инструментов зависит от прав**: write-инструменты вообще не регистрируются, если
+  роль не `admin`, у токена нет скоупа `write`, выключен `ALLOW_CONTROL` или задан
+  `INVERTER_MCP_READ_ONLY` (см. `canWrite` в `mcp/src/server.ts`). Статистические
+  инструменты и ресурсы исчезают при `STATS_ENABLED=false`.
+- **Подписки** (`resources.ts`): `McpServer` из SDK сам не обрабатывает `subscribe`/
+  `unsubscribe` — они регистрируются вручную на низкоуровневом `server.server`, уведомления
+  троттлятся до одного в 5 с.
+- **tsconfig воркспейса** — `module/moduleResolution: node16` + `isolatedModules` (иначе не
+  резолвятся subpath-экспорты SDK и ругается ts-jest), эмит остаётся CommonJS: `server`
+  подключает пакет обычным `require`. Порядок сборки: `shared → mcp → server → web`.
+- Тесты — `mcp/src/**/*.test.ts` (jest, входят в `npm run check`), в том числе прогон
+  настоящего MCP-клиента через `InMemoryTransport`.
 
 ### `server/` — слои снизу вверх
 1. **`src/protocol/`** — Modbus RTU + карта SMG II.
@@ -73,7 +97,11 @@ npm run check      # jest: протокол + stats + auth + auth-http (server) 
    хранится в `daily` (`solar_start_ts`/`solar_end_ts`) и отдаётся эндпоинтом
    `/api/stats/solar-window`. Никогда не пишет в инвертор. Тесты —
    `src/stats/db.test.ts`, `src/stats/solar.test.ts` (jest, входит в `npm run check -w server`).
-4. **`src/server.ts`** — Express (REST под `/api` + раздача статики `web/out`) и WebSocket (`/ws`, push каждого `Snapshot`). `Inverter` — `EventEmitter`, сервер и MQTT подписаны на событие `"snapshot"`.
+4. **`src/server.ts`** — Express (REST под `/api` + раздача статики `web/out`) и WebSocket (`/ws`, push каждого `Snapshot`). `Inverter` — `EventEmitter`, сервер и MQTT подписаны на событие `"snapshot"`. Здесь же монтируется `/mcp` (`src/mcp/http.ts`, Streamable HTTP, `McpServer` на сессию, лимит `MCP_MAX_SESSIONS`, выключатель `MCP_ENABLED`) — под тем же middleware авторизации, что и `/api`.
+4½. **Аудит записей**: после успешной записи `Inverter` испускает событие `"write"`
+   (`WriteEvent`: источник, регистр, значение), `StatsRecorder` пишет из него строку
+   события типа `control`. Источник проставляют вызывающие: `ui:<user>` / `token:<name>`
+   в `server.ts`, `mqtt` в `mqtt.ts`, а для `/mcp` — `local-gateway.ts`.
 5. **`src/mqtt.ts`** — публикация в MQTT с автодискавери Home Assistant (по умолчанию выключено, `MQTT_URL` пуст).
 6. **`src/config.ts`** — вся конфигурация только из env (см. `.env.example`): `INVERTER_BAUD` default **9600**, `MODBUS_SLAVE_ID` default 1, transport `auto|serial|mock`.
 
@@ -95,7 +123,15 @@ npm run check      # jest: протокол + stats + auth + auth-http (server) 
   сервере (middleware 403 + редиректы страниц), и в UI (навигация по роли).
 - Форс смены пароля: `must_change_password=1` блокирует весь `/api` кроме
   `me`/`change-password`/`logout`, пока пароль не изменён.
-- Тесты — `hash.test.ts`, `policy.test.ts`, `db.test.ts`, `service.test.ts` (jest, входят в `npm run check -w server`); HTTP-флоу — `src/server.http.test.ts`.
+- **API-токены** (таблица `api_tokens` в `auth.db`, `Authorization: Bearer inv_…`, sha256
+  в БД, скоупы `read`/`write`): middleware `/api` пробует cookie, затем Bearer и кладёт в
+  `req.auth` поля `kind`/`scopes`/`tokenName`. Мутирующие роуты (`control`, `lock`,
+  `raw` с `W`, `baseline/recapture`) требуют скоуп `write` — кроме `POST /api/control`
+  с `preview: true`, это чтение (`Inverter.previewControl`). `/api/users` и `/api/tokens`
+  по токену закрыты (`code: session_required`) — управление доступами только из UI-сессии.
+  Токен владельца под форсом смены пароля отклоняется. Выдача: UI на `/users`,
+  `POST /api/tokens` или `scripts/issue-token.ts`. `/ws` принимает тот же Bearer.
+- Тесты — `hash.test.ts`, `policy.test.ts`, `db.test.ts`, `service.test.ts`, `tokens.test.ts` (jest, входят в `npm run check -w server`); HTTP-флоу — `src/server.http.test.ts`.
 
 ### `web/` — Next.js (App Router)
 - **Прод = статический экспорт** (`output: "export"` в `next.config.ts`) в `web/out/`, который раздаёт сам Express. **Dev** = `next dev -p 3001` + rewrites `/api/*` → `http://localhost:3000` (см. `next.config.ts`). Отсюда же `web/lib/api.ts::wsUrl()` разводит dev (`ws://localhost:3000`) и прод.

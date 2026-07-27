@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    // node16 (а не node10, как в server/) — иначе TS не читает "exports" пакета SDK
+    // и subpath-импорты @modelcontextprotocol/sdk/server/*.js не резолвятся.
+    // В package.json нет "type": "module", поэтому эмит остаётся CommonJS.
+    "module": "node16",
+    "moduleResolution": "node16",
+    "lib": ["ES2022"],
+    "outDir": "dist",
+    "rootDir": "src",
+    "strict": true,
+    // требование ts-jest при module: node16
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "sourceMap": false
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts", "src/testing/**"]
+}

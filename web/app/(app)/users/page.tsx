@@ -5,6 +5,7 @@ import type { PublicUser, Role } from "@inverter/shared";
 import { getJson, postJson } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { useToast } from "@/lib/toast";
+import { TokensPanel } from "@/components/TokensPanel";
 
 export default function UsersPage() {
   const t = useT();
@@ -133,6 +134,8 @@ export default function UsersPage() {
           </button>
         </div>
       </section>
+
+      <TokensPanel />
     </main>
   );
 }

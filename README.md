@@ -31,6 +31,7 @@ ever leaves your LAN.
 - 🏠 **Home Assistant integration** over MQTT with auto-discovery — entities appear in HA by themselves, no YAML needed.
 - 🔑 **Users & roles** — always-on login with two roles (admin / viewer), forced password change on first use, admin-managed accounts, scrypt-hashed passwords in SQLite, HttpOnly sessions and brute-force protection.
 - 📊 **Statistics & history** — SQLite telemetry log with a per-metric power chart set, daily kWh totals, energy bars, a "Solar today" window (start/end of stable PV output), and an event log (mode changes, grid loss, faults).
+- 🤖 **MCP server for LLM agents** — tools, resources and prompts over stdio or an HTTP endpoint, with write access gated behind scoped tokens.
 - 🚀 **One-script deploy** — local build → rsync to the Pi → systemd restart → health check.
 
 ---
@@ -71,6 +72,7 @@ settings — 300–343.
 | `inverter` | `server/src/inverter.ts` | Timer-driven polling, command queue (single port, 120 ms pacing), auto-reconnect, baseline, write lock |
 | `server` | `server/src/server.ts` | Express (REST + static files) and WebSocket (live push) |
 | `mqtt` | `server/src/mqtt.ts` | MQTT publishing with Home Assistant auto-discovery |
+| `mcp` | `mcp/src` | MCP server for LLM agents: tools/resources/prompts behind an `InverterGateway`, stdio binary and the core used by `/mcp` |
 | `web` | `web/` | Mobile UI on Next.js; the static export is served by the same Express server |
 
 Protocol correctness is pinned by reference frames captured from a live inverter
@@ -89,6 +91,7 @@ Protocol correctness is pinned by reference frames captured from a live inverter
 - [API](#-api)
 - [Statistics](#-statistics)
 - [Home Assistant (MQTT)](#-home-assistant-mqtt)
+- [MCP (LLM agents)](#-mcp-llm-agents)
 - [Control safety & write lock](#-control-safety--write-lock)
 - [What's been verified](#-whats-been-verified)
 - [Project structure](#️-project-structure)
@@ -99,9 +102,10 @@ Protocol correctness is pinned by reference frames captured from a live inverter
 
 ## 🚀 Quick start (development)
 
-An npm-workspaces monorepo: `shared/` (shared types and the API contract), `server/`
-(Express + WebSocket, the Modbus protocol) and `web/` (Next.js UI). Development and
-builds happen on a regular machine (not on the Pi); Node ≥ 24.
+An npm-workspaces monorepo: `shared/` (shared types, the API contract and the register
+map), `mcp/` (the MCP server for agents), `server/` (Express + WebSocket, the Modbus
+protocol) and `web/` (Next.js UI). Development and builds happen on a regular machine
+(not on the Pi); Node ≥ 24. Build order is fixed: `shared → mcp → server → web`.
 
 ```bash
 git clone https://github.com/apanamaryov/sweethome.git inverter-monitor
@@ -175,8 +179,8 @@ PI_HOST=pi@<pi-address> SSH_KEY=~/.ssh/<key> ./deploy.sh
 What the script does:
 
 1. `npm run build` (shared → server → web) and `npm run check`.
-2. `rsync` uploads the built artifacts to the Pi — `shared/dist`, `server/dist`, `server/systemd`, `server/.env.example`, the `web/out` static files — plus the workspace `package.json`/`package-lock.json`.
-3. Over SSH on the Pi: `npm ci -w server --omit=dev`, updates the systemd unit and restarts `inverter-monitor`.
+2. `rsync` uploads the built artifacts to the Pi — `shared/dist`, `mcp/dist`, `server/dist`, `server/systemd`, `server/.env.example`, the `web/out` static files — plus the workspace `package.json`/`package-lock.json`.
+3. Over SSH on the Pi: `npm ci -w server -w mcp --omit=dev`, updates the systemd unit and restarts `inverter-monitor`.
 4. Checks `GET /api/health` (up to a minute for the restart); a `401` without a session (auth is always on) means the server is alive.
 
 - `PI_HOST` — user and address of your Pi (defaults to `pi@raspberrypi.local`).
@@ -229,6 +233,23 @@ The app always requires login. Users and passwords are stored in `data/auth.db`.
 - Anti-brute-force: after 5 wrong passwords from one IP — a 10-minute lockout.
 - Forgot your password? `cd server && DATA_DIR=data npx tsx scripts/reset-password.ts <username> <newpass>`.
 
+**API tokens.** Machine clients (the MCP server, scripts) authenticate with
+`Authorization: Bearer inv_…` instead of a session cookie. An admin issues them in the
+**API tokens** section of the Users page, or from the Pi:
+
+```bash
+cd server && DATA_DIR=data npx tsx scripts/issue-token.ts "mcp laptop" --write --days 90
+```
+
+A token inherits its owner's role and carries scopes: `read` (everything that role may
+read) and optionally `write` (control, lock, raw writes, baseline recapture). Without the
+`write` scope those endpoints answer `403 scope_required`; `POST /api/control` with
+`{"preview": true}` stays available, since it only reports what *would* be written.
+Tokens are stored as sha256 — the value is shown exactly once — and they can never reach
+`/api/users` or `/api/tokens`: managing access requires a UI session. A token belonging to
+a user who still must change their password is rejected. `GET /api/me` reports
+`auth: "session" | "token"` and the active scopes; `/ws` accepts the same Bearer header.
+
 > **Before port-forwarding on your router**, put a TLS reverse proxy (Caddy/nginx +
 > Let's Encrypt) in front, or use a VPN (WireGuard). Bare HTTP exposed to the internet
 > leaks the session cookie in plain text. `AUTH_SESSION_TTL_DAYS` controls the session
@@ -262,18 +283,24 @@ updates in real time over WebSocket with automatic reconnection.
 |---|---|---|
 | `POST` | `/api/login` | `{username, password}` — log in, sets a session cookie |
 | `POST` | `/api/logout` | Log out, revokes the session |
-| `GET` | `/api/me` | Current user — `{username, role, mustChangePassword}` |
+| `GET` | `/api/me` | Current user — `{username, role, mustChangePassword, auth, scopes}` |
 | `POST` | `/api/change-password` | `{currentPassword, newPassword}` — change your own password |
-| `GET`·`POST`·`PATCH`·`DELETE` | `/api/users…` | User management (admin only) — list / create / change role / reset password / delete |
+| `GET`·`POST`·`PATCH`·`DELETE` | `/api/users…` | User management (admin only, session only) — list / create / change role / reset password / delete |
+| `GET`·`POST`·`DELETE` | `/api/tokens…` | API tokens (admin only, session only) — list / issue / revoke |
 | `GET` | `/api/health` | Liveness check |
 | `GET` | `/api/snapshot` | Current snapshot (status, mode, settings, warnings) |
 | `GET` | `/api/meta` | Value maps for the controls |
-| `POST` | `/api/control` | `{type, value}` — write a setting (whitelist; rejected while locked) |
+| `POST` | `/api/control` | `{type, value}` — write a setting (whitelist; rejected while locked). `{preview: true}` reports the register, raw value, current and baseline without writing |
 | `POST` | `/api/lock` | `{locked}` — engage/release the write lock |
 | `GET` | `/api/baseline` | The settings baseline captured on connect |
 | `POST` | `/api/baseline/recapture` | Re-read the settings and overwrite the baseline |
 | `POST` | `/api/raw` | `{command}` — raw Modbus: `"R <addr> [count]"` always reads, `"W <addr> <value>"` requires the lock to be released |
+| `POST`·`GET`·`DELETE` | `/mcp` | MCP endpoint for agents (Streamable HTTP) — see [MCP](#-mcp-llm-agents) |
 | `WS` | `/ws` | Real-time snapshot push |
+
+Every `/api` route accepts either the session cookie or `Authorization: Bearer inv_…`
+(see [Authentication](#-authentication)). All statistics routes live under
+`/api/stats/…` — `series`, `daily`, `energy`, `events`, `solar-window`, `export.csv`.
 
 `/api/control` types: `outputSourcePriority` (register 301), `chargerSourcePriority` (331),
 `maxChargingCurrent` (332), `maxAcChargingCurrent` (333), `batteryRechargeVoltage` (327),
@@ -281,8 +308,13 @@ updates in real time over WebSocket with automatic reconnection.
 
 ```bash
 curl -X POST http://<pi-address>:3000/api/control \
-  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer inv_…' -H 'Content-Type: application/json' \
   -d '{"type":"chargerSourcePriority","value":3}'   # 3 = Only PV
+
+# dry run — what would be written, without writing (no write scope needed):
+curl -X POST http://<pi-address>:3000/api/control \
+  -H 'Authorization: Bearer inv_…' -H 'Content-Type: application/json' \
+  -d '{"type":"chargerSourcePriority","value":3,"preview":true}'
 ```
 
 ---
@@ -298,7 +330,8 @@ daily summaries and the event log — kept indefinitely. Disable with `STATS_ENA
 The **/stats** page in the web UI: a separate power chart per metric (PV, load, grid,
 battery), battery and temperature charts, daily kWh totals with **solar start/end
 columns**, energy bars (solar generated / taken from the grid), and an event log (mode
-changes, grid loss/restore, faults, connectivity), plus CSV export.
+changes, grid loss/restore, faults, connectivity, and **explicit setting writes** with
+their source — UI user, API token or MQTT), plus CSV export.
 
 The **solar day window** — when PV output stably starts and stops for the day — is
 computed retrospectively from the per-minute PV series (threshold
@@ -348,6 +381,70 @@ commands — `inverter/<node>/set/<param>`, discovery — `homeassistant/<compon
 
 ---
 
+## 🤖 MCP (LLM agents)
+
+The service ships an **MCP server** so agents (Claude Code, Claude Desktop, any MCP client)
+can read the inverter, dig through history and — with an explicitly scoped token — change
+settings. Two ways to connect, the same tools behind both.
+
+**1. Over the network** — the service exposes `POST/GET/DELETE /mcp` (Streamable HTTP),
+authorized by the same Bearer token as `/api`:
+
+```
+http://<pi-address>:3000/mcp     header: Authorization: Bearer inv_…
+```
+
+**2. Locally over stdio** — for clients that prefer spawning a process:
+
+```json
+{
+  "mcpServers": {
+    "inverter": {
+      "command": "node",
+      "args": ["/path/to/inverter-monitor/mcp/dist/bin/stdio.js"],
+      "env": {
+        "INVERTER_MCP_URL": "http://<pi-address>:3000",
+        "INVERTER_MCP_TOKEN": "inv_…"
+      }
+    }
+  }
+}
+```
+
+**Tools.** Reading: `get_snapshot`, `get_settings_diff`, `get_alarms`, `get_meta`,
+`get_health`, `read_registers`. History: `get_series`, `get_daily`, `get_energy`,
+`get_events`, `get_solar_window`, `summarize_period`, `export_csv`. Writing (admin token
+with the `write` scope only): `set_control`, `set_lock`, `recapture_baseline`,
+`write_register`. Time arguments accept unix ms, ISO 8601, `now` or offsets like `-24h`;
+series are downsampled to a point cap and always say so.
+
+**Resources.** `inverter://snapshot` (subscribable — the client is notified as new polls
+arrive), `settings`, `baseline`, `alarms`, `events/recent`, plus two documents an agent
+cannot get anywhere else: `inverter://registers/map` (the SMG II register map with units,
+scales and access) and `inverter://docs/control-contract` (what may be written and why
+each setting is risky). Templates: `inverter://stats/daily/{day}` and
+`inverter://stats/export/{res}/{from}/{to}.csv` (capped at 5 MB).
+
+**Prompts.** `diagnose-connection`, `daily-report` (day argument completes from the days
+that actually have data), `battery-health-check`, `plan-setting-change`.
+
+**Safety.** Write tools are not even listed unless the token is an admin one with the
+`write` scope and `ALLOW_CONTROL` is on. Writes still require the lock to be released and
+re-lock afterwards, exactly like the UI, and every write is recorded in the event log with
+its source (`token:<name>`, `ui:<user>` or `mqtt`) — visible on the **Statistics** page.
+`INVERTER_MCP_READ_ONLY=true` hides write tools locally even for a write-capable token.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `MCP_ENABLED` | `true` | Serve `/mcp` |
+| `MCP_MAX_SESSIONS` | `8` | Concurrent MCP sessions (Pi 3B) |
+| `INVERTER_MCP_URL` | `http://localhost:3000` | stdio: service address |
+| `INVERTER_MCP_TOKEN` | — | stdio: token, required |
+| `INVERTER_MCP_TIMEOUT_MS` | `10000` | stdio: request timeout |
+| `INVERTER_MCP_READ_ONLY` | `false` | stdio: hide write tools |
+
+---
+
 ## 🔒 Control safety & write lock
 
 The application is designed around the principle of **"read, but never overwrite until
@@ -374,6 +471,11 @@ you need to"**:
 **Without hardware (mock, full cycle):**
 
 - The server, every REST endpoint, WebSocket, the web UI, writes via fn 0x10 with auto-relock.
+- API tokens end to end: issuing from the UI and the CLI, Bearer access to `/api` and `/ws`,
+  the `write` scope gate, and rejection of revoked, expired or must-change-password tokens.
+- The MCP server over both transports: the stdio binary and `/mcp` against a running
+  service — session handshake, `tools/list` (17 tools), tool calls, resource reads,
+  snapshot subscriptions and prompt rendering.
 - TypeScript builds, installation on the Pi, systemd autostart.
 
 **Still to be verified on the live inverter:**
@@ -391,11 +493,17 @@ inverter-monitor/
 ├── deploy.sh                     # build → rsync → npm ci → restart → health
 ├── CLAUDE.md                     # guide for Claude Code
 ├── shared/
-│   └── src/{types.ts, api.ts, auth.ts, index.ts}   # shared types + control contract + auth types
+│   └── src/{types,api,auth,registers,settings}.ts  # типы, контракт управления, карта регистров, diffSettings
+├── mcp/
+│   └── src/{server,resources,prompts,logging,time,downsample,format}.ts
+│       ├── gateway/{types,http}.ts        # InverterGateway + HTTP-реализация
+│       ├── tools/{read,stats,control}.ts  # инструменты MCP
+│       └── bin/stdio.ts                   # bin inverter-mcp
 ├── server/
 │   ├── .env.example  systemd/inverter-monitor.service
 │   ├── scripts/reset-password.ts             # CLI password reset
 │   ├── src/{index,config,inverter,server,mqtt,store}.ts
+│   ├── src/mcp/{local-gateway,http}.ts       # /mcp: шлюз без HTTP-хопа + Streamable HTTP
 │   ├── src/auth/{hash,db,policy,service}.ts  # scrypt, AuthDb (node:sqlite), roles, sessions
 │   ├── src/stats/{db,recorder}.ts            # SQLite history, rollups, event derivation
 │   ├── src/protocol/{modbus,smg}.ts          # Modbus RTU + SMG II register map

@@ -4,7 +4,7 @@ import express from "express";
 import { WebSocketServer, WebSocket } from "ws";
 import { Inverter } from "./inverter";
 import { Config } from "./config";
-import { Auth, tokenFromCookieHeader } from "./auth/service";
+import { Auth, tokenFromCookieHeader, bearerFromHeader } from "./auth/service";
 import { canAccess } from "./auth/policy";
 import type { SessionInfo } from "./auth/db";
 import { normalizeUsername } from "./auth/db";
@@ -17,12 +17,22 @@ import {
   ControlType,
 } from "@inverter/shared";
 import { Snapshot } from "@inverter/shared";
+import type { TokenScope } from "@inverter/shared";
 import { GAUGE_FIELDS, GaugeField, localDay } from "./stats/db";
 import { StatsRecorder } from "./stats/recorder";
+import { mountMcp } from "./mcp/http";
+
+/** Контекст авторизации запроса: сессия из UI или API-токен. */
+export interface AuthContext {
+  kind: "session" | "token";
+  scopes: TokenScope[];
+  tokenName?: string;
+}
 
 declare module "express-serve-static-core" {
   interface Request {
-    user?: SessionInfo & { tokenHash: string };
+    user?: SessionInfo & { tokenHash?: string };
+    auth?: AuthContext;
   }
 }
 
@@ -93,18 +103,41 @@ export function createServer(inverter: Inverter, cfg: Config, stats: StatsRecord
     res.json({ ok: true });
   });
 
-  // Зона авторизации: любой валидный пользователь.
-  app.use("/api", (req, res, next) => {
-    const u = auth.verify(reqToken(req));
-    if (!u) return res.status(401).json({ ok: false, error: "Unauthorized" });
-    req.user = u;
-    next();
-  });
+  // Зона авторизации: cookie-сессия из UI либо API-токен (Authorization: Bearer).
+  const SESSION_SCOPES: TokenScope[] = ["read", "write"];
+  const authenticate: express.RequestHandler = (req, res, next) => {
+    const s = auth.verify(reqToken(req));
+    if (s) {
+      req.user = s;
+      req.auth = { kind: "session", scopes: SESSION_SCOPES };
+      return next();
+    }
+    const t = auth.verifyToken(bearerFromHeader(req.headers.authorization));
+    if (t) {
+      req.user = {
+        userId: t.userId,
+        username: t.username,
+        role: t.role,
+        mustChangePassword: false, // verifyToken уже отсёк владельцев под форсом
+        expiresAt: t.expiresAt ?? Number.MAX_SAFE_INTEGER,
+      };
+      req.auth = { kind: "token", scopes: t.scopes, tokenName: t.name };
+      return next();
+    }
+    return res.status(401).json({ ok: false, error: "Unauthorized" });
+  };
+  app.use("/api", authenticate);
 
   // Доступны даже при must_change (иначе смену пароля не выполнить).
   app.get("/api/me", (req, res) => {
     const u = req.user!;
-    res.json({ username: u.username, role: u.role, mustChangePassword: u.mustChangePassword });
+    res.json({
+      username: u.username,
+      role: u.role,
+      mustChangePassword: u.mustChangePassword,
+      auth: req.auth!.kind,
+      scopes: req.auth!.scopes,
+    });
   });
 
   app.post("/api/change-password", (req, res) => {
@@ -130,7 +163,7 @@ export function createServer(inverter: Inverter, cfg: Config, stats: StatsRecord
 
   // Admin-only зона.
   app.use(
-    ["/api/control", "/api/lock", "/api/raw", "/api/baseline", "/api/baseline/recapture", "/api/users"],
+    ["/api/control", "/api/lock", "/api/raw", "/api/baseline", "/api/baseline/recapture", "/api/users", "/api/tokens"],
     (req, res, next) => {
       if (!canAccess(req.user!.role, "admin")) {
         return res.status(403).json({ ok: false, code: "forbidden", error: "Admins only" });
@@ -138,6 +171,29 @@ export function createServer(inverter: Inverter, cfg: Config, stats: StatsRecord
       next();
     }
   );
+
+  // Управление пользователями и токенами — только из UI-сессии, никогда по токену.
+  app.use(["/api/users", "/api/tokens"], (req, res, next) => {
+    if (req.auth?.kind === "token") {
+      return res
+        .status(403)
+        .json({ ok: false, code: "session_required", error: "Not available for API tokens" });
+    }
+    next();
+  });
+
+  /** Кто именно пишет — попадает в журнал событий (тип `control`). */
+  const writeSource = (req: express.Request): string =>
+    req.auth?.kind === "token" ? `token:${req.auth.tokenName ?? "?"}` : `ui:${req.user?.username ?? "?"}`;
+
+  /** Скоуп write обязателен для токенов; cookie-сессия из UI им обладает всегда. */
+  const denyWithoutWrite = (req: express.Request, res: express.Response): boolean => {
+    if (req.auth?.kind === "token" && !req.auth.scopes.includes("write")) {
+      res.status(403).json({ ok: false, code: "scope_required", error: "Token lacks the 'write' scope" });
+      return true;
+    }
+    return false;
+  };
 
   app.get("/api/users", (_req, res) => {
     res.json(auth.db.listUsers());
@@ -220,6 +276,35 @@ export function createServer(inverter: Inverter, cfg: Config, stats: StatsRecord
     }
   });
 
+  app.get("/api/tokens", (_req, res) => {
+    res.json(auth.listTokens());
+  });
+
+  app.post("/api/tokens", (req, res) => {
+    try {
+      const { name, scopes, expiresInDays } = req.body ?? {};
+      if (!Array.isArray(scopes)) {
+        return res.status(400).json({ ok: false, error: "scopes must be an array" });
+      }
+      const days =
+        expiresInDays === undefined || expiresInDays === null ? undefined : Number(expiresInDays);
+      if (days !== undefined && (!Number.isFinite(days) || days <= 0)) {
+        return res.status(400).json({ ok: false, error: "expiresInDays must be a positive number" });
+      }
+      const { token, record } = auth.issueToken(String(name ?? ""), req.user!.userId, scopes, days);
+      res.json({ ok: true, token, record });
+    } catch (e) {
+      res.status(400).json({ ok: false, error: (e as Error).message });
+    }
+  });
+
+  app.delete("/api/tokens/:id", (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "bad id" });
+    auth.revokeToken(id);
+    res.json({ ok: true });
+  });
+
   app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
   app.get("/api/snapshot", (_req, res) => res.json(inverter.getSnapshot()));
@@ -238,7 +323,7 @@ export function createServer(inverter: Inverter, cfg: Config, stats: StatsRecord
 
   app.post("/api/control", async (req, res) => {
     try {
-      const { type, value } = req.body ?? {};
+      const { type, value, preview } = req.body ?? {};
       if (!CONTROL_TYPES.includes(type)) {
         return res.status(400).json({ ok: false, error: `Unknown control type: ${type}` });
       }
@@ -246,7 +331,13 @@ export function createServer(inverter: Inverter, cfg: Config, stats: StatsRecord
       if (!Number.isFinite(numValue)) {
         return res.status(400).json({ ok: false, error: "value must be a number" });
       }
-      const result = await inverter.control(type as ControlType, numValue);
+      if (preview === true) {
+        // Предпросмотр — это чтение: доступен и при включённой блокировке, и без скоупа write.
+        const p = await inverter.previewControl(type as ControlType, numValue);
+        return res.json({ ok: true, preview: true, ...p });
+      }
+      if (denyWithoutWrite(req, res)) return;
+      const result = await inverter.control(type as ControlType, numValue, { source: writeSource(req) });
       res.json(result);
     } catch (e) {
       res.status(400).json({ ok: false, error: (e as Error).message });
@@ -255,6 +346,7 @@ export function createServer(inverter: Inverter, cfg: Config, stats: StatsRecord
 
   app.post("/api/lock", (req, res) => {
     try {
+      if (denyWithoutWrite(req, res)) return;
       const { locked } = req.body ?? {};
       if (typeof locked !== "boolean") {
         return res.status(400).json({ ok: false, error: "locked must be a boolean" });
@@ -268,8 +360,9 @@ export function createServer(inverter: Inverter, cfg: Config, stats: StatsRecord
 
   app.get("/api/baseline", (_req, res) => res.json(inverter.getBaseline()));
 
-  app.post("/api/baseline/recapture", async (_req, res) => {
+  app.post("/api/baseline/recapture", async (req, res) => {
     try {
+      if (denyWithoutWrite(req, res)) return;
       const baseline = await inverter.recaptureBaseline();
       res.json({ ok: true, baseline });
     } catch (e) {
@@ -418,12 +511,17 @@ export function createServer(inverter: Inverter, cfg: Config, stats: StatsRecord
       if (typeof command !== "string") {
         return res.status(400).json({ ok: false, error: "command must be a string" });
       }
-      const reply = await inverter.rawQuery(command);
+      // Чтение (R) доступно любому токену; запись (W) — только со скоупом write.
+      if (/^\s*W/i.test(command) && denyWithoutWrite(req, res)) return;
+      const reply = await inverter.rawQuery(command, { source: writeSource(req) });
       res.json({ ok: true, command, reply });
     } catch (e) {
       res.status(400).json({ ok: false, error: (e as Error).message });
     }
   });
+
+  // MCP для агентов — под тем же гейтом авторизации, что и /api.
+  mountMcp(app, { inverter, cfg, stats, authenticate });
 
   const server = http.createServer(app);
   const wss = new WebSocketServer({ server, path: "/ws" });
@@ -438,7 +536,9 @@ export function createServer(inverter: Inverter, cfg: Config, stats: StatsRecord
 
   wss.on("connection", (ws, req) => {
     const s = auth.verify(tokenFromCookieHeader(req.headers.cookie));
-    if (!s || s.mustChangePassword) {
+    const authorized =
+      (!!s && !s.mustChangePassword) || !!auth.verifyToken(bearerFromHeader(req.headers.authorization));
+    if (!authorized) {
       ws.close(4401, "Unauthorized");
       return;
     }

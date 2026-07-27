@@ -1,8 +1,8 @@
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
-import type { SessionUser } from "@inverter/shared";
-import { AuthDb, SessionInfo } from "./db";
+import type { SessionUser, TokenScope, PublicApiToken } from "@inverter/shared";
+import { AuthDb, SessionInfo, TokenInfo } from "./db";
 import { verifyPassword, validatePassword } from "./hash";
 
 /**
@@ -13,6 +13,9 @@ import { verifyPassword, validatePassword } from "./hash";
  */
 
 const COOKIE_NAME = "inv_session";
+const TOKEN_PREFIX = "inv_";
+/** Не чаще раза в минуту обновляем last_used_at — щадим SD-карту Pi. */
+const TOUCH_INTERVAL_MS = 60_000;
 const FAIL_LIMIT = 5;
 const FAIL_WINDOW_MS = 15 * 60_000;
 const LOCK_MS = 10 * 60_000;
@@ -103,6 +106,66 @@ export class Auth {
     this.db.deleteSessionsForUser(row.id, s.tokenHash); // разлогинить прочие устройства
   }
 
+  /**
+   * Выдать API-токен. Значение возвращается один раз — в БД только sha256.
+   * `expiresInDays` не задан → бессрочный.
+   */
+  issueToken(
+    name: string,
+    userId: number,
+    scopes: TokenScope[],
+    expiresInDays?: number
+  ): { token: string; record: PublicApiToken } {
+    const clean = String(name ?? "").trim();
+    if (!clean || clean.length > 64) throw new Error("Token name must be 1..64 characters");
+    if (!scopes.length || scopes.some((s) => s !== "read" && s !== "write")) {
+      throw new Error("scopes must be a non-empty subset of read, write");
+    }
+    if (!this.db.getById(userId)) throw new Error("User not found");
+
+    const now = Date.now();
+    const token = TOKEN_PREFIX + crypto.randomBytes(32).toString("base64url");
+    const expiresAt =
+      expiresInDays === undefined ? null : now + Math.trunc(expiresInDays) * 24 * 3600_000;
+    this.db.pruneExpiredTokens(now);
+    const record = this.db.createToken(
+      clean,
+      hashToken(token),
+      token.slice(0, 12),
+      userId,
+      scopes,
+      now,
+      expiresAt
+    );
+    return { token, record };
+  }
+
+  /**
+   * Проверить Bearer-токен. null — нет такого, истёк, либо владельцу навязана
+   * смена пароля (иначе токен обходил бы форс). Побочно обновляет last_used_at.
+   */
+  verifyToken(raw: string | null): TokenInfo | null {
+    if (!raw || !raw.startsWith(TOKEN_PREFIX)) return null;
+    const hash = hashToken(raw);
+    const info = this.db.getToken(hash);
+    if (!info) return null;
+    const now = Date.now();
+    if (info.expiresAt !== null && info.expiresAt <= now) return null;
+    if (info.mustChangePassword) return null;
+    if (info.lastUsedAt === null || now - info.lastUsedAt >= TOUCH_INTERVAL_MS) {
+      this.db.touchToken(hash, now);
+    }
+    return info;
+  }
+
+  listTokens(): PublicApiToken[] {
+    return this.db.listTokens();
+  }
+
+  revokeToken(id: number): void {
+    this.db.deleteToken(id);
+  }
+
   cookie(token: string, secure: boolean): string {
     const base = `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(this.ttlMs / 1000)}`;
     return secure ? `${base}; Secure` : base;
@@ -124,6 +187,13 @@ export function tokenFromCookieHeader(header: string | undefined): string | null
     }
   }
   return null;
+}
+
+/** Значение токена из заголовка "Authorization: Bearer <token>". */
+export function bearerFromHeader(header: string | undefined): string | null {
+  if (!header) return null;
+  const m = header.match(/^Bearer\s+(\S+)\s*$/i);
+  return m ? m[1] : null;
 }
 
 function hashToken(token: string): string {

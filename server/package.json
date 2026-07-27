@@ -17,6 +17,7 @@
     "node": ">=24"
   },
   "dependencies": {
+    "@inverter/mcp": "1.0.0",
     "@inverter/shared": "1.0.0",
     "express": "^4.19.2",
     "mqtt": "^5.10.1",

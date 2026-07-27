@@ -32,6 +32,18 @@ const INTER_COMMAND_MS = 120;
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/** Факт записи в инвертор — для журнала событий (кто и что изменил). */
+export interface WriteEvent {
+  ts: number;
+  /** "ui:<user>" | "token:<name>" | "mqtt" */
+  source: string;
+  kind: "control" | "raw";
+  type?: ControlType;
+  value?: number;
+  register: number;
+  rawValue: number;
+}
+
 export class Inverter extends EventEmitter {
   private cfg: Config;
   private transport: Transport | null = null;
@@ -332,7 +344,7 @@ export class Inverter extends EventEmitter {
   async control(
     type: ControlType,
     value: number,
-    opts: { bypassLock?: boolean } = {}
+    opts: { bypassLock?: boolean; source?: string } = {}
   ): Promise<{ ok: boolean; command: string; reply: string }> {
     if (!this.cfg.allowControl) {
       throw new Error("Control is disabled (ALLOW_CONTROL=false)");
@@ -343,6 +355,15 @@ export class Inverter extends EventEmitter {
     const w = buildControlWrite(type, value);
     const command = `reg ${w.register} := ${w.rawValue} (${w.label})`;
     await this.writeRegister(w.register, w.rawValue); // бросает при Modbus-исключении
+    this.emit("write", {
+      ts: Date.now(),
+      source: opts.source ?? "unknown",
+      kind: "control",
+      type,
+      value,
+      register: w.register,
+      rawValue: w.rawValue,
+    } satisfies WriteEvent);
     // Refresh settings so the UI reflects the change promptly.
     try {
       const regs = await this.readBlocks(SETTINGS_BLOCKS);
@@ -362,11 +383,43 @@ export class Inverter extends EventEmitter {
   }
 
   /**
+   * Что будет записано командой control() — без записи. Доступно и при
+   * включённой блокировке: это чтение.
+   */
+  async previewControl(
+    type: ControlType,
+    value: number
+  ): Promise<{
+    register: number;
+    rawValue: number;
+    label: string;
+    currentValue: number | null;
+    baselineValue: number | null;
+  }> {
+    const w = buildControlWrite(type, value);
+    let currentValue: number | null = null;
+    try {
+      const regs = await this.readBlock(w.register, 1);
+      currentValue = regs.get(w.register) ?? null;
+    } catch {
+      /* связи нет — отдаём то, что знаем */
+    }
+    const base = this.baseline?.info as unknown as Record<string, number> | undefined;
+    return {
+      register: w.register,
+      rawValue: w.rawValue,
+      label: w.label,
+      currentValue,
+      baselineValue: base && typeof base[type] === "number" ? base[type] : null,
+    };
+  }
+
+  /**
    * Диагностика: текстовая команда чтения/записи регистров.
    *   "R <адрес> [количество]"  — чтение (доступно всегда)
    *   "W <адрес> <значение>"    — запись сырого значения (требует разблокировки)
    */
-  async rawQuery(command: string): Promise<string> {
+  async rawQuery(command: string, opts: { source?: string } = {}): Promise<string> {
     const m = command.trim().toUpperCase().match(/^([RW])\s+(\d{1,5})(?:\s+(\d{1,5}))?$/);
     if (!m) throw new Error('Use "R <addr> [count]" to read or "W <addr> <value>" to write');
     const op = m[1];
@@ -388,6 +441,13 @@ export class Inverter extends EventEmitter {
     }
     if (arg === undefined) throw new Error('Write needs a value: "W <addr> <value>"');
     await this.writeRegister(addr, arg);
+    this.emit("write", {
+      ts: Date.now(),
+      source: opts.source ?? "unknown",
+      kind: "raw",
+      register: addr,
+      rawValue: arg,
+    } satisfies WriteEvent);
     return `reg ${addr} := ${arg} — ACK`;
   }
 }

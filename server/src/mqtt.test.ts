@@ -36,7 +36,7 @@
  *     enabled, it maps the topic's trailing segment to a SETTINGS entry,
  *     decodes the payload (a label -> numeric code for the two priority
  *     selects, `Number(value)` for the two current selects), and calls
- *     `inverter.control(type, value, { bypassLock: true })` —
+ *     `inverter.control(type, value, { bypassLock: true, source: "mqtt" })` —
  *     `bypassLock: true` is the deliberate, hard-coded authorization for the
  *     MQTT path; it never reads or toggles the UI lock.
  *   - Because `onCommand` is an `async` function, the call to
@@ -111,6 +111,7 @@ function baseConfig(mqttOverrides: Partial<Config["mqtt"]> = {}): Config {
     dataDir: "data",
     stats: { enabled: true, rawDays: 30, minuteDays: 730, solarThresholdW: 200, solarDwellMin: 15 },
     auth: { sessionTtlDays: 30 },
+    mcp: { enabled: false, maxSessions: 8 },
     mqtt: {
       url: "mqtt://broker:1883",
       username: null,
@@ -432,7 +433,7 @@ describe("HaMqtt — MQTT control gate (MQTT_ENABLE_CONTROL)", () => {
 
     client.emit("message", "inverter/test-node/set/maxChargingCurrent", Buffer.from("30"));
 
-    expect(inverter.control).toHaveBeenCalledWith("maxChargingCurrent", 30, { bypassLock: true });
+    expect(inverter.control).toHaveBeenCalledWith("maxChargingCurrent", 30, { bypassLock: true, source: "mqtt" });
     expect(inverter.rawQuery).not.toHaveBeenCalled();
   });
 
@@ -443,7 +444,7 @@ describe("HaMqtt — MQTT control gate (MQTT_ENABLE_CONTROL)", () => {
 
     client.emit("message", "inverter/test-node/set/outputSourcePriority", Buffer.from(OUTPUT_SOURCE_PRIORITY[1]));
 
-    expect(inverter.control).toHaveBeenCalledWith("outputSourcePriority", 1, { bypassLock: true });
+    expect(inverter.control).toHaveBeenCalledWith("outputSourcePriority", 1, { bypassLock: true, source: "mqtt" });
   });
 
   it("ignores a message for a setting key outside the whitelist, even when control is enabled", () => {

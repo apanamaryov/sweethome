@@ -70,6 +70,56 @@ function makeRecorder(opts: Partial<RecorderOpts> = {}, seedDeviceId?: string) {
   return { db, recorder, source };
 }
 
+describe("StatsRecorder — explicit writes", () => {
+  it("records a control event when the inverter reports a write", () => {
+    const { db, recorder, source } = makeRecorder();
+
+    source.emit("write", {
+      ts: 1_700_000_000_000,
+      source: "token:mcp",
+      kind: "control",
+      type: "chargerSourcePriority",
+      value: 3,
+      register: 331,
+      rawValue: 3,
+    });
+    recorder.flush();
+
+    const rows = events(db);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].type).toBe("control");
+    expect(JSON.parse(rows[0].detail)).toMatchObject({
+      source: "token:mcp",
+      kind: "control",
+      type: "chargerSourcePriority",
+      value: 3,
+      register: 331,
+      rawValue: 3,
+    });
+  });
+
+  it("records a raw write with null type and value", () => {
+    const { db, recorder, source } = makeRecorder();
+
+    source.emit("write", {
+      ts: 1_700_000_000_000,
+      source: "ui:admin",
+      kind: "raw",
+      register: 332,
+      rawValue: 400,
+    });
+    recorder.flush();
+
+    expect(JSON.parse(events(db)[0].detail)).toMatchObject({
+      source: "ui:admin",
+      kind: "raw",
+      type: null,
+      value: null,
+      register: 332,
+    });
+  });
+});
+
 describe("StatsRecorder — buffered flush", () => {
   let db: StatsDb;
   let recorder: StatsRecorder;

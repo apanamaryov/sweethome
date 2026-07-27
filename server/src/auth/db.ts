@@ -1,5 +1,5 @@
 import { DatabaseSync, StatementSync } from "node:sqlite";
-import type { Role, PublicUser } from "@inverter/shared";
+import type { Role, PublicUser, TokenScope, PublicApiToken } from "@inverter/shared";
 import { hashPassword } from "./hash";
 
 const USERNAME_RE = /^[a-z0-9_-]{1,32}$/;
@@ -31,6 +31,23 @@ export interface SessionInfo {
   expiresAt: number;
 }
 
+/** Строка api_tokens, соединённая с владельцем — то, что нужно middleware. */
+export interface TokenInfo {
+  tokenId: number;
+  name: string;
+  userId: number;
+  username: string;
+  role: Role;
+  mustChangePassword: boolean;
+  scopes: TokenScope[];
+  createdAt: number;
+  lastUsedAt: number | null;
+  expiresAt: number | null;
+}
+
+const parseScopes = (csv: string): TokenScope[] =>
+  csv.split(",").map((s) => s.trim()).filter((s): s is TokenScope => s === "read" || s === "write");
+
 export class AuthDb {
   private db: DatabaseSync;
   private q: Record<string, StatementSync> = {};
@@ -56,6 +73,18 @@ export class AuthDb {
         created_at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+      CREATE TABLE IF NOT EXISTS api_tokens (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        token_hash TEXT UNIQUE NOT NULL,
+        prefix TEXT NOT NULL,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        scopes TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        last_used_at INTEGER,
+        expires_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_tokens_user ON api_tokens(user_id);
     `);
   }
 
@@ -167,6 +196,90 @@ export class AuthDb {
 
   pruneExpired(now: number): void {
     this.prep("DELETE FROM sessions WHERE expires_at <= ?").run(now);
+  }
+
+  // ---- API-токены (Bearer) ----
+
+  createToken(
+    name: string,
+    tokenHash: string,
+    prefix: string,
+    userId: number,
+    scopes: TokenScope[],
+    now: number,
+    expiresAt: number | null
+  ): PublicApiToken {
+    const info = this.prep(
+      `INSERT INTO api_tokens (name, token_hash, prefix, user_id, scopes, created_at, last_used_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, NULL, ?)`
+    ).run(name, tokenHash, prefix, userId, scopes.join(","), now, expiresAt);
+    return this.getTokenById(Number(info.lastInsertRowid))!;
+  }
+
+  getTokenById(id: number): PublicApiToken | null {
+    const r = this.prep("SELECT * FROM api_tokens WHERE id = ?").get(id) as
+      | {
+          id: number; name: string; prefix: string; scopes: string;
+          created_at: number; last_used_at: number | null; expires_at: number | null;
+        }
+      | undefined;
+    if (!r) return null;
+    return {
+      id: Number(r.id),
+      name: r.name,
+      prefix: r.prefix,
+      scopes: parseScopes(r.scopes),
+      createdAt: Number(r.created_at),
+      lastUsedAt: r.last_used_at === null ? null : Number(r.last_used_at),
+      expiresAt: r.expires_at === null ? null : Number(r.expires_at),
+    };
+  }
+
+  /** Токен + владелец по sha256(token). Срок годности проверяет вызывающий (Auth). */
+  getToken(tokenHash: string): TokenInfo | null {
+    const r = this.prep(
+      `SELECT t.id AS tokenId, t.name AS name, t.scopes AS scopes, t.created_at AS createdAt,
+              t.last_used_at AS lastUsedAt, t.expires_at AS expiresAt,
+              u.id AS userId, u.username AS username, u.role AS role, u.must_change_password AS mcp
+       FROM api_tokens t JOIN users u ON u.id = t.user_id
+       WHERE t.token_hash = ?`
+    ).get(tokenHash) as
+      | {
+          tokenId: number; name: string; scopes: string; createdAt: number;
+          lastUsedAt: number | null; expiresAt: number | null;
+          userId: number; username: string; role: Role; mcp: number;
+        }
+      | undefined;
+    if (!r) return null;
+    return {
+      tokenId: Number(r.tokenId),
+      name: r.name,
+      userId: Number(r.userId),
+      username: r.username,
+      role: r.role,
+      mustChangePassword: !!r.mcp,
+      scopes: parseScopes(r.scopes),
+      createdAt: Number(r.createdAt),
+      lastUsedAt: r.lastUsedAt === null ? null : Number(r.lastUsedAt),
+      expiresAt: r.expiresAt === null ? null : Number(r.expiresAt),
+    };
+  }
+
+  listTokens(): PublicApiToken[] {
+    const rows = this.prep("SELECT id FROM api_tokens ORDER BY id").all() as unknown as Array<{ id: number }>;
+    return rows.map((r) => this.getTokenById(Number(r.id))!);
+  }
+
+  deleteToken(id: number): void {
+    this.prep("DELETE FROM api_tokens WHERE id = ?").run(id);
+  }
+
+  touchToken(tokenHash: string, now: number): void {
+    this.prep("UPDATE api_tokens SET last_used_at = ? WHERE token_hash = ?").run(now, tokenHash);
+  }
+
+  pruneExpiredTokens(now: number): void {
+    this.prep("DELETE FROM api_tokens WHERE expires_at IS NOT NULL AND expires_at <= ?").run(now);
   }
 
   close(): void {

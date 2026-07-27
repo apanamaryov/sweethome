@@ -1,6 +1,6 @@
 import path from "path";
 import { Snapshot } from "@inverter/shared";
-import { Inverter } from "../inverter";
+import { Inverter, WriteEvent } from "../inverter";
 import { FAULTS } from "../protocol/smg";
 import { localDay, SAMPLE_FIELDS, SampleRow, StatsDb, StatsEventRow } from "./db";
 import { Config } from "../config";
@@ -45,8 +45,22 @@ export class StatsRecorder {
 
   attach(inverter: Inverter): void {
     inverter.on("snapshot", (snap: Snapshot) => this.handleSnapshot(snap));
+    // Явные записи в инвертор: до этого журнал знал только то, что выводится из диффа.
+    inverter.on("write", (e: WriteEvent) => this.handleWrite(e));
     this.timer = setInterval(() => this.flush(), this.flushIntervalMs);
     this.timer.unref();
+  }
+
+  /** Запись в инвертор → строка события `control` с источником. */
+  handleWrite(e: WriteEvent): void {
+    this.push(e.ts, "control", {
+      source: e.source,
+      kind: e.kind,
+      type: e.type ?? null,
+      value: e.value ?? null,
+      register: e.register,
+      rawValue: e.rawValue,
+    });
   }
 
   handleSnapshot(snap: Snapshot): void {
