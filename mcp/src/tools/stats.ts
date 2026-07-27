@@ -209,11 +209,14 @@ export function registerStatsTools(server: McpServer, ctx: McpContext, logger: L
         ]);
 
         const sum = (key: string) => days.reduce((a, d) => a + (Number(d[key]) || 0), 0);
+        // Имена колонок — из таблицы `daily` сервера (soc_min/soc_max), а не из
+        // поминутных агрегатов (batteryCapacity_min/max): их легко перепутать.
         const socValues = days
-          .flatMap((d) => [d.batteryCapacity_min, d.batteryCapacity_max])
+          .flatMap((d) => [d.soc_min, d.soc_max])
           .map(Number)
           .filter((n) => Number.isFinite(n));
-        const alarms = events.filter((e) => e.type.startsWith("fault") || e.type.startsWith("warning"));
+        // Только возникновение аварии; парные "-clear" иначе удваивают счёт.
+        const alarms = events.filter((e) => e.type === "fault-set" || e.type === "warning-set");
 
         const summary = {
           from: f,

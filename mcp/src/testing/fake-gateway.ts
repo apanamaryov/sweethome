@@ -78,11 +78,13 @@ export function createFakeGateway(overrides: FakeOverrides = {}): FakeGateway {
     },
     async daily(from, to) {
       record("daily", from, to);
+      // Схема ровно как в таблице `daily` сервера (см. server/src/stats/db.ts):
+      // SOC-колонки называются soc_min/soc_max, а не batteryCapacity_*.
       return [
         {
           day: "2026-07-26", pv_wh: 8000, load_wh: 5000, grid_wh: 1000,
           batt_charge_wh: 3000, batt_discharge_wh: 2500,
-          batteryCapacity_min: 40, batteryCapacity_max: 100,
+          soc_min: 40, soc_max: 100, grid_loss_count: 0, sample_count: 6500,
           solar_start_ts: 1, solar_end_ts: 2,
         },
       ];
@@ -93,7 +95,11 @@ export function createFakeGateway(overrides: FakeOverrides = {}): FakeGateway {
     },
     async events(q) {
       record("events", q);
-      return [{ id: 1, ts: 5, type: "mode-change", detail: '{"from":"Line","to":"Battery"}' }];
+      return [
+        { id: 1, ts: 5, type: "mode-change", detail: '{"from":"Line","to":"Battery"}' },
+        { id: 2, ts: 6, type: "warning-set", detail: '{"bit":"PV low voltage"}' },
+        { id: 3, ts: 7, type: "warning-clear", detail: '{"bit":"PV low voltage"}' },
+      ];
     },
     async solarWindow(day) {
       record("solarWindow", day);

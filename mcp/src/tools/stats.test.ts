@@ -116,7 +116,7 @@ describe("stats tools", () => {
     expect(s.loadKwh).toBeCloseTo(5);
     expect(s.socMin).toBe(40);
     expect(s.socMax).toBe(100);
-    expect(s.alarmCount).toBe(0);
+    expect(s.alarmCount).toBe(1); // warning-set учитывается, парный warning-clear — нет
     expect(textOf(r)).toContain("PV 8.00 kWh");
   });
 
