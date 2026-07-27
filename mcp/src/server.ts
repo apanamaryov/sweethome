@@ -1,6 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { InverterGateway } from "./gateway/types";
 import { registerReadTools } from "./tools/read";
+import { registerStatsTools } from "./tools/stats";
+import { registerControlTools } from "./tools/control";
 
 export interface McpContext {
   gateway: InverterGateway;
@@ -31,5 +33,7 @@ export function buildMcpServer(ctx: McpContext): McpServer {
   );
 
   registerReadTools(server, ctx);
+  registerStatsTools(server, ctx);
+  registerControlTools(server, ctx);
   return server;
 }
