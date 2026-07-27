@@ -268,7 +268,7 @@ a user who still must change their password is rejected. `GET /api/me` reports
 - **Current settings & baseline** — a "Current / Baseline" table with drift highlighting (including SOC thresholds for lithium batteries), function switches, a "Re-read baseline" button.
 - **Control** — lock status and an Unlock/Lock button; output source priority, charging priority, max charging current, max AC charging current. Every change requires confirmation; the lock re-engages automatically after a write.
 - **Diagnostics** — read/write arbitrary Modbus registers (`R 201 10`, `W 331 1`).
-- **Statistics** (`/stats`) — charts, daily totals with solar start/end columns, and the event log (see [Statistics](#-statistics)).
+- **Statistics** (`/stats`) — a solar-window panel for the selected period, charts, daily totals with solar start/end columns, and the event log (see [Statistics](#-statistics)).
 - **Users** (`/users`, admin only) — create accounts, change roles, reset passwords, delete.
 
 Navigation adapts to the role: an **admin** sees every page; a **viewer** sees only
@@ -327,7 +327,11 @@ to disk once a minute (to spare the SD card). Tiered retention: raw 5-second sna
 — 30 days (`STATS_RAW_DAYS`), per-minute aggregates — 2 years (`STATS_MINUTE_DAYS`),
 daily summaries and the event log — kept indefinitely. Disable with `STATS_ENABLED=false`.
 
-The **/stats** page in the web UI: a separate power chart per metric (PV, load, grid,
+The **/stats** page in the web UI: a **solar-window panel** that follows the period
+selector — for a single day it shows that day's start/end and length (today's window is
+live, still open), and for a week or a month it summarizes the days in range (earliest
+start, latest end, average length, days with data) straight from the loaded daily table
+without extra requests; a separate power chart per metric (PV, load, grid,
 battery), battery and temperature charts, daily kWh totals with **solar start/end
 columns**, energy bars (solar generated / taken from the grid), and an event log (mode
 changes, grid loss/restore, faults, connectivity, and **explicit setting writes** with

@@ -645,3 +645,26 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
 .tokens-add { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
 .token-scope { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 .token-scope input { width: auto; flex: 0 0 auto; }
+
+/* ---------- окно солнечного дня на /stats ---------- */
+.solar-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 14px 16px;
+  padding: 10px 12px;
+  background: var(--card);
+  border: 1.5px solid var(--ink);
+  border-left-width: 6px;
+  border-left-color: var(--sun);
+}
+.solar-panel .st-val {
+  font-family: var(--mono);
+  font-size: 17px;
+  font-feature-settings: "tnum";
+  font-variant-numeric: tabular-nums;
+  color: var(--sun-deep);
+}
+/* сводка за неделю/месяц: колонки переносятся на узком экране */
+.solar-range-grid { display: flex; flex-wrap: wrap; gap: 6px 22px; }
+.solar-range-grid > div { display: flex; flex-direction: column; }
