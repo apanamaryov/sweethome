@@ -20,6 +20,7 @@ import { Snapshot } from "@inverter/shared";
 import type { TokenScope } from "@inverter/shared";
 import { GAUGE_FIELDS, GaugeField, localDay } from "./stats/db";
 import { StatsRecorder } from "./stats/recorder";
+import { mountMcp } from "./mcp/http";
 
 /** Контекст авторизации запроса: сессия из UI или API-токен. */
 export interface AuthContext {
@@ -181,6 +182,10 @@ export function createServer(inverter: Inverter, cfg: Config, stats: StatsRecord
     next();
   });
 
+  /** Кто именно пишет — попадает в журнал событий (тип `control`). */
+  const writeSource = (req: express.Request): string =>
+    req.auth?.kind === "token" ? `token:${req.auth.tokenName ?? "?"}` : `ui:${req.user?.username ?? "?"}`;
+
   /** Скоуп write обязателен для токенов; cookie-сессия из UI им обладает всегда. */
   const denyWithoutWrite = (req: express.Request, res: express.Response): boolean => {
     if (req.auth?.kind === "token" && !req.auth.scopes.includes("write")) {
@@ -332,7 +337,7 @@ export function createServer(inverter: Inverter, cfg: Config, stats: StatsRecord
         return res.json({ ok: true, preview: true, ...p });
       }
       if (denyWithoutWrite(req, res)) return;
-      const result = await inverter.control(type as ControlType, numValue);
+      const result = await inverter.control(type as ControlType, numValue, { source: writeSource(req) });
       res.json(result);
     } catch (e) {
       res.status(400).json({ ok: false, error: (e as Error).message });
@@ -508,12 +513,15 @@ export function createServer(inverter: Inverter, cfg: Config, stats: StatsRecord
       }
       // Чтение (R) доступно любому токену; запись (W) — только со скоупом write.
       if (/^\s*W/i.test(command) && denyWithoutWrite(req, res)) return;
-      const reply = await inverter.rawQuery(command);
+      const reply = await inverter.rawQuery(command, { source: writeSource(req) });
       res.json({ ok: true, command, reply });
     } catch (e) {
       res.status(400).json({ ok: false, error: (e as Error).message });
     }
   });
+
+  // MCP для агентов — под тем же гейтом авторизации, что и /api.
+  mountMcp(app, { inverter, cfg, stats, authenticate });
 
   const server = http.createServer(app);
   const wss = new WebSocketServer({ server, path: "/ws" });

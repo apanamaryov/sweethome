@@ -303,7 +303,7 @@ export class HaMqtt {
       return;
     }
     try {
-      const res = await this.inverter.control(setting.controlType, numeric, { bypassLock: true });
+      const res = await this.inverter.control(setting.controlType, numeric, { bypassLock: true, source: "mqtt" });
       console.log(`[inverter-monitor] MQTT control ${key}=${value} -> ${res.command} ${res.reply}`);
     } catch (e) {
       console.error(`[inverter-monitor] MQTT control ${key} failed:`, (e as Error).message);

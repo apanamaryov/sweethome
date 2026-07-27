@@ -73,6 +73,7 @@ function baseConfig(overrides: Partial<Config> = {}): Config {
     dataDir: "data",
     stats: { enabled: true, rawDays: 30, minuteDays: 730, solarThresholdW: 200, solarDwellMin: 15 },
     auth: { sessionTtlDays: 30 },
+    mcp: { enabled: false, maxSessions: 8 },
     mqtt: {
       url: null,
       username: null,

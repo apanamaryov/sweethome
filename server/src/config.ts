@@ -29,6 +29,11 @@ export interface Config {
   auth: {
     sessionTtlDays: number;
   };
+  /** MCP-эндпоинт для агентов (/mcp). */
+  mcp: {
+    enabled: boolean;
+    maxSessions: number; // Pi 3B: держим потолок низким
+  };
   /** MQTT / Home Assistant integration. */
   mqtt: {
     url: string | null; // e.g. mqtt://user:pass@broker-host:1883 ; null disables MQTT
@@ -80,6 +85,10 @@ export function loadConfig(): Config {
     },
     auth: {
       sessionTtlDays: envInt("AUTH_SESSION_TTL_DAYS", 30),
+    },
+    mcp: {
+      enabled: envBool("MCP_ENABLED", true),
+      maxSessions: envInt("MCP_MAX_SESSIONS", 8),
     },
     mqtt: {
       url: process.env.MQTT_URL || null,

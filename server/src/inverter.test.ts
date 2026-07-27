@@ -221,6 +221,7 @@ function baseConfig(overrides: Partial<Config> = {}): Config {
     dataDir: tmp,
     stats: { enabled: false, rawDays: 30, minuteDays: 730, solarThresholdW: 200, solarDwellMin: 15 },
     auth: { sessionTtlDays: 30 },
+    mcp: { enabled: false, maxSessions: 8 },
     mqtt: {
       url: null,
       username: null,
@@ -487,6 +488,50 @@ describe("write gates", () => {
 
     expect(result.ok).toBe(true);
     expect(t.regs.get(331)).toBe(1);
+  });
+
+  it("emits a write event carrying the source after a successful control write", async () => {
+    const t = new FakeTransport({ regs: fullRegs() });
+    detectTransportsMock.mockResolvedValue([t]);
+    const inv = makeInverter({ allowControl: true, startupLocked: false });
+    await connectAndFreeze(inv);
+
+    const seen: unknown[] = [];
+    inv.on("write", (e) => seen.push(e));
+
+    const p = inv.control("chargerSourcePriority", 1, { source: "token:mcp" });
+    await adv(1500);
+    await p;
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({
+      source: "token:mcp",
+      kind: "control",
+      type: "chargerSourcePriority",
+      value: 1,
+      register: 331,
+      rawValue: 1,
+    });
+  });
+
+  it("emits a write event for a raw W command and none for a read", async () => {
+    const t = new FakeTransport({ regs: fullRegs() });
+    detectTransportsMock.mockResolvedValue([t]);
+    const inv = makeInverter({ allowControl: true, startupLocked: false });
+    await connectAndFreeze(inv);
+
+    const seen: Array<{ kind: string; register: number; source: string }> = [];
+    inv.on("write", (e) => seen.push(e));
+
+    const read = inv.rawQuery("R 201 1", { source: "ui:admin" });
+    await adv(500);
+    await read;
+    expect(seen).toEqual([]);
+
+    const write = inv.rawQuery("W 331 3", { source: "ui:admin" });
+    await adv(500);
+    await write;
+    expect(seen).toEqual([expect.objectContaining({ kind: "raw", register: 331, source: "ui:admin" })]);
   });
 
   it("AUTO_RELOCK=true (default): re-locks automatically after a successful write", async () => {
