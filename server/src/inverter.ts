@@ -362,6 +362,38 @@ export class Inverter extends EventEmitter {
   }
 
   /**
+   * Что будет записано командой control() — без записи. Доступно и при
+   * включённой блокировке: это чтение.
+   */
+  async previewControl(
+    type: ControlType,
+    value: number
+  ): Promise<{
+    register: number;
+    rawValue: number;
+    label: string;
+    currentValue: number | null;
+    baselineValue: number | null;
+  }> {
+    const w = buildControlWrite(type, value);
+    let currentValue: number | null = null;
+    try {
+      const regs = await this.readBlock(w.register, 1);
+      currentValue = regs.get(w.register) ?? null;
+    } catch {
+      /* связи нет — отдаём то, что знаем */
+    }
+    const base = this.baseline?.info as unknown as Record<string, number> | undefined;
+    return {
+      register: w.register,
+      rawValue: w.rawValue,
+      label: w.label,
+      currentValue,
+      baselineValue: base && typeof base[type] === "number" ? base[type] : null,
+    };
+  }
+
+  /**
    * Диагностика: текстовая команда чтения/записи регистров.
    *   "R <адрес> [количество]"  — чтение (доступно всегда)
    *   "W <адрес> <значение>"    — запись сырого значения (требует разблокировки)
