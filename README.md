@@ -283,18 +283,24 @@ updates in real time over WebSocket with automatic reconnection.
 |---|---|---|
 | `POST` | `/api/login` | `{username, password}` — log in, sets a session cookie |
 | `POST` | `/api/logout` | Log out, revokes the session |
-| `GET` | `/api/me` | Current user — `{username, role, mustChangePassword}` |
+| `GET` | `/api/me` | Current user — `{username, role, mustChangePassword, auth, scopes}` |
 | `POST` | `/api/change-password` | `{currentPassword, newPassword}` — change your own password |
-| `GET`·`POST`·`PATCH`·`DELETE` | `/api/users…` | User management (admin only) — list / create / change role / reset password / delete |
+| `GET`·`POST`·`PATCH`·`DELETE` | `/api/users…` | User management (admin only, session only) — list / create / change role / reset password / delete |
+| `GET`·`POST`·`DELETE` | `/api/tokens…` | API tokens (admin only, session only) — list / issue / revoke |
 | `GET` | `/api/health` | Liveness check |
 | `GET` | `/api/snapshot` | Current snapshot (status, mode, settings, warnings) |
 | `GET` | `/api/meta` | Value maps for the controls |
-| `POST` | `/api/control` | `{type, value}` — write a setting (whitelist; rejected while locked) |
+| `POST` | `/api/control` | `{type, value}` — write a setting (whitelist; rejected while locked). `{preview: true}` reports the register, raw value, current and baseline without writing |
 | `POST` | `/api/lock` | `{locked}` — engage/release the write lock |
 | `GET` | `/api/baseline` | The settings baseline captured on connect |
 | `POST` | `/api/baseline/recapture` | Re-read the settings and overwrite the baseline |
 | `POST` | `/api/raw` | `{command}` — raw Modbus: `"R <addr> [count]"` always reads, `"W <addr> <value>"` requires the lock to be released |
+| `POST`·`GET`·`DELETE` | `/mcp` | MCP endpoint for agents (Streamable HTTP) — see [MCP](#-mcp-llm-agents) |
 | `WS` | `/ws` | Real-time snapshot push |
+
+Every `/api` route accepts either the session cookie or `Authorization: Bearer inv_…`
+(see [Authentication](#-authentication)). All statistics routes live under
+`/api/stats/…` — `series`, `daily`, `energy`, `events`, `solar-window`, `export.csv`.
 
 `/api/control` types: `outputSourcePriority` (register 301), `chargerSourcePriority` (331),
 `maxChargingCurrent` (332), `maxAcChargingCurrent` (333), `batteryRechargeVoltage` (327),
@@ -302,8 +308,13 @@ updates in real time over WebSocket with automatic reconnection.
 
 ```bash
 curl -X POST http://<pi-address>:3000/api/control \
-  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer inv_…' -H 'Content-Type: application/json' \
   -d '{"type":"chargerSourcePriority","value":3}'   # 3 = Only PV
+
+# dry run — what would be written, without writing (no write scope needed):
+curl -X POST http://<pi-address>:3000/api/control \
+  -H 'Authorization: Bearer inv_…' -H 'Content-Type: application/json' \
+  -d '{"type":"chargerSourcePriority","value":3,"preview":true}'
 ```
 
 ---
@@ -319,7 +330,8 @@ daily summaries and the event log — kept indefinitely. Disable with `STATS_ENA
 The **/stats** page in the web UI: a separate power chart per metric (PV, load, grid,
 battery), battery and temperature charts, daily kWh totals with **solar start/end
 columns**, energy bars (solar generated / taken from the grid), and an event log (mode
-changes, grid loss/restore, faults, connectivity), plus CSV export.
+changes, grid loss/restore, faults, connectivity, and **explicit setting writes** with
+their source — UI user, API token or MQTT), plus CSV export.
 
 The **solar day window** — when PV output stably starts and stops for the day — is
 computed retrospectively from the per-minute PV series (threshold
@@ -459,6 +471,11 @@ you need to"**:
 **Without hardware (mock, full cycle):**
 
 - The server, every REST endpoint, WebSocket, the web UI, writes via fn 0x10 with auto-relock.
+- API tokens end to end: issuing from the UI and the CLI, Bearer access to `/api` and `/ws`,
+  the `write` scope gate, and rejection of revoked, expired or must-change-password tokens.
+- The MCP server over both transports: the stdio binary and `/mcp` against a running
+  service — session handshake, `tools/list` (17 tools), tool calls, resource reads,
+  snapshot subscriptions and prompt rendering.
 - TypeScript builds, installation on the Pi, systemd autostart.
 
 **Still to be verified on the live inverter:**
