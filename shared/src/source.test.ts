@@ -7,6 +7,7 @@
 import {
   DISCHARGE_EPS_A,
   PV_MIN_W,
+  SWITCH_AFTER,
   initialSourceState,
   instantSource,
   stepSource,
@@ -90,7 +91,7 @@ describe("instantSource — мгновенный кандидат по одно�
   });
 });
 
-describe("stepSource — гистерезис в два замера подряд", () => {
+describe("stepSource — гистерезис в SWITCH_AFTER замеров подряд", () => {
   it("одиночный выброс не переключает показанное значение", () => {
     const s0 = initialSourceState("Battery");
     const s1 = stepSource(s0, "Solar");
@@ -99,9 +100,16 @@ describe("stepSource — гистерезис в два замера подря�
     expect(s1.count).toBe(1);
   });
 
-  it("два одинаковых замера подряд переключают", () => {
+  it("переключает ровно на SWITCH_AFTER-м одинаковом замере, не раньше", () => {
+    // Сам порог берём из модуля, а не «две штуки» в тексте теста: поднимут
+    // SWITCH_AFTER — проверка поедет за ним, а не начнёт врать.
     let s = initialSourceState("Battery");
-    s = stepSource(s, "Solar");
+    for (let i = 1; i < SWITCH_AFTER; i++) {
+      s = stepSource(s, "Solar");
+      expect(s.shown).toBe("Battery"); // ещё копим
+      expect(s.pending).toBe("Solar");
+      expect(s.count).toBe(i);
+    }
     s = stepSource(s, "Solar");
     expect(s.shown).toBe("Solar");
     expect(s.count).toBe(0);
@@ -114,7 +122,7 @@ describe("stepSource — гистерезис в два замера подря�
     expect(s.shown).toBe("Battery");
     expect(s.pending).toBe("Line");
     expect(s.count).toBe(1);
-    s = stepSource(s, "Line");
+    for (let i = 1; i < SWITCH_AFTER; i++) s = stepSource(s, "Line");
     expect(s.shown).toBe("Line");
   });
 
