@@ -50,6 +50,9 @@ export function registerReadTools(server: McpServer, ctx: McpContext, logger: Lo
         const out: Record<string, unknown> = {
           timestamp: snap.timestamp,
           mode: snap.mode,
+          // Выведенный источник питания: у инвертора нет режима «от солнца», так
+          // что "Solar" виден только здесь и отличается от mode.
+          powerSource: snap.powerSource,
           control: snap.control,
         };
         if (want.has("connection")) out.connection = snap.connection;

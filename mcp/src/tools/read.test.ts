@@ -39,6 +39,25 @@ describe("read tools", () => {
     expect(textOf(r)).toContain("SOC 72%");
   });
 
+  it("get_snapshot reports the derived power source alongside the raw mode", async () => {
+    // FAKE_SNAPSHOT намеренно держит mode: "Battery" при powerSource: "Solar" —
+    // так видно, что это два разных поля, а не одно продублированное.
+    const client = await connect(createFakeGateway());
+    const r = await client.callTool({ name: "get_snapshot", arguments: {} });
+    const structured = r.structuredContent as { mode: string; powerSource: string };
+    expect(structured.mode).toBe("Battery");
+    expect(structured.powerSource).toBe("Solar");
+    expect(textOf(r)).toContain("Mode: Battery · source: Solar");
+  });
+
+  it("get_snapshot keeps the mode and the source even under a sections filter", async () => {
+    const client = await connect(createFakeGateway());
+    const r = await client.callTool({ name: "get_snapshot", arguments: { sections: ["connection"] } });
+    const structured = r.structuredContent as Record<string, unknown>;
+    expect(structured.mode).toBe("Battery");
+    expect(structured.powerSource).toBe("Solar");
+  });
+
   it("get_snapshot honours the sections filter", async () => {
     const client = await connect(createFakeGateway());
     const r = await client.callTool({ name: "get_snapshot", arguments: { sections: ["connection"] } });

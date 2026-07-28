@@ -15,6 +15,10 @@ export const FAKE_SNAPSHOT: Snapshot = {
   },
   control: { allowControl: true, locked: true },
   mode: "Battery",
+  // Расхождение с mode — намеренное, не «опечатка фикстуры»: инвертор в
+  // автономе всегда рапортует Battery, а "Solar" сервер выводит из телеметрии
+  // (shared/src/source.ts). На этой паре тесты и проверяют, что это два разных
+  // поля, а не одно продублированное. Не «исправлять».
   powerSource: "Solar",
   status: {
     gridVoltage: 232.7, gridFrequency: 50, mainsPower: 0, inverterPower: 430,

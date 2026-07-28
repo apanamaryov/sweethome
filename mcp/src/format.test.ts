@@ -49,6 +49,16 @@ describe("summarizeSnapshot", () => {
     expect(line).toContain("write locked");
   });
 
+  it("adds the derived source when it differs from the raw mode", () => {
+    const solar = { ...base, mode: "Battery" as const, powerSource: "Solar" as const };
+    expect(summarizeSnapshot(solar, NOW)).toContain("Mode: Battery · source: Solar");
+  });
+
+  it("keeps the plain mode when the source is the same value", () => {
+    expect(summarizeSnapshot(base, NOW)).toContain("Mode: Battery");
+    expect(summarizeSnapshot(base, NOW)).not.toContain("source:");
+  });
+
   it("says so when the inverter is not connected", () => {
     const off = { ...base, connection: { ...base.connection, connected: false }, status: null };
     expect(summarizeSnapshot(off, NOW)).toContain("no connection");
