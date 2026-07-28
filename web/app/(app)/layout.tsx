@@ -30,7 +30,10 @@ function TopBar() {
   }
   // Бейдж показывает выведенный источник питания, а не сырой режим: у инвертора
   // нет режима «от солнца», его считает сервер (shared/src/source.ts).
-  const source = snapshot?.powerSource ?? "Unknown";
+  // Промежуточный фолбэк на mode — на случай снапшота без powerSource (сервер
+  // постарее или вкладка, оставленная открытой через деплой): payload никто не
+  // валидирует, так что деградируем в прежнее поведение бейджа, а не в пустое «—».
+  const source = snapshot?.powerSource ?? snapshot?.mode ?? "Unknown";
 
   return (
     <header className="topbar">

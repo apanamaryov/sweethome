@@ -95,6 +95,17 @@ describe("AppLayout — бейдж источника питания", () => {
     expect(screen.getByText(t.modeBattery)).toHaveClass("mode-badge", "mode-Battery");
   });
 
+  it("падает обратно на режим, когда в снапшоте нет powerSource", async () => {
+    // Старый сервер (или клиент, оставленный открытым через деплой) присылает
+    // снапшот без powerSource — валидации payload'а нет, так что деградировать
+    // надо в прежнее поведение бейджа, а не в пустое "—".
+    const legacy = buildSnapshot({ mode: "Line" });
+    delete (legacy as { powerSource?: unknown }).powerSource;
+    await renderLayout(<div>child</div>, { snapshot: legacy });
+
+    expect(screen.getByText(t.modeLine)).toHaveClass("mode-badge", "mode-Line");
+  });
+
   it("до первого снапшота показывает Unknown", async () => {
     const { container } = await renderLayout(<div>child</div>, { snapshot: null });
 
