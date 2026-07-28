@@ -15,6 +15,9 @@ export default function DashboardPage() {
   const discharging = !!s && s.batteryDischargeCurrent > 0;
   const batStateClass = charging ? "state-charge" : discharging ? "state-discharge" : "state-idle";
   const batStateText = !s ? "—" : charging ? t.charging : discharging ? t.discharging : t.idle;
+  // Регистр 217 знаковый (+ заряд, − разряд); в карточке показываем только
+  // положительную часть — так же, как сервер разводит ток из регистра 232.
+  const chargePowerW = s ? Math.max(0, s.batteryPower) : NaN;
 
   return (
     <main className="grid">
@@ -36,6 +39,10 @@ export default function DashboardPage() {
           <div>
             <span>{fmt(s?.batteryDischargeCurrent, 0)}</span>
             <span className="cap">{t.capDischargeA}</span>
+          </div>
+          <div>
+            <span>{fmt(chargePowerW, 0)}</span>
+            <span className="cap">{t.capChargeW}</span>
           </div>
         </div>
       </section>

@@ -54,6 +54,35 @@ describe("DashboardPage", () => {
     expect(screen.getByText("230.5")).toBeInTheDocument(); // gridVoltage
   });
 
+  it("shows the charge power from the positive part of batteryPower", async () => {
+    await renderWithProviders(<DashboardPage />, {
+      snapshot: buildSnapshot({
+        status: buildStatus({ batteryPower: 2200, batteryChargingCurrent: 41, batteryDischargeCurrent: 0 }),
+      }),
+      withMeta: false,
+    });
+
+    const value = screen.getByText("2200");
+    expect(value).toBeInTheDocument();
+    // Метка идёт следующим элементом в той же метрике — как у соседних «заряд, А» / «разряд, А».
+    expect(value.parentElement).toHaveTextContent(t.capChargeW);
+  });
+
+  it("shows zero charge power while the battery is discharging, not the signed value", async () => {
+    await renderWithProviders(<DashboardPage />, {
+      snapshot: buildSnapshot({
+        // Регистр 217 отрицательный при разряде; в поле «заряд, Вт» должен попасть 0.
+        status: buildStatus({ batteryPower: -450, batteryChargingCurrent: 0, batteryDischargeCurrent: 9 }),
+      }),
+      withMeta: false,
+    });
+
+    expect(screen.queryByText("-450")).not.toBeInTheDocument();
+    expect(screen.queryByText("450")).not.toBeInTheDocument();
+    const label = screen.getByText(t.capChargeW);
+    expect(label.parentElement).toHaveTextContent("0");
+  });
+
   it("shows the charging tag/state when batteryChargingCurrent > 0", async () => {
     await renderWithProviders(<DashboardPage />, {
       snapshot: buildSnapshot({ status: buildStatus({ batteryChargingCurrent: 5, batteryDischargeCurrent: 0 }) }),
