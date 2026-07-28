@@ -61,6 +61,7 @@ export class Inverter extends EventEmitter {
     connection: { connected: false, transport: "none", device: null, deviceId: null, mock: false, lastError: null },
     control: { allowControl: false, locked: true },
     mode: "Unknown",
+    powerSource: "Unknown",
     status: null,
     info: null,
     flags: null,
@@ -315,6 +316,9 @@ export class Inverter extends EventEmitter {
         },
         control: { allowControl: this.cfg.allowControl, locked: this.locked },
         mode,
+        // TODO(Task 2): вычислять через instantSource/stepSource с гистерезисом.
+        // Пока зеркалим mode, чтобы монорепо компилировалось.
+        powerSource: mode,
         status,
         info,
         flags,

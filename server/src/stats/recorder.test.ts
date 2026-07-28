@@ -30,6 +30,7 @@ function snapshot(
     },
     control: { allowControl: false, locked: true },
     mode: opts.mode ?? "Battery",
+    powerSource: opts.mode ?? "Battery",
     status: connected ? status(statusOver) : null,
     info: null,
     flags: null,

@@ -94,6 +94,16 @@ export type DeviceMode =
   | "Fault" // 6
   | "Unknown";
 
+/**
+ * Что фактически питает нагрузку прямо сейчас.
+ *
+ * Это НЕ регистр: режима «от солнца» у инвертора нет — работая от PV, он
+ * рапортует `Battery`, потому что солнце идёт через батарейную шину. Значение
+ * выводится из телеметрии (см. `source.ts`) и считается на сервере, чтобы
+ * попасть во все каналы разом: WS, REST, MQTT/HA, MCP.
+ */
+export type PowerSource = DeviceMode | "Solar";
+
 /** Full snapshot broadcast to clients. */
 export interface Snapshot {
   timestamp: number;
@@ -110,6 +120,8 @@ export interface Snapshot {
     locked: boolean; // runtime read-only lock; writes rejected while true
   };
   mode: DeviceMode;
+  /** Выведенный источник питания: то же, что `mode`, но с отдельным "Solar". */
+  powerSource: PowerSource;
   status: InverterStatus | null;
   info: InverterRatedInfo | null;
   flags: InverterFlags | null;

@@ -26,6 +26,7 @@ module.exports = {
     "!server/src/**/*.d.ts",
     "shared/src/api.ts",
     "shared/src/auth.ts",
+    "shared/src/source.ts",
   ],
   coverageDirectory: "<rootDir>/server/coverage",
   coverageReporters: ["text", "html"],

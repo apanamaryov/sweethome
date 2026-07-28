@@ -49,6 +49,7 @@ function makeSnapshot(mode: Snapshot["mode"] = "Line"): Snapshot {
     },
     control: { allowControl: true, locked: false },
     mode,
+    powerSource: mode,
     status: null,
     info: null,
     flags: null,

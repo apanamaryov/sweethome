@@ -15,6 +15,7 @@ export const FAKE_SNAPSHOT: Snapshot = {
   },
   control: { allowControl: true, locked: true },
   mode: "Battery",
+  powerSource: "Solar",
   status: {
     gridVoltage: 232.7, gridFrequency: 50, mainsPower: 0, inverterPower: 430,
     acOutputVoltage: 230, acOutputFrequency: 50, acOutputActivePower: 430, acOutputApparentPower: 500,

@@ -188,6 +188,7 @@ function makeSnapshot(
     status?: Partial<InverterStatus>;
     info?: Partial<InverterRatedInfo>;
     mode?: Snapshot["mode"];
+    powerSource?: Snapshot["powerSource"];
     warnings?: string[];
     connected?: boolean;
     locked?: boolean;
@@ -199,6 +200,7 @@ function makeSnapshot(
     connection: { connected, transport: "mock", device: null, deviceId: "dev-1", mock: true, lastError: null },
     control: { allowControl: true, locked: opts.locked ?? false },
     mode: opts.mode ?? "Battery",
+    powerSource: opts.powerSource ?? opts.mode ?? "Battery",
     status: fullStatus(opts.status),
     info: fullInfo(opts.info),
     flags: null,

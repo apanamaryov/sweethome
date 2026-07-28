@@ -241,6 +241,7 @@ export function buildSnapshot(overrides: Partial<Snapshot> = {}): Snapshot {
     },
     control: { allowControl: true, locked: false },
     mode: "Line",
+    powerSource: "Line",
     status: buildStatus(),
     info: buildRatedInfo(),
     flags: buildFlags(),
