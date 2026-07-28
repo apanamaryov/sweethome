@@ -289,7 +289,7 @@ a user who still must change their password is rejected. `GET /api/me` reports
 
 ## 🖥️ Web interface
 
-- **Header** — connection status (Connected / Demo data / No connection), current mode (Grid / Battery / Bypass / Charging / …), last update time.
+- **Header** — connection status (Connected / Demo data / No connection), the current power source (Grid / Solar / Battery / Bypass / Charging / …), last update time.
 - **Battery** — state of charge (SoC ring), voltage, charge/discharge current, state.
 - **Solar (PV)** — power, voltage, current.
 - **Solar today** — start/end of today's stable solar window (idle / active / ended), backed by `GET /api/stats/solar-window`.
@@ -447,8 +447,9 @@ http://<pi-address>:3000/mcp     header: Authorization: Bearer inv_…
 }
 ```
 
-**Tools.** Reading: `get_snapshot`, `get_settings_diff`, `get_alarms`, `get_meta`,
-`get_health`, `read_registers`. History: `get_series`, `get_daily`, `get_energy`,
+**Tools.** Reading: `get_snapshot` (returns the raw `mode` and the derived `powerSource`
+side by side), `get_settings_diff`, `get_alarms`, `get_meta`, `get_health`,
+`read_registers`. History: `get_series`, `get_daily`, `get_energy`,
 `get_events`, `get_solar_window`, `summarize_period`, `export_csv`. Writing (admin token
 with the `write` scope only): `set_control`, `set_lock`, `recapture_baseline`,
 `write_register`. Time arguments accept unix ms, ISO 8601, `now` or offsets like `-24h`;
