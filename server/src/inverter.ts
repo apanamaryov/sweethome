@@ -65,6 +65,8 @@ export class Inverter extends EventEmitter {
   private deviceId: string | null = null;
   /** Состояние гистерезиса выведенного источника питания (см. shared/src/source.ts). */
   private sourceState: SourceState = initialSourceState();
+  /** Режим предыдущего замера: по его смене состояние гистерезиса пересевается. */
+  private lastMode: DeviceMode | null = null;
   private baseline: Baseline | null = null;
 
   private snapshot: Snapshot = {
@@ -149,6 +151,7 @@ export class Inverter extends EventEmitter {
     this.deviceId = null; // re-identify on next connection
     this.ratedCounter = 0; // so settings are re-read on the first poll after reconnect
     this.sourceState = initialSourceState(); // иначе после реконнекта всплывёт залежавшийся "Solar"
+    this.lastMode = null; // первый замер после реконнекта снова засеет состояние режимом
   }
 
   /** Capture the as-found settings once per device, and persist them. */
@@ -257,7 +260,10 @@ export class Inverter extends EventEmitter {
   }
 
   private setConnection(connected: boolean, t: Transport | null, err: string | null): void {
-    if (!connected) this.sourceState = initialSourceState();
+    if (!connected) {
+      this.sourceState = initialSourceState();
+      this.lastMode = null;
+    }
     this.snapshot = {
       ...this.snapshot,
       connection: {
@@ -291,16 +297,16 @@ export class Inverter extends EventEmitter {
       const statusRegs = await this.readBlocks(STATUS_BLOCKS);
       const status = decodeStatus(statusRegs);
       const mode: DeviceMode = decodeMode(statusRegs.get(201) ?? -1);
-      // Первый замер после (пере)подключения: засеваем состояние режимом с
-      // устройства. `mode` — прямое показание регистра 201, ему сглаживание не
-      // нужно; гистерезис нужен только выведенному "Solar". Иначе бейдж на
-      // целый цикл опроса провалился бы в "—" после каждого реконнекта.
-      // Сентинел надёжен: connect() отбраковывает кандидата, чей регистр 201
-      // декодируется в "Unknown", поэтому у подключённого устройства shown
-      // становится "Unknown" только через initialSourceState() при сбросе.
-      if (this.sourceState.shown === "Unknown") {
-        this.sourceState = initialSourceState(mode);
-      }
+      // `mode` — прямое показание регистра 201, ему сглаживание не нужно и оно
+      // вредно: пропадание сети, её возврат и Fault обязаны доехать до бейджа и
+      // датчика HA в этом же цикле. Гистерезис нужен только выведенному
+      // "Solar", поэтому на каждой смене сырого режима состояние пересевается
+      // этим режимом — и сглаживается затем только пара Battery↔Solar,
+      // единственная, между которой вывод может метаться внутри одного режима.
+      // Заодно это покрывает и первый замер после (пере)подключения: там
+      // lastMode сброшен в null, так что режим тоже показывается сразу.
+      if (mode !== this.lastMode) this.sourceState = initialSourceState(mode);
+      this.lastMode = mode;
       this.sourceState = stepSource(this.sourceState, instantSource(mode, status));
 
       let warnings = this.snapshot.warnings;

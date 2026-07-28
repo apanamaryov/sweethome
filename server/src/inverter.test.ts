@@ -276,6 +276,19 @@ async function waitForSnapshot(snapshots: Snapshot[], stepMs = 50, maxSteps = 40
   return snapshots[snapshots.length - 1];
 }
 
+/**
+ * Дождаться снапшота от успешного цикла поллинга. Снапшоты от setConnection()
+ * пропускаем: те лишь переписывают connection в уже лежащем снапшоте и
+ * timestamp не двигают, а после реконнекта такой снапшот приходит первым.
+ */
+async function waitForPollSnapshot(snapshots: Snapshot[], afterTs: number): Promise<Snapshot> {
+  for (let i = 0; i < 40; i++) {
+    const s = await waitForSnapshot(snapshots);
+    if (s.connection.connected && s.timestamp > afterTs) return s;
+  }
+  throw new Error("timed out waiting for a successful poll snapshot");
+}
+
 beforeEach(() => {
   jest.useFakeTimers();
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "inverter-test-"));
@@ -680,5 +693,157 @@ describe("powerSource — вывод источника питания с гис
   it("отдаёт Unknown в снапшоте до первого успешного поллинга", () => {
     const inv = makeInverter();
     expect(inv.getSnapshot().powerSource).toBe("Unknown");
+  });
+
+  it("сырую смену режима показывает сразу, без задержки на цикл гистерезиса", async () => {
+    const t = new FakeTransport({ regs: fullRegs({ 201: 3, 223: 900, 232: 0 }) });
+    detectTransportsMock.mockReturnValue([t]);
+    const inv = makeInverter();
+    const snaps: Snapshot[] = [];
+    inv.on("snapshot", (s: Snapshot) => snaps.push(s));
+
+    await inv.start();
+    await waitForSnapshot(snaps);
+    expect((await waitForSnapshot(snaps)).powerSource).toBe("Solar"); // устойчивое солнце
+
+    // Сеть вернулась: 201=2 (Line), 202=2300 (230 В). Режим — прямое показание
+    // регистра, сглаживать его нельзя: бейдж и датчик HA обязаны узнать о
+    // появлении сети в том же цикле, а не в следующем.
+    t.regs.set(201, 2);
+    t.regs.set(202, 2300);
+    const next = await waitForSnapshot(snaps);
+    expect(next.mode).toBe("Line");
+    expect(next.powerSource).toBe("Line");
+  });
+
+  it("при смене режима не залипает на третьем значении, пока кандидаты чередуются", async () => {
+    // Ровно тот случай, на который рассчитана фича: сразу после пропадания сети
+    // PV ≈ нагрузка, ток разряда болтается вокруг DISCHARGE_EPS_A, поэтому
+    // кандидат прыгает Solar↔Battery каждый замер и ни один не накапливает два
+    // подряд. Показанным значением при этом не имеет права остаться "Line".
+    const t = new FakeTransport({ regs: fullRegs({ 201: 2, 223: 900, 232: 0 }) });
+    detectTransportsMock.mockReturnValue([t]);
+    const inv = makeInverter();
+    const snaps: Snapshot[] = [];
+    inv.on("snapshot", (s: Snapshot) => snaps.push(s));
+
+    await inv.start();
+    await waitForSnapshot(snaps);
+    expect((await waitForSnapshot(snaps)).powerSource).toBe("Line");
+
+    // Сеть пропала: 201=3 (Battery) — режим виден сразу.
+    t.regs.set(201, 3);
+    expect((await waitForSnapshot(snaps)).powerSource).toBe("Battery");
+
+    for (let i = 0; i < 4; i++) {
+      // 232 = −10 → разряд 1.0 А (кандидат Battery), 0 → кандидат Solar.
+      t.regs.set(232, i % 2 === 0 ? 0x10000 - 10 : 0);
+      expect((await waitForSnapshot(snaps)).powerSource).not.toBe("Line");
+    }
+  });
+});
+
+describe("powerSource — восстановление после сбоёв связи", () => {
+  /**
+   * Прогнать три подряд неудачных цикла: третий роняет транспорт
+   * (closeTransport), следующий поллинг переподключается.
+   */
+  async function failThreePolls(t: FakeTransport, snaps: Snapshot[]): Promise<void> {
+    t.failAll = true;
+    for (let i = 0; i < 3; i++) await waitForSnapshot(snaps);
+    expect(t.closed).toBe(true);
+    t.failAll = false;
+  }
+
+  it("после реконнекта с другим режимом сразу показывает новый режим", async () => {
+    const t = new FakeTransport({ regs: fullRegs({ 201: 3, 223: 900, 232: 0 }) });
+    detectTransportsMock.mockReturnValue([t]);
+    const inv = makeInverter({ pollIntervalMs: 300 });
+    const snaps: Snapshot[] = [];
+    inv.on("snapshot", (s: Snapshot) => snaps.push(s));
+
+    await inv.start();
+    await waitForSnapshot(snaps);
+    const steady = await waitForSnapshot(snaps);
+    expect(steady.powerSource).toBe("Solar");
+
+    await failThreePolls(t, snaps);
+
+    // Связь вернулась, но за это время появилась сеть: 201=2 (Line).
+    t.regs.set(201, 2);
+    t.regs.set(202, 2300);
+    const back = await waitForPollSnapshot(snaps, steady.timestamp);
+    expect(back.mode).toBe("Line");
+    expect(back.powerSource).toBe("Line"); // не залежавшийся "Solar" и не "—"
+  });
+
+  it("после реконнекта с тем же режимом показывает режим, а не Unknown", async () => {
+    const t = new FakeTransport({ regs: fullRegs({ 201: 3, 223: 900, 232: 0 }) });
+    detectTransportsMock.mockReturnValue([t]);
+    const inv = makeInverter({ pollIntervalMs: 300 });
+    const snaps: Snapshot[] = [];
+    inv.on("snapshot", (s: Snapshot) => snaps.push(s));
+
+    await inv.start();
+    await waitForSnapshot(snaps);
+    const steady = await waitForSnapshot(snaps);
+    expect(steady.powerSource).toBe("Solar");
+
+    await failThreePolls(t, snaps);
+
+    // Режим прежний (201=3) и солнце всё ещё есть: первый же цикл после
+    // реконнекта обязан показать сырой режим, а не "—" — выведенный "Solar"
+    // заново набирает свои два замера.
+    const back = await waitForPollSnapshot(snaps, steady.timestamp);
+    expect(back.mode).toBe("Battery");
+    expect(back.powerSource).toBe("Battery");
+  });
+
+  it("после единственного сбоя чтения тоже показывает режим сразу", async () => {
+    // Другой путь сброса, чем у реконнекта: транспорт остаётся (закрывается он
+    // только на третьем подряд сбое), состояние источника чистит
+    // setConnection(false, …). Без сброса lastMode на этом пути бейдж провалился
+    // бы в "—" на пару циклов после каждого одиночного таймаута.
+    const t = new FakeTransport({ regs: fullRegs({ 201: 3, 223: 900, 232: 0 }) });
+    detectTransportsMock.mockReturnValue([t]);
+    const inv = makeInverter({ pollIntervalMs: 300 });
+    const snaps: Snapshot[] = [];
+    inv.on("snapshot", (s: Snapshot) => snaps.push(s));
+
+    await inv.start();
+    await waitForSnapshot(snaps);
+    const steady = await waitForSnapshot(snaps);
+    expect(steady.powerSource).toBe("Solar");
+
+    t.failAll = true;
+    const dead = await waitForSnapshot(snaps);
+    expect(dead.connection.connected).toBe(false);
+    expect(t.closed).toBe(false); // транспорт ещё держим
+    t.failAll = false;
+
+    const back = await waitForPollSnapshot(snaps, steady.timestamp);
+    expect(back.powerSource).toBe("Battery");
+  });
+
+  it("после stop()/start() показывает режим сразу", async () => {
+    // Третий путь: перезапуск поллинга без сбоя связи вообще. Он идёт только
+    // через closeTransport() — setConnection(false, …) здесь не вызывается,
+    // поэтому свой сброс нужен и там.
+    const t = new FakeTransport({ regs: fullRegs({ 201: 3, 223: 900, 232: 0 }) });
+    detectTransportsMock.mockReturnValue([t]);
+    const inv = makeInverter({ pollIntervalMs: 300 });
+    const snaps: Snapshot[] = [];
+    inv.on("snapshot", (s: Snapshot) => snaps.push(s));
+
+    await inv.start();
+    await waitForSnapshot(snaps);
+    const steady = await waitForSnapshot(snaps);
+    expect(steady.powerSource).toBe("Solar");
+
+    await inv.stop();
+    await inv.start();
+
+    const back = await waitForPollSnapshot(snaps, steady.timestamp);
+    expect(back.powerSource).toBe("Battery");
   });
 });
