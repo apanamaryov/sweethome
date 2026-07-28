@@ -26,7 +26,7 @@ your local network. No data ever leaves your LAN.
 
 - 📡 **Direct inverter polling** over Modbus RTU (9600 baud, RS232), bypassing the cloud and the SmartESS app.
 - 🔀 **Auto-detected transports** — serial (USB-RS232 adapter) and mock (demo data when no inverter is attached).
-- 📱 **Mobile-friendly web UI** (Next.js) with live updates over WebSocket and automatic reconnection.
+- 📱 **Mobile-friendly web UI** (Next.js) with live updates over WebSocket and automatic reconnection, including a header badge that shows the *derived* power source (grid / battery / solar) — the inverter has no "solar" mode of its own, so "Solar" is inferred from telemetry (autonomous mode, PV output above a threshold, no battery discharge) with hysteresis to ignore passing clouds.
 - 🌍 **Three interface languages** — Ukrainian, Russian, English; switching without a page reload.
 - 🔒 **Safe control** — read-only by default; writes require an explicit unlock, a register whitelist, automatic re-locking, and an "as-found" settings baseline with drift highlighting.
 - 🏠 **Home Assistant integration** over MQTT with auto-discovery — entities appear in HA by themselves, no YAML needed.
@@ -400,7 +400,9 @@ creates all entities by itself. The integration is **disabled** by default (empt
 
 **Published:** PV/battery/load/grid/temperature/mode/warning sensors; binary sensors
 for "online", "problem", "write locked"; with `MQTT_ENABLE_CONTROL=true` — writable
-`select` entities (source priorities, charging currents).
+`select` entities (source priorities, charging currents). Among the sensors is
+`power_source` — the derived power source (grid / battery / solar, same value as the
+web UI's header badge) — handy for automations like "we're running on solar".
 
 **Topics:** state — `inverter/<node>/state` (JSON), availability — `inverter/<node>/availability`,
 commands — `inverter/<node>/set/<param>`, discovery — `homeassistant/<component>/<node>/<key>/config`.
