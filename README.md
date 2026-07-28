@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🔋 Inverter Monitor — SK-5500P-48L
+# 🔋 Inverter Monitor
 
 **Local monitoring and control of a hybrid inverter, talking to it directly — no SmartESS cloud.**
 
