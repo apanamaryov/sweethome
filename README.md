@@ -25,7 +25,7 @@ your local network. No data ever leaves your LAN.
 ## ✨ Features
 
 - 📡 **Direct inverter polling** over Modbus RTU (9600 baud, RS232), bypassing the cloud and the SmartESS app.
-- 🔀 **Auto-detected transports** — serial (USB-RS232 adapter) and mock (demo data when no inverter is attached).
+- 🔀 **Auto-detected transports** — serial (USB-RS232 adapter) and mock (demo data when no inverter is attached). The emulator models a grid-priority install, so the derived "Solar" badge state does not occur in demo mode.
 - 📱 **Mobile-friendly web UI** (Next.js) with live updates over WebSocket and automatic reconnection, including a header badge that shows the *derived* power source (grid / battery / solar) — the inverter has no "solar" mode of its own, so "Solar" is inferred from telemetry (autonomous mode, PV output above a threshold, no battery discharge) with hysteresis to ignore passing clouds.
 - 🌍 **Three interface languages** — Ukrainian, Russian, English; switching without a page reload.
 - 🔒 **Safe control** — read-only by default; writes require an explicit unlock, a register whitelist, automatic re-locking, and an "as-found" settings baseline with drift highlighting.
@@ -514,11 +514,17 @@ you need to"**:
   service — session handshake, `tools/list` (17 tools), tool calls, resource reads,
   snapshot subscriptions and prompt rendering.
 - TypeScript builds, installation on the Pi, systemd autostart.
+- The derived power source, at register level through the real poll cycle: the two-sample
+  hysteresis switching in and out of "Solar", an immediate switch on a raw mode change, and
+  the reset on disconnect/reconnect. Not through the emulator, which cannot reach the state —
+  the tests drive registers 201/223/232 directly.
 
 **Still to be verified on the live inverter:**
 
 - Full block reads (status 201–234 in one cycle) and the behaviour of registers absent from the esphome map.
 - Actual setting writes (the whitelisted setters) — do the first write with the inverter's front panel in sight.
+- The derived "Solar" badge state on real telemetry: watch the header switch as the sun starts
+  carrying the load in the morning, and switch back when the battery begins to discharge.
 
 ---
 
