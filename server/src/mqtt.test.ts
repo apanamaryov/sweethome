@@ -223,6 +223,11 @@ function startConnected(cfg: Config, inverter: ReturnType<typeof fakeInverter>) 
   return { haMqtt, client };
 }
 
+/** Filters client.publish calls to those ending with "/config" (Home Assistant discovery). */
+function configTopics(client: ReturnType<typeof fakeMqttClient>) {
+  return client.publish.mock.calls.filter(([topic]) => (topic as string).endsWith("/config"));
+}
+
 describe("HaMqtt — disabled when MQTT_URL is empty", () => {
   it("never connects to mqtt and never subscribes to inverter snapshots", () => {
     const cfg = baseConfig({ url: null });
@@ -333,10 +338,6 @@ describe("HaMqtt — connects and publishes state to the correct topics", () => 
 });
 
 describe("HaMqtt — Home Assistant autodiscovery", () => {
-  function configTopics(client: ReturnType<typeof fakeMqttClient>) {
-    return client.publish.mock.calls.filter(([topic]) => (topic as string).endsWith("/config"));
-  }
-
   it("publishes one retained config topic per sensor/binary_sensor, and settings as read-only sensors when control is disabled", () => {
     const cfg = baseConfig({ enableControl: false });
     const inverter = fakeInverter(makeSnapshot());
@@ -505,8 +506,4 @@ describe("HaMqtt — сенсор источника питания", () => {
     expect(body.mode).toBe("Battery");
     expect(body.power_source).toBe("Solar");
   });
-
-  function configTopics(client: ReturnType<typeof fakeMqttClient>) {
-    return client.publish.mock.calls.filter(([topic]) => (topic as string).endsWith("/config"));
-  }
 });
