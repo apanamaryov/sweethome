@@ -36,6 +36,7 @@ const SENSORS: SensorDef[] = [
   { key: "grid_hz", name: "Частота сети", unit: "Hz", deviceClass: "frequency", stateClass: "measurement" },
   { key: "temp", name: "Температура", unit: "°C", deviceClass: "temperature", stateClass: "measurement" },
   { key: "mode", name: "Режим", icon: "mdi:power-settings" },
+  { key: "power_source", name: "Источник питания", icon: "mdi:solar-power-variant" },
   { key: "warnings", name: "Предупреждения", icon: "mdi:alert" },
 ];
 
@@ -258,6 +259,7 @@ export class HaMqtt {
       grid_hz: st?.gridFrequency ?? null,
       temp: st?.heatSinkTemperature ?? null,
       mode: snap.mode,
+      power_source: snap.powerSource,
       warnings: warns.length ? warns.join("; ") : "OK",
       problem: warns.length ? "ON" : "OFF",
       connected: snap.connection.connected ? "ON" : "OFF",

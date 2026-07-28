@@ -343,8 +343,8 @@ describe("HaMqtt — Home Assistant autodiscovery", () => {
     const { client } = startConnected(cfg, inverter);
 
     const configs = configTopics(client);
-    // 17 telemetry sensors + 3 binary_sensor (connected/problem/locked) + 4 settings-as-sensor.
-    expect(configs).toHaveLength(24);
+    // 18 telemetry sensors + 3 binary_sensor (connected/problem/locked) + 4 settings-as-sensor.
+    expect(configs).toHaveLength(25);
 
     const pvCall = configs.find(([topic]) => topic === "homeassistant/sensor/test-node/pv_w/config")!;
     expect(pvCall).toBeDefined();
@@ -389,7 +389,7 @@ describe("HaMqtt — Home Assistant autodiscovery", () => {
     const { client } = startConnected(cfg, inverter);
 
     const configs = configTopics(client);
-    expect(configs).toHaveLength(24); // same total; settings are "select" instead of "sensor"
+    expect(configs).toHaveLength(25); // same total; settings are "select" instead of "sensor"
 
     const selectCall = configs.find(
       ([topic]) => topic === "homeassistant/select/test-node/outputSourcePriority/config"
@@ -468,4 +468,45 @@ describe("HaMqtt — MQTT control gate (MQTT_ENABLE_CONTROL)", () => {
 
     expect(inverter.control).not.toHaveBeenCalled();
   });
+});
+
+describe("HaMqtt — сенсор источника питания", () => {
+  it("объявляет power_source в автодискавери HA", () => {
+    const cfg = baseConfig({ enableControl: false });
+    const inverter = fakeInverter(makeSnapshot());
+    const { client } = startConnected(cfg, inverter);
+
+    const call = configTopics(client).find(
+      ([topic]) => topic === "homeassistant/sensor/test-node/power_source/config"
+    );
+    expect(call).toBeDefined();
+    expect(JSON.parse(call![1])).toEqual(
+      expect.objectContaining({
+        name: "Источник питания",
+        unique_id: "test-node_power_source",
+        state_topic: "inverter/test-node/state",
+        value_template: "{{ value_json.power_source }}",
+        icon: "mdi:solar-power-variant",
+      })
+    );
+  });
+
+  it("публикует power_source в состоянии, отдельно от mode", () => {
+    const cfg = baseConfig({ enableControl: false });
+    const inverter = fakeInverter(makeSnapshot());
+    const { client } = startConnected(cfg, inverter);
+    client.publish.mockClear();
+
+    inverter.emit("snapshot", makeSnapshot({ mode: "Battery", powerSource: "Solar" }));
+
+    const state = client.publish.mock.calls.find(([topic]) => String(topic).endsWith("/state"));
+    expect(state).toBeDefined();
+    const body = JSON.parse(String(state![1]));
+    expect(body.mode).toBe("Battery");
+    expect(body.power_source).toBe("Solar");
+  });
+
+  function configTopics(client: ReturnType<typeof fakeMqttClient>) {
+    return client.publish.mock.calls.filter(([topic]) => (topic as string).endsWith("/config"));
+  }
 });
