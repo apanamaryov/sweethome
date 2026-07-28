@@ -15,11 +15,13 @@ export function summarizeSnapshot(snap: Snapshot, now: number): string {
   const age = Math.max(0, Math.round((now - snap.timestamp) / 1000));
   // Выведенный источник дописываем только когда он отличается от сырого режима:
   // "Solar" инвертор не сообщает, его считает сервер (shared/src/source.ts).
-  const mode = snap.powerSource && snap.powerSource !== snap.mode
-    ? `Mode: ${snap.mode} · source: ${snap.powerSource}`
-    : `Mode: ${snap.mode}`;
+  // Проверка на пустоту — на случай снапшота от сервера постарее, где поля ещё нет.
+  const modePart =
+    snap.powerSource && snap.powerSource !== snap.mode
+      ? `Mode: ${snap.mode} · source: ${snap.powerSource}`
+      : `Mode: ${snap.mode}`;
   const parts = [
-    mode,
+    modePart,
     `SOC ${s.batteryCapacity}%`,
     `battery ${s.batteryVoltage} V / ${formatWatts(s.batteryPower)}`,
     `PV ${formatWatts(s.pvPower)}`,
