@@ -122,6 +122,7 @@ body.stale .topbar { opacity: 0.45; filter: contrast(0.75); transition: opacity 
 }
 .mode-Standby, .mode-Bypass { border-style: dashed; color: var(--ink-soft); }
 .mode-Charging { border-color: var(--moss-deep); color: var(--moss-deep); }
+.mode-Solar { background: var(--sun-deep); border-color: var(--sun-deep); color: var(--paper-0); } /* нагрузку тянет солнце */
 
 /* Статус подключения */
 .pill {

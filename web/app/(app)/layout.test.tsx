@@ -78,6 +78,35 @@ describe("AppLayout — TopBar connection pill", () => {
   });
 });
 
+describe("AppLayout — бейдж источника питания", () => {
+  it("показывает выведенный источник, а не режим инвертора", async () => {
+    const snapshot = buildSnapshot({ mode: "Battery", powerSource: "Solar" });
+    await renderLayout(<div>child</div>, { snapshot });
+
+    const badge = screen.getByText(t.modeSolar);
+    expect(badge).toHaveClass("mode-badge", "mode-Solar");
+    expect(screen.queryByText(t.modeBattery)).not.toBeInTheDocument();
+  });
+
+  it("показывает режим как есть, когда солнце не выведено", async () => {
+    const snapshot = buildSnapshot({ mode: "Battery", powerSource: "Battery" });
+    await renderLayout(<div>child</div>, { snapshot });
+
+    expect(screen.getByText(t.modeBattery)).toHaveClass("mode-badge", "mode-Battery");
+  });
+
+  it("до первого снапшота показывает Unknown", async () => {
+    const { container } = await renderLayout(<div>child</div>, { snapshot: null });
+
+    // Запрос по классу, а не по тексту: `modeUnknown` — это "—", и такой же
+    // текст без снапшота стоит в спане времени обновления, поэтому
+    // getByText("—") нашёл бы два элемента и упал.
+    const badge = container.querySelector(".mode-badge")!;
+    expect(badge).toHaveClass("mode-Unknown");
+    expect(badge).toHaveTextContent(t.modeUnknown);
+  });
+});
+
 describe("AppLayout — WarningsBanner", () => {
   it("shows active warnings translated, joined with a middle dot", async () => {
     await renderLayout(<div>child</div>, {

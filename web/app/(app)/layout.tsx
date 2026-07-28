@@ -28,13 +28,15 @@ function TopBar() {
       pillText = t.noConnection;
     }
   }
-  const mode = snapshot?.mode ?? "Unknown";
+  // Бейдж показывает выведенный источник питания, а не сырой режим: у инвертора
+  // нет режима «от солнца», его считает сервер (shared/src/source.ts).
+  const source = snapshot?.powerSource ?? "Unknown";
 
   return (
     <header className="topbar">
       <div className="topbar-row">
         <h1>{t.h1}</h1>
-        <span className={"mode-badge mode-" + mode}>{modeLabel(t, mode)}</span>
+        <span className={"mode-badge mode-" + source}>{modeLabel(t, source)}</span>
       </div>
       <div className="topbar-row">
         <span className={pillClass}>{pillText}</span>
