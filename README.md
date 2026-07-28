@@ -11,11 +11,12 @@
 ![Cloud](https://img.shields.io/badge/cloud-none-success)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-A TypeScript / Node.js web application for monitoring and controlling the
-**SK-5500P-48L** hybrid inverter (**ISolar / EASUN SMG II** family). It runs on a
-Raspberry Pi, polls the inverter directly over RS232 using **Modbus RTU**, and serves
-a mobile-friendly web UI plus a REST/WebSocket API to your local network. No data
-ever leaves your LAN.
+A TypeScript / Node.js web application for monitoring and controlling a hybrid inverter.
+It was written for — and is verified on — a **Sunwaytech SK-5500P-48L**, but it talks the
+**SMG II Modbus RTU** dialect, so it should work with other inverters of that family
+(see [Compatibility](#-compatibility)). It runs on a Raspberry Pi, polls the inverter
+directly over RS232, and serves a mobile-friendly web UI plus a REST/WebSocket API to
+your local network. No data ever leaves your LAN.
 
 </div>
 
@@ -54,13 +55,13 @@ Inverter ──(RS232 · Modbus RTU)── Raspberry Pi ──(WiFi/LAN)── p
                        └────────────────────────────────┘
 ```
 
-The inverter belongs to the **ISolar/EASUN SMG II** family and speaks **Modbus RTU**
-(9600 baud, 8N1, slave id 1 — menu setting #25, "Modbus ID"). The SmartESS WiFi dongle
-is merely a bridge that polls the same registers and relays the data to the cloud; this
-application does the same thing locally. The register map has been verified against the
-[syssi/esphome-smg-ii](https://github.com/syssi/esphome-smg-ii) project and a live
-device: status — registers 201–234, faults/warnings — 100/108 (bit masks),
-settings — 300–343.
+The inverter — a **Sunwaytech SK-5500P-48L** — belongs to the **ISolar/EASUN SMG II**
+family and speaks **Modbus RTU** (9600 baud, 8N1, slave id 1 — menu setting #25, "Modbus
+ID"). The SmartESS WiFi dongle is merely a bridge that polls the same registers and relays
+the data to the cloud; this application does the same thing locally. The register map has
+been verified against the [syssi/esphome-smg-ii](https://github.com/syssi/esphome-smg-ii)
+project and a live device: status — registers 201–234, faults/warnings — 100/108 (bit
+masks), settings — 300–343.
 
 **Layers** (an npm-workspaces monorepo):
 
@@ -83,6 +84,7 @@ Protocol correctness is pinned by reference frames captured from a live inverter
 
 ## 📑 Contents
 
+- [Compatibility](#-compatibility)
 - [Quick start (development)](#-quick-start-development)
 - [Connecting the inverter to the Pi](#-connecting-the-inverter-to-the-pi-hardware)
 - [Deploying to the Pi](#-deploying-to-the-pi)
@@ -97,6 +99,34 @@ Protocol correctness is pinned by reference frames captured from a live inverter
 - [Project structure](#️-project-structure)
 - [Troubleshooting](#️-troubleshooting)
 - [License](#-license)
+
+---
+
+## 🧩 Compatibility
+
+Everything here has been developed and tested against **one** device: a Sunwaytech
+SK-5500P-48L. Nothing in the code is specific to that badge, though — the whole protocol
+layer is the SMG II register map, so the same application should drive any inverter that
+speaks it. The models known to `syssi/esphome-smg-ii` to use this protocol are:
+
+| Model | Notes from the upstream project |
+|---|---|
+| **Sunwaytech SK-5500P-48L** | what this project was written for; verified on a live device |
+| **ISolar SMG II** | the family this register map comes from |
+| **EASUN SMG II** | same platform, rebranded |
+| **SMG III 6.2kW 48V** | mostly supported; some registers may not work |
+| **PowMr POW-HVM5.5K-48V** / **POW-HVM5.5K-48V-P** | — |
+| **Qoltec 53963** | supports the SUF output priority |
+| **Anenji 3kW-24Vdc-120Vac** | supports the SUF output priority |
+| **Anenji 6200W-WiFi** | charging priority "Utility first" probably unsupported |
+
+These are *plausible*, not verified: this project has only ever been run against the
+SK-5500P-48L. If you try another one, start read-only — the **Diagnostics** page (or the
+`read_registers` MCP tool) reads any register without touching the device, and register
+201 is the cheapest probe: it must return the device mode (0…6). Keep `ALLOW_CONTROL=false`
+until you have confirmed that the values you read match reality; a register that means
+"charging current" on one firmware may mean something else on another. Reports of
+success or failure on other models are welcome.
 
 ---
 
@@ -466,7 +496,7 @@ you need to"**:
 
 ## 🧪 What's been verified
 
-**On a live inverter (2026-07-23):**
+**On a live inverter — a Sunwaytech SK-5500P-48L (2026-07-23):**
 
 - RS232 transport (FTDI FT231X with true RS232 levels) + Modbus RTU 9600, slave 1.
 - Register reads: mode (201), grid voltage (202 → 232.7 V), battery (215 → 52.2 V), SOC (229 → 72 %) — the values match reality.
