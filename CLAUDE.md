@@ -2,177 +2,180 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## О проекте
+## About the project
 
-`inverter-monitor` — локальный мониторинг и управление гибридным инвертором **SK-5500P-48L**
-(семейство **ISolar/EASUN SMG II**) по **Modbus RTU через RS232**, без облака SmartESS.
-Работает на Raspberry Pi.
+`inverter-monitor` — local monitoring and control of a hybrid **SK-5500P-48L** inverter
+(the **ISolar/EASUN SMG II** family) over **Modbus RTU via RS232**, with no SmartESS cloud.
+Runs on a Raspberry Pi.
 
-Полное функциональное описание, API, конфигурация, траблшутинг — в `README.md` (подробный,
-англоязычный, поддерживай его при изменениях фич). Этот файл — только про архитектуру и
-рабочий процесс.
+The full feature description, API, configuration and troubleshooting live in `README.md`
+(detailed, in English — keep it up to date when features change). This file covers only
+architecture and workflow.
 
-## Команды (из корня репозитория)
+## Commands (from the repository root)
 
 ```bash
-npm install        # ставит зависимости всех воркспейсов разом (это монорепо)
-npm run dev        # server :3000 (форсит INVERTER_TRANSPORT=mock) + web :3001 (Next.js HMR, проксирует /api на :3000)
-npm run build      # СТРОГО в порядке shared → mcp → server → web
-npm run check      # jest: mcp + протокол/stats/auth/auth-http (server) + typecheck (web)
-npm test           # то же, что check, но с jest веба вместо typecheck: mcp → server → web
-./deploy.sh        # локальная сборка → rsync на Pi → npm ci → рестарт systemd → health-check
+npm install        # installs dependencies for all workspaces at once (this is a monorepo)
+npm run dev        # server :3000 (forces INVERTER_TRANSPORT=mock) + web :3001 (Next.js HMR, proxies /api to :3000)
+npm run build      # STRICTLY in the order shared → mcp → server → web
+npm run check      # jest: mcp + protocol/stats/auth/auth-http (server) + typecheck (web)
+npm test           # same as check, but with the web jest suite instead of typecheck: mcp → server → web
+./deploy.sh        # local build → rsync to the Pi → npm ci → systemd restart → health check
 ```
 
-> ⚠️ Node в оболочке должен быть **≥ 24** (`.nvmrc` = 24). Если активна более старая
-> версия, тесты падают не на ассертах, а на загрузке модуля: `No such built-in module:
-> node:sqlite`. Лечится `nvm use` либо префиксом
-> `PATH="$HOME/.nvm/versions/node/v24.x.y/bin:$PATH"` перед командой.
+> ⚠️ Node in your shell must be **≥ 24** (`.nvmrc` = 24). With an older version active the
+> tests fail not on assertions but on module load: `No such built-in module:
+> node:sqlite`. Fix it with `nvm use` or by prefixing the command with
+> `PATH="$HOME/.nvm/versions/node/v24.x.y/bin:$PATH"`.
 
-- **`npm run check -w server` (= `npm test -w server`) гоняет jest**: протокол (`src/protocol/modbus.test.ts`, `smg.test.ts`, `registers.test.ts` — согласованность карты регистров с декодерами), SQLite-статистика (`src/stats/db.test.ts`, `solar.test.ts`, `recorder.test.ts`), хеши/роли/флоу авторизации и токены (`src/auth/hash.test.ts`, `policy.test.ts`, `db.test.ts`, `service.test.ts`, `tokens.test.ts`), авторизация сквозь реальный `createServer` по HTTP (`src/server.http.test.ts`: гейты, роли, форс смены пароля, Bearer и скоупы), MCP-эндпоинт и локальный шлюз (`src/mcp/http.test.ts`, `local-gateway.test.ts`), а также чистые модули `shared` (`shared/src/settings.test.ts` — jest сервера включает `shared/src` в `roots`). Ни один из них — не typecheck.
-- **Тесты лежат рядом с исходниками** (`*.test.ts`) — миграция с четырёх ручных `assert`-скриптов `scripts/selfcheck*.ts` на jest завершена. Протокольные тесты сверяют **эталонные Modbus-кадры, снятые с живого инвертора** (запрос `01 03 00 C9 00 01 54 34` → ответ `01 03 02 00 03 F8 45` и др.), CRC-16/Modbus, декодеры регистров и билдеры сеттеров. **После правок в `server/src/protocol/*` обязательно гоняй `npm test -w server`.**
-- **`src/stats/db.test.ts`** аналогично проверяет схему/свёртки/retention SQLite-статистики (`src/stats/db.ts`, `recorder.ts`). **После правок в `server/src/stats/*` обязательно гоняй тесты.**
-- `npm run check` для сервера — это jest, а НЕ проверка типов. Типы сервера проверяются только сборкой (`tsc` в `npm run build`). Веб проверяется отдельно (`tsc --noEmit`).
-- Деплой на Pi — `PI_HOST=pi@… SSH_KEY=~/.ssh/… ./deploy.sh`; учитывай, что скрипт пересобирает всё локально, заливает артефакты и **рестартует живой systemd-сервис** на Pi. Конкретный адрес/ключ — вне репозитория (локальное окружение владельца).
-- Node: root `engines` и `server` `engines` — оба **≥ 24** (нужен встроенный `node:sqlite` для статистики). Сам Pi уже на **Node 24** (Raspberry Pi OS Trixie, arm64) — совпадает с заявленным минимумом.
+- **`npm run check -w server` (= `npm test -w server`) runs jest**: the protocol (`src/protocol/modbus.test.ts`, `smg.test.ts`, `registers.test.ts` — consistency of the register map with the decoders), SQLite statistics (`src/stats/db.test.ts`, `solar.test.ts`, `recorder.test.ts`), password hashes/roles/auth flows and tokens (`src/auth/hash.test.ts`, `policy.test.ts`, `db.test.ts`, `service.test.ts`, `tokens.test.ts`), authorization through the real `createServer` over HTTP (`src/server.http.test.ts`: gates, roles, forced password change, Bearer and scopes), the MCP endpoint and the local gateway (`src/mcp/http.test.ts`, `local-gateway.test.ts`), plus the pure `shared` modules (`shared/src/settings.test.ts` — the server's jest config includes `shared/src` in `roots`). None of these is a typecheck.
+- **Tests live next to the sources** (`*.test.ts`) — the migration from the four hand-written `assert` scripts `scripts/selfcheck*.ts` to jest is complete. The protocol tests verify against **reference Modbus frames captured from a live inverter** (request `01 03 00 C9 00 01 54 34` → response `01 03 02 00 03 F8 45`, and others), CRC-16/Modbus, the register decoders and the setter builders. **After changing anything under `server/src/protocol/*`, always run `npm test -w server`.**
+- **`src/stats/db.test.ts`** likewise checks the schema/rollups/retention of the SQLite statistics (`src/stats/db.ts`, `recorder.ts`). **After changing anything under `server/src/stats/*`, always run the tests.**
+- `npm run check` for the server is jest, NOT a type check. Server types are only checked by the build (`tsc` in `npm run build`). The web workspace is checked separately (`tsc --noEmit`).
+- Deploying to the Pi — `PI_HOST=pi@… SSH_KEY=~/.ssh/… ./deploy.sh`; note that the script rebuilds everything locally, uploads the artifacts and **restarts the live systemd service** on the Pi. The actual host/key are outside the repository (the owner's local environment).
+- Node: both the root `engines` and the `server` `engines` are **≥ 24** (the built-in `node:sqlite` is required for statistics). The Pi itself already runs **Node 24** (Raspberry Pi OS Trixie, arm64) — matching the declared minimum.
 
-## Протокол (важно: Modbus, НЕ PI30)
+## Protocol (important: Modbus, NOT PI30)
 
-Инвертор говорит **Modbus RTU: 9600 бод 8N1, slave id 1** (настройка №25 «Modbus ID» в меню).
-Историческая справка: изначально проект был написан под Voltronic PI30 (QPIGS/CRC-XMODEM) —
-это оказалось ошибкой, инвертор на PI30 не отвечает вообще; 2026-07-23 протокольный слой
-переписан на Modbus. Карта регистров — из **syssi/esphome-smg-ii** (проверена на живом
-устройстве):
+The inverter speaks **Modbus RTU: 9600 baud 8N1, slave id 1** (menu setting #25, "Modbus ID").
+Historical note: the project was originally written for Voltronic PI30 (QPIGS/CRC-XMODEM) —
+that turned out to be wrong, the inverter does not answer PI30 at all; on 2026-07-23 the
+protocol layer was rewritten for Modbus. The register map comes from **syssi/esphome-smg-ii**
+(verified against a live device):
 
-- **Статус**: 201 режим (0..6), 202 сеть В ×0.1, 203 Гц ×0.01, 210/212/213/214 выход,
-  215 батарея В ×0.1, 217 мощность батареи (±), 219/220/223/224 PV, 225 нагрузка %,
-  226/227 температуры, 229 SOC, 232 ток батареи ×0.1 (+заряд/−разряд).
-- **Аварии**: 100–101 fault (32 бита), 108–109 warning (32 бита) — списки битов в `smg.ts`.
-- **Настройки**: 300–343 (301 приоритет выхода, 331 приоритет заряда, 332/333 токи ×0.1,
-  324/325/326/327/329 пороги напряжений ×0.1, 341–343 SOC-пороги), 643 номинал Вт.
-- **Запись — ТОЛЬКО function 0x10** (Write Multiple Registers) — устройство не понимает 0x06.
-- **Пейсинг**: между командами нужна пауза (~120 мс, esphome использует 200 мс) — реализована
-  в очереди `Inverter.enqueue`.
-- Инвертор отвечает **только на 9600** (на 2400/4800/19200 молчит).
+- **Status**: 201 mode (0..6), 202 grid V ×0.1, 203 Hz ×0.01, 210/212/213/214 output,
+  215 battery V ×0.1, 217 battery power (±), 219/220/223/224 PV, 225 load %,
+  226/227 temperatures, 229 SOC, 232 battery current ×0.1 (+charge/−discharge).
+- **Alarms**: 100–101 fault (32 bits), 108–109 warning (32 bits) — the bit lists are in `smg.ts`.
+- **Settings**: 300–343 (301 output priority, 331 charger priority, 332/333 currents ×0.1,
+  324/325/326/327/329 voltage thresholds ×0.1, 341–343 SOC thresholds), 643 rated W.
+- **Writes — function 0x10 ONLY** (Write Multiple Registers) — the device does not understand 0x06.
+- **Pacing**: commands need a gap between them (~120 ms, esphome uses 200 ms) — implemented
+  in the `Inverter.enqueue` queue.
+- The inverter only answers **at 9600** (stays silent at 2400/4800/19200).
 
-## Архитектура
+## Architecture
 
-Монорепо на npm workspaces: `shared/`, `mcp/`, `server/`, `web/`. Порядок сборки не случаен — `mcp`, `server` и `web` импортируют `@inverter/shared` из его **собранного `dist/`**, а `server` ещё и `@inverter/mcp` из `mcp/dist`, поэтому порядок строго `shared → mcp → server → web`.
+An npm-workspaces monorepo: `shared/`, `mcp/`, `server/`, `web/`. The build order is not arbitrary — `mcp`, `server` and `web` import `@inverter/shared` from its **built `dist/`**, and `server` additionally imports `@inverter/mcp` from `mcp/dist`, hence the strict order `shared → mcp → server → web`.
 
-### `shared/` — контракт между сервером и вебом
-`@inverter/shared` — единственный источник правды и для типов данных (`Snapshot`, `InverterStatus`, `InverterRatedInfo`, `Baseline` и т.д. в `types.ts`), и для **whitelist-контракта управления** (`api.ts`: тип `ControlType`, карты `OUTPUT_SOURCE_PRIORITY`/`CHARGER_SOURCE_PRIORITY`, массивы допустимых токов, `ApiMeta`). И сервер, и веб тянут значения отсюда — не дублируй enum'ы на стороне.
+### `shared/` — the contract between server and web
+`@inverter/shared` is the single source of truth both for the data types (`Snapshot`, `InverterStatus`, `InverterRatedInfo`, `Baseline` etc. in `types.ts`) and for the **control whitelist contract** (`api.ts`: the `ControlType` type, the `OUTPUT_SOURCE_PRIORITY`/`CHARGER_SOURCE_PRIORITY` maps, the arrays of allowed currents, `ApiMeta`). Both server and web pull their values from here — do not duplicate enums on either side.
 
-**Добавление новой управляющей команды** трогает несколько файлов согласованно: `shared/src/api.ts` (в `ControlType` + при необходимости в `ApiMeta`) → `server/src/protocol/smg.ts` (ветка в `buildControlWrite`: регистр + масштаб + валидация) → `server/src/server.ts` (`CONTROL_TYPES`) → `web/` (UI) → `mcp/src/tools/control.ts` (`CONTROL_TYPES` + описание) и `mcp/src/prompts.ts` (список для completion) → `shared/src/registers.ts` (строка регистра, иначе упадёт `server/src/protocol/registers.test.ts`). Пропустишь один — рассинхрон.
+**Adding a new control command** touches several files in lockstep: `shared/src/api.ts` (in `ControlType`, and in `ApiMeta` if needed) → `server/src/protocol/smg.ts` (a branch in `buildControlWrite`: register + scale + validation) → `server/src/server.ts` (`CONTROL_TYPES`) → `web/` (UI) → `mcp/src/tools/control.ts` (`CONTROL_TYPES` + description) and `mcp/src/prompts.ts` (the completion list) → `shared/src/registers.ts` (the register row, otherwise `server/src/protocol/registers.test.ts` fails). Miss one and things fall out of sync.
 
-`shared` дополнительно держит **карту регистров** (`registers.ts`: `REGISTER_DOCS` + `registerDocsMarkdown()`) и **чистую `diffSettings`** (`settings.ts`) — их потребляет MCP; согласованность карты с декодерами проверяет `server/src/protocol/registers.test.ts`.
+`shared` additionally holds the **register map** (`registers.ts`: `REGISTER_DOCS` + `registerDocsMarkdown()`) and the **pure `diffSettings`** (`settings.ts`) — both consumed by MCP; consistency between the map and the decoders is checked by `server/src/protocol/registers.test.ts`.
 
-### `mcp/` — MCP-сервер для агентов
-`@inverter/mcp` — ядро инструментов/ресурсов/промптов, не знающее о транспорте: всё общение
-с сервисом идёт через интерфейс `InverterGateway` (`mcp/src/gateway/types.ts`). Реализаций
-две: `HttpGateway` (`gateway/http.ts` — REST + WS под Bearer, для stdio-бинаря
-`mcp/dist/bin/stdio.js`) и `LocalGateway` (`server/src/mcp/local-gateway.ts` — прямые вызовы
-`Inverter`/`StatsDb` для эндпоинта `/mcp`, без HTTP-хопа). Инструменты: `tools/read.ts`
-(снапшот, дифф настроек, аварии, meta, health, чтение регистров), `tools/stats.ts` (ряды,
-сутки, энергия, события, окно солнца, сводка, CSV-ссылка), `tools/control.ts` (запись).
+### `mcp/` — the MCP server for agents
+`@inverter/mcp` is the transport-agnostic core of tools/resources/prompts: all communication
+with the service goes through the `InverterGateway` interface (`mcp/src/gateway/types.ts`).
+There are two implementations: `HttpGateway` (`gateway/http.ts` — REST + WS behind a Bearer
+token, used by the stdio binary `mcp/dist/bin/stdio.js`) and `LocalGateway`
+(`server/src/mcp/local-gateway.ts` — direct `Inverter`/`StatsDb` calls for the `/mcp`
+endpoint, no HTTP hop). Tools: `tools/read.ts` (snapshot, settings diff, alarms, meta,
+health, register reads), `tools/stats.ts` (series, days, energy, events, solar window,
+summary, CSV link), `tools/control.ts` (writes).
 
-- **Набор инструментов зависит от прав**: write-инструменты вообще не регистрируются, если
-  роль не `admin`, у токена нет скоупа `write`, выключен `ALLOW_CONTROL` или задан
-  `INVERTER_MCP_READ_ONLY` (см. `canWrite` в `mcp/src/server.ts`). Статистические
-  инструменты и ресурсы исчезают при `STATS_ENABLED=false`.
-- **Подписки** (`resources.ts`): `McpServer` из SDK сам не обрабатывает `subscribe`/
-  `unsubscribe` — они регистрируются вручную на низкоуровневом `server.server`, уведомления
-  троттлятся до одного в 5 с.
-- **tsconfig воркспейса** — `module/moduleResolution: node16` + `isolatedModules` (иначе не
-  резолвятся subpath-экспорты SDK и ругается ts-jest), эмит остаётся CommonJS: `server`
-  подключает пакет обычным `require`. Порядок сборки: `shared → mcp → server → web`.
-- **stdio-вход** (`bin/stdio.ts`) конфигурируется только через env: `INVERTER_MCP_URL`,
-  `INVERTER_MCP_TOKEN` (обязателен), `INVERTER_MCP_TIMEOUT_MS`, `INVERTER_MCP_READ_ONLY`.
-  Диагностика пишется в **stderr** — stdout занят протоколом.
-- Тесты — `mcp/src/**/*.test.ts` (jest, входят в `npm run check`), в том числе прогон
-  настоящего MCP-клиента через `InMemoryTransport`.
-- ⚠️ **Фикстуры фейкового шлюза (`src/testing/fake-gateway.ts`) обязаны повторять реальные
-  схемы сервера.** На этом уже обожглись: сводка читала `batteryCapacity_min/max`, хотя в
-  таблице `daily` колонки называются `soc_min`/`soc_max` (первые — из `samples_minute`), а
-  фикстура повторяла ту же ошибку, так что тесты были зелёными, а на живых данных SOC
-  приходил пустым. Контракт со статистикой страхует
-  `server/src/mcp/local-gateway.test.ts` — он гоняет шлюз против настоящей `StatsDb`.
+- **The tool set depends on permissions**: write tools are not registered at all if the
+  role is not `admin`, the token lacks the `write` scope, `ALLOW_CONTROL` is off, or
+  `INVERTER_MCP_READ_ONLY` is set (see `canWrite` in `mcp/src/server.ts`). The statistics
+  tools and resources disappear when `STATS_ENABLED=false`.
+- **Subscriptions** (`resources.ts`): the SDK's `McpServer` does not handle `subscribe`/
+  `unsubscribe` itself — they are registered manually on the low-level `server.server`, and
+  notifications are throttled to one per 5 s.
+- **The workspace tsconfig** uses `module/moduleResolution: node16` + `isolatedModules`
+  (otherwise the SDK's subpath exports do not resolve and ts-jest complains); the emit stays
+  CommonJS: `server` pulls the package in with a plain `require`. Build order:
+  `shared → mcp → server → web`.
+- **The stdio entry point** (`bin/stdio.ts`) is configured through env only:
+  `INVERTER_MCP_URL`, `INVERTER_MCP_TOKEN` (required), `INVERTER_MCP_TIMEOUT_MS`,
+  `INVERTER_MCP_READ_ONLY`. Diagnostics go to **stderr** — stdout belongs to the protocol.
+- Tests — `mcp/src/**/*.test.ts` (jest, part of `npm run check`), including a run of a real
+  MCP client over `InMemoryTransport`.
+- ⚠️ **The fake-gateway fixtures (`src/testing/fake-gateway.ts`) must mirror the server's real
+  schemas.** This has already burned us: the summary read `batteryCapacity_min/max` even though
+  the `daily` table names those columns `soc_min`/`soc_max` (the former come from
+  `samples_minute`), and the fixture repeated the same mistake — so the tests were green while
+  SOC came back empty on live data. The statistics contract is guarded by
+  `server/src/mcp/local-gateway.test.ts`, which runs the gateway against a real `StatsDb`.
 
-### `server/` — слои снизу вверх
-1. **`src/protocol/`** — Modbus RTU + карта SMG II.
-   - `modbus.ts` — CRC-16/Modbus (poly 0xA001, init 0xFFFF, LE в кадре), `buildReadRequest`/`buildWriteRequest` (fn 0x03/0x10), `parseReadResponse`/`parseWriteResponse`, `expectedResponseLength`, `ModbusError` с кодом исключения, `toSigned` (S_WORD).
-   - `smg.ts` — блоки чтения (`STATUS_BLOCKS`/`ALARM_BLOCKS`/`SETTINGS_BLOCKS` — только документированные диапазоны, без «дыр»), декодеры (`decodeStatus`/`decodeSettings`/`decodeFlags`/`decodeAlarms`/`decodeMode`), сеттеры (`buildControlWrite`). **Масштабирование — делением** (`/10`, `/100`), не умножением на 0.1 — иначе float-хвосты (232.70000000000002) ломают jest-тесты и UI.
-2. **`src/transport/`** — общий интерфейс `Transport` + две реализации: `serial` (`serialport`, optionalDependency c `isAvailable()`-проверкой) и `mock` (**полноценный эмулятор Modbus-slave**: отвечает на fn 0x03 из внутренней карты регистров с правдоподобной динамикой, принимает записи fn 0x10). `transact(frame, timeout, expectedLen)` — чтение завершается по накоплению `expectedLen` байт ЛИБО по кадру-исключению (5 байт, бит 0x80 у функции). `detect.ts`: mock всегда последним; onboard-UART'ы Pi отфильтровываются — только USB-serial, если явно не задан `INVERTER_SERIAL_DEVICE`.
-3. **`src/inverter.ts`** — ядро. **Вся работа с транспортом сериализована через одну очередь-промис (`enqueue`) с пейсингом 120 мс** между командами. Поллинг: статус+аварии каждый цикл (7 блоковых чтений), настройки раз в ~6 циклов и всегда на первом цикле после коннекта; probe при коннекте — чтение регистра 201 с валидацией режима; автопереподключение после 3 подряд ошибок; **захват baseline** (один раз на устройство, сохраняется на диск); блокировка записи. `rawQuery` понимает текстовые команды `"R <адрес> [количество]"` (всегда) и `"W <адрес> <значение>"` (под теми же гейтами, что `control()`).
-3½. **`src/stats/`** — статистика в SQLite через встроенный `node:sqlite` (Node ≥ 24, нативных
-   зависимостей нет). `db.ts` — схема (samples 30 дней / samples_minute 2 года / daily+events
-   бессрочно), свёртки по watermark, retention; `recorder.ts` — подписки на `"snapshot"`
-   и `"write"`, буфер с флашем раз в 60 с (щадит SD), деривация событий из диффа снапшотов
-   (смена режима, потеря/возврат сети, аварии, связь, device-changed) плюс явные записи
-   (`control`). **Окно солнечного дня** (начало/конец
-   устойчивой выработки PV) считается отдельно — ретроспективно из поминутного ряда
-   `samples_minute` в `db.ts` (`computeSolarWindow` в `solar.ts` + `querySolarWindow`),
-   хранится в `daily` (`solar_start_ts`/`solar_end_ts`) и отдаётся эндпоинтом
-   `/api/stats/solar-window`. Никогда не пишет в инвертор. Тесты —
-   `src/stats/db.test.ts`, `src/stats/solar.test.ts` (jest, входит в `npm run check -w server`).
-4. **`src/server.ts`** — Express (REST под `/api` + раздача статики `web/out`) и WebSocket (`/ws`, push каждого `Snapshot`). `Inverter` — `EventEmitter`, сервер и MQTT подписаны на событие `"snapshot"`. Здесь же монтируется `/mcp` (`src/mcp/http.ts`, Streamable HTTP, `McpServer` на сессию, лимит `MCP_MAX_SESSIONS`, выключатель `MCP_ENABLED`) — под тем же middleware авторизации, что и `/api`.
-4½. **Аудит записей**: после успешной записи `Inverter` испускает событие `"write"`
-   (`WriteEvent`: источник, регистр, значение), `StatsRecorder` пишет из него строку
-   события типа `control`. Источник проставляют вызывающие: `ui:<user>` / `token:<name>`
-   в `server.ts`, `mqtt` в `mqtt.ts`, а для `/mcp` — `local-gateway.ts`.
-5. **`src/mqtt.ts`** — публикация в MQTT с автодискавери Home Assistant (по умолчанию выключено, `MQTT_URL` пуст).
-6. **`src/config.ts`** — вся конфигурация только из env (см. `.env.example`): `INVERTER_BAUD` default **9600**, `MODBUS_SLAVE_ID` default 1, transport `auto|serial|mock`.
+### `server/` — layers bottom-up
+1. **`src/protocol/`** — Modbus RTU + the SMG II map.
+   - `modbus.ts` — CRC-16/Modbus (poly 0xA001, init 0xFFFF, LE inside the frame), `buildReadRequest`/`buildWriteRequest` (fn 0x03/0x10), `parseReadResponse`/`parseWriteResponse`, `expectedResponseLength`, `ModbusError` carrying the exception code, `toSigned` (S_WORD).
+   - `smg.ts` — read blocks (`STATUS_BLOCKS`/`ALARM_BLOCKS`/`SETTINGS_BLOCKS` — documented ranges only, no "holes"), decoders (`decodeStatus`/`decodeSettings`/`decodeFlags`/`decodeAlarms`/`decodeMode`), setters (`buildControlWrite`). **Scaling is done by division** (`/10`, `/100`), not by multiplying by 0.1 — otherwise float tails (232.70000000000002) break the jest tests and the UI.
+2. **`src/transport/`** — a common `Transport` interface plus two implementations: `serial` (`serialport`, an optionalDependency behind an `isAvailable()` check) and `mock` (**a full Modbus-slave emulator**: answers fn 0x03 from an internal register map with plausible dynamics, accepts fn 0x10 writes). `transact(frame, timeout, expectedLen)` — the read completes once `expectedLen` bytes have accumulated OR on an exception frame (5 bytes, function bit 0x80). `detect.ts`: mock always last; the Pi's onboard UARTs are filtered out — USB serial only, unless `INVERTER_SERIAL_DEVICE` is set explicitly.
+3. **`src/inverter.ts`** — the core. **All transport work is serialized through a single promise queue (`enqueue`) with 120 ms pacing** between commands. Polling: status+alarms every cycle (7 block reads), settings roughly every 6th cycle and always on the first cycle after connecting; a probe on connect — reading register 201 and validating the mode; automatic reconnect after 3 consecutive errors; **baseline capture** (once per device, persisted to disk); write lock. `rawQuery` understands the text commands `"R <address> [count]"` (always) and `"W <address> <value>"` (behind the same gates as `control()`).
+3½. **`src/stats/`** — statistics in SQLite through the built-in `node:sqlite` (Node ≥ 24, no
+   native dependencies). `db.ts` — the schema (samples 30 days / samples_minute 2 years /
+   daily+events kept forever), watermark-based rollups, retention; `recorder.ts` — subscribes
+   to `"snapshot"` and `"write"`, buffers with a flush every 60 s (easy on the SD card),
+   derives events from snapshot diffs (mode change, grid loss/return, faults, link,
+   device-changed) plus explicit records (`control`). **The solar day window** (start/end of
+   sustained PV output) is computed separately — retrospectively from the per-minute
+   `samples_minute` series in `db.ts` (`computeSolarWindow` in `solar.ts` +
+   `querySolarWindow`), stored in `daily` (`solar_start_ts`/`solar_end_ts`) and served by the
+   `/api/stats/solar-window` endpoint. It never writes to the inverter. Tests —
+   `src/stats/db.test.ts`, `src/stats/solar.test.ts` (jest, part of `npm run check -w server`).
+4. **`src/server.ts`** — Express (REST under `/api` + serving the `web/out` static files) and WebSocket (`/ws`, pushes every `Snapshot`). `Inverter` is an `EventEmitter`; the server and MQTT both subscribe to the `"snapshot"` event. This is also where `/mcp` is mounted (`src/mcp/http.ts`, Streamable HTTP, one `McpServer` per session, `MCP_MAX_SESSIONS` limit, `MCP_ENABLED` kill switch) — behind the same authorization middleware as `/api`.
+4½. **Write auditing**: after a successful write `Inverter` emits a `"write"` event
+   (`WriteEvent`: source, register, value), and `StatsRecorder` turns it into an event row of
+   type `control`. The source is supplied by the callers: `ui:<user>` / `token:<name>` in
+   `server.ts`, `mqtt` in `mqtt.ts`, and `local-gateway.ts` for `/mcp`.
+5. **`src/mqtt.ts`** — publishing to MQTT with Home Assistant auto-discovery (off by default, `MQTT_URL` empty).
+6. **`src/config.ts`** — all configuration comes from env only (see `.env.example`): `INVERTER_BAUD` defaults to **9600**, `MODBUS_SLAVE_ID` defaults to 1, transport `auto|serial|mock`.
 
-### Модель безопасности записи (ключевой замысел — не ломать)
-Принцип «читаем, но не перезаписываем, пока не нужно». При правках путей управления сохраняй все гейты:
-- Поллинг/коннект шлют **только чтение (fn 0x03)**. Ничего не пишется автоматически.
-- `ALLOW_CONTROL=false` — необратимый режим только-чтение (разблокировать нельзя). `STARTUP_LOCKED` — старт в locked. `AUTO_RELOCK` — авто-возврат блокировки после каждой успешной записи.
-- `/api/raw`: `R`-команды всегда, `W`-команды гейтятся теми же проверками, что и `control()` — иначе это была бы дыра в обход блокировки.
-- MQTT-управление (`MQTT_ENABLE_CONTROL=true`) намеренно обходит UI-блокировку через `opts.bypassLock` — сам этот флаг и есть осознанная авторизация; он не трогает UI-lock.
-- Все сеттеры проходят whitelist регистров + валидацию значений; ошибка записи = Modbus-исключение от инвертора.
-- **Токены и MCP не добавляют обходных путей**: `Bearer`-токену нужен скоуп `write` поверх роли `admin`, а write-инструменты MCP вообще не регистрируются без прав (`canWrite`). Дальше — те же `ALLOW_CONTROL`/lock/whitelist. `preview` (`POST /api/control` с `preview: true`, `set_control` с `preview`) ничего не пишет и потому доступен без скоупа и при включённой блокировке.
-- **Каждая запись попадает в журнал** событием `control` с источником — см. «Аудит записей». Не убирай `opts.source` из вызовов `control()`/`rawQuery()`: без него запись анонимна (`unknown`).
+### The write-safety model (the key design intent — do not break it)
+The principle is "read, but never overwrite until asked". When changing the control paths, preserve every gate:
+- Polling/connecting send **reads only (fn 0x03)**. Nothing is written automatically.
+- `ALLOW_CONTROL=false` is an irreversible read-only mode (it cannot be unlocked). `STARTUP_LOCKED` starts locked. `AUTO_RELOCK` re-arms the lock after every successful write.
+- `/api/raw`: `R` commands always work, `W` commands are gated by the same checks as `control()` — otherwise it would be a hole around the lock.
+- MQTT control (`MQTT_ENABLE_CONTROL=true`) deliberately bypasses the UI lock via `opts.bypassLock` — enabling that flag *is* the deliberate authorization; it does not touch the UI lock.
+- Every setter goes through the register whitelist plus value validation; a failed write means a Modbus exception from the inverter.
+- **Tokens and MCP add no bypasses**: a `Bearer` token needs the `write` scope on top of the `admin` role, and MCP write tools are not registered at all without permissions (`canWrite`). Beyond that, the same `ALLOW_CONTROL`/lock/whitelist apply. `preview` (`POST /api/control` with `preview: true`, `set_control` with `preview`) writes nothing and is therefore available without the scope and while locked.
+- **Every write lands in the log** as a `control` event with its source — see "Write auditing". Do not drop `opts.source` from `control()`/`rawQuery()` calls: without it the write is anonymous (`unknown`).
 
-### Авторизация (`server/src/auth/`)
-- `hash.ts` — scrypt-хеширование паролей (встроенный `crypto`, без зависимостей).
-- `db.ts` — `AuthDb` на `node:sqlite` (`data/auth.db`): пользователи + сессии, сидинг
-  admin/user при пустой БД.
-- `policy.ts` — чистая `canAccess(role, required)` (тестируется `policy.test.ts`).
-- `service.ts` — класс `Auth`: логин/сессии/смена пароля, анти-brute-force по IP.
-- Две роли: `admin` (всё) / `viewer` (только `/` и `/stats`). Ограничения — и на
-  сервере (middleware 403 + редиректы страниц), и в UI (навигация по роли).
-- Форс смены пароля: `must_change_password=1` блокирует весь `/api` кроме
-  `me`/`change-password`/`logout`, пока пароль не изменён.
-- **API-токены** (таблица `api_tokens` в `auth.db`, `Authorization: Bearer inv_…`, sha256
-  в БД, скоупы `read`/`write`): middleware `/api` пробует cookie, затем Bearer и кладёт в
-  `req.auth` поля `kind`/`scopes`/`tokenName`. Мутирующие роуты (`control`, `lock`,
-  `raw` с `W`, `baseline/recapture`) требуют скоуп `write` — кроме `POST /api/control`
-  с `preview: true`, это чтение (`Inverter.previewControl`). `/api/users` и `/api/tokens`
-  по токену закрыты (`code: session_required`) — управление доступами только из UI-сессии.
-  Токен владельца под форсом смены пароля отклоняется. Выдача: UI на `/users`,
-  `POST /api/tokens` или `scripts/issue-token.ts`. `/ws` принимает тот же Bearer.
-- Тесты — `hash.test.ts`, `policy.test.ts`, `db.test.ts`, `service.test.ts`, `tokens.test.ts` (jest, входят в `npm run check -w server`); HTTP-флоу — `src/server.http.test.ts`.
+### Authorization (`server/src/auth/`)
+- `hash.ts` — scrypt password hashing (built-in `crypto`, no dependencies).
+- `db.ts` — `AuthDb` on `node:sqlite` (`data/auth.db`): users + sessions, seeding
+  admin/user when the database is empty.
+- `policy.ts` — the pure `canAccess(role, required)` (covered by `policy.test.ts`).
+- `service.ts` — the `Auth` class: login/sessions/password change, per-IP brute-force protection.
+- Two roles: `admin` (everything) / `viewer` (only `/` and `/stats`). The restrictions are
+  enforced both on the server (403 middleware + page redirects) and in the UI (role-based navigation).
+- Forced password change: `must_change_password=1` blocks all of `/api` except
+  `me`/`change-password`/`logout` until the password is changed.
+- **API tokens** (the `api_tokens` table in `auth.db`, `Authorization: Bearer inv_…`, sha256
+  in the database, `read`/`write` scopes): the `/api` middleware tries the cookie first, then
+  Bearer, and puts `kind`/`scopes`/`tokenName` into `req.auth`. Mutating routes (`control`,
+  `lock`, `raw` with `W`, `baseline/recapture`) require the `write` scope — except
+  `POST /api/control` with `preview: true`, which is a read (`Inverter.previewControl`).
+  `/api/users` and `/api/tokens` are closed to tokens (`code: session_required`) — access
+  management happens only from a UI session. A token whose owner is under a forced password
+  change is rejected. Issuing: the UI on `/users`, `POST /api/tokens`, or
+  `scripts/issue-token.ts`. `/ws` accepts the same Bearer token.
+- Tests — `hash.test.ts`, `policy.test.ts`, `db.test.ts`, `service.test.ts`, `tokens.test.ts` (jest, part of `npm run check -w server`); the HTTP flows — `src/server.http.test.ts`.
 
 ### `web/` — Next.js (App Router)
-- **Прод = статический экспорт** (`output: "export"` в `next.config.ts`) в `web/out/`, который раздаёт сам Express. **Dev** = `next dev -p 3001` + rewrites `/api/*` → `http://localhost:3000` (см. `next.config.ts`). Отсюда же `web/lib/api.ts::wsUrl()` разводит dev (`ws://localhost:3000`) и прод.
-- Роут-группа `app/(app)/` — авторизованная оболочка (дашборд, `stats`, `settings`, `diagnostics`, `users`); `app/login/` и `app/change-password/` открыты. Навигация и доступ зависят от роли (см. «Авторизация»): viewer видит только дашборд и `stats`. Сервер редиректит страничные маршруты (`/login` без сессии; `/change-password` при форсе смены пароля; `/` для viewer на admin-страницах), но статику (css/js/страницы) отдаёт свободно — данные защищены на уровне `/api`.
-- Данные в UI — `web/lib/snapshot.tsx` (подписка на WS с реконнектом и пометкой stale), `meta.tsx` (справочники управления с ретраем; несёт текущего юзера/роль в `ApiMeta.session`), `stats.ts` (клиент `/api/stats/*`), `format.ts`, `toast.tsx`.
-- **Страница `/users`** несёт две секции: пользователи (`app/(app)/users/page.tsx`) и API-токены (`components/TokensPanel.tsx` — создание, одноразовый показ значения, отзыв). В тестах страницы панель замокана: она ходит в `/api/tokens` и иначе сбивает последовательные fetch-моки; собственные тесты у неё в `components/TokensPanel.test.tsx`.
-- **Журнал на `/stats`** знает тип события `control` (запись в инвертор): метка `stEvControl`, текст — «что менялось · источник».
-- **Панель солнечного окна на `/stats`** (`components/SolarWindowPanel.tsx`) следует селектору периода: для дня дергает `/api/stats/solar-window?day=…` (сегодняшнее окно приходит незакрытым), для недели/месяца считает сводку из уже загруженных строк `daily` — новых запросов не делает. Чистая часть (самое раннее начало, самый поздний конец, средняя длительность) — `lib/solar.ts`, время суток считается от **локальной** полуночи каждого дня, иначе дни между собой несравнимы. Панель дашборда (`components/SolarToday.tsx`) осталась отдельной: она про «сейчас» и опрашивает API раз в минуту.
-- **i18n** (`web/lib/i18n/`): типизированный словарь UA/RU/EN. Стартовый язык жёстко `uk`, чтобы совпасть с SSG-пререндером (иначе hydration mismatch); реальный выбор подхватывается из `localStorage` уже после маунта. Словарь локализует и **имена битов fault/warning** (английские строки из `smg.ts` — это ключи `dict.warnings`), и **флаги-переключатели** (ключи `lcdHome`/`ecoMode`/… из `FLAG_DEFS`) — при изменении строк в `smg.ts` синхронизируй `dict.ts`.
+- **Production = static export** (`output: "export"` in `next.config.ts`) into `web/out/`, served by Express itself. **Dev** = `next dev -p 3001` + rewrites `/api/*` → `http://localhost:3000` (see `next.config.ts`). The same split drives `web/lib/api.ts::wsUrl()`, which picks between dev (`ws://localhost:3000`) and production.
+- The `app/(app)/` route group is the authenticated shell (dashboard, `stats`, `settings`, `diagnostics`, `users`); `app/login/` and `app/change-password/` are open. Navigation and access depend on the role (see "Authorization"): a viewer only sees the dashboard and `stats`. The server redirects page routes (`/login` without a session; `/change-password` under a forced password change; `/` for a viewer on admin pages), but serves static assets (css/js/pages) freely — the data is protected at the `/api` level.
+- UI data plumbing — `web/lib/snapshot.tsx` (WS subscription with reconnect and stale marking), `meta.tsx` (control reference data with retry; carries the current user/role in `ApiMeta.session`), `stats.ts` (the `/api/stats/*` client), `format.ts`, `toast.tsx`.
+- **The `/users` page** has two sections: users (`app/(app)/users/page.tsx`) and API tokens (`components/TokensPanel.tsx` — creation, one-time display of the value, revocation). The panel is mocked in the page tests: it calls `/api/tokens` and would otherwise throw off the sequential fetch mocks; it has its own tests in `components/TokensPanel.test.tsx`.
+- **The event log on `/stats`** knows the `control` event type (a write to the inverter): label `stEvControl`, text — "what changed · source".
+- **The solar-window panel on `/stats`** (`components/SolarWindowPanel.tsx`) follows the period selector: for a day it calls `/api/stats/solar-window?day=…` (today's window arrives still open), for a week/month it computes the summary from the already-loaded `daily` rows — it issues no extra requests. The pure part (earliest start, latest end, average duration) is `lib/solar.ts`, and the time of day is measured from each day's **local** midnight, otherwise days are not comparable. The dashboard panel (`components/SolarToday.tsx`) stayed separate: it is about "right now" and polls the API once a minute.
+- **i18n** (`web/lib/i18n/`): a typed UA/RU/EN dictionary. The initial language is hard-coded to `uk` to match the SSG prerender (otherwise hydration mismatches); the real choice is picked up from `localStorage` after mount. The dictionary also localizes the **fault/warning bit names** (the English strings from `smg.ts` are the keys of `dict.warnings`) and the **flag toggles** (the `lcdHome`/`ecoMode`/… keys from `FLAG_DEFS`) — when changing strings in `smg.ts`, keep `dict.ts` in sync.
 
-## Железо (контекст для отладки связи)
-- Цепь: RS232-порт инвертора (RJ45) → штатный кабель донгла DB9↔RJ45 (RJ45 1→DB9 2 = TX инвертора, 2→3 = RX, 8→5 = GND; null-modem НЕ нужен) → USB-RS232 адаптер (FTDI FT231X, **настоящие RS232-уровни ±12 В**) → USB Pi.
-- ⚠️ USB-TTL-свистки (часто продаются как «USB-RS232» на CH340) с инвертором физически несовместимы — порт откроется, но обмен молчит. Проверка: на TX адаптера в покое должно быть **−5…−12 В**.
-- В типичной инсталляции USB-B порт инвертора занят BMS батареи — путь через RS232.
+## Hardware (context for debugging the link)
+- The chain: the inverter's RS232 port (RJ45) → the stock dongle cable DB9↔RJ45 (RJ45 1→DB9 2 = the inverter's TX, 2→3 = RX, 8→5 = GND; a null-modem is NOT needed) → a USB-RS232 adapter (FTDI FT231X, **true RS232 levels ±12 V**) → the Pi's USB.
+- ⚠️ USB-TTL dongles (often sold as "USB-RS232" on a CH340) are physically incompatible with the inverter — the port opens but the exchange stays silent. The check: the adapter's TX at idle must sit at **−5…−12 V**.
+- In a typical installation the inverter's USB-B port is taken by the battery BMS — hence the RS232 path.
 
-## Деплой на Pi (важные детали)
-- Сборка **целиком локальная**; Pi только `npm ci -w server -w mcp --omit=dev` + рестарт systemd. Pi ничего не компилирует. `rsync` заливает `shared/dist`, `mcp/dist`, `server/dist`, `web/out` и манифесты воркспейсов.
-- На Pi конфиг и данные лежат под `server/` (`server/.env`, `server/data/{baseline.json, auth.db, stats.db}`); systemd-юнит имеет `WorkingDirectory=…/server`. `auth.db`/`stats.db` создаются автоматически при первом старте; `deploy.sh` каталог `data/` не трогает.
-- `systemctl enable` (автозапуск после ребута Pi) — разовая ручная операция, `deploy.sh` его не делает.
+## Deploying to the Pi (important details)
+- The build is **entirely local**; the Pi only runs `npm ci -w server -w mcp --omit=dev` + a systemd restart. The Pi compiles nothing. `rsync` uploads `shared/dist`, `mcp/dist`, `server/dist`, `web/out` and the workspace manifests.
+- On the Pi the config and data live under `server/` (`server/.env`, `server/data/{baseline.json, auth.db, stats.db}`); the systemd unit has `WorkingDirectory=…/server`. `auth.db`/`stats.db` are created automatically on first start; `deploy.sh` does not touch the `data/` directory.
+- `systemctl enable` (autostart after a Pi reboot) is a one-off manual operation — `deploy.sh` does not do it.
 
-## Git-workflow
-- Репозиторий: `git@github.com:apanamaryov/sweethome.git` (remote `origin`, ветка по умолчанию `main`).
-- Новые изменения — через feature-ветки и PR, не коммитить напрямую в `main`.
-- В `main` не мержить без явного подтверждения пользователя.
-- **Сообщения коммитов — на английском** (репозиторий публичный, README и код на английском), в формате conventional commits: `feat(web): …`, `fix(mcp): …`, `docs: …`. Коммиты до 2026-07-28 на русском — легаси, переписывать не нужно. Общение с пользователем при этом остаётся на русском.
-- Секреты (`server/.env`, реальные пароли/данные Pi) в репозиторий не попадают — они вне git и в `.gitignore`.
+## Git workflow
+- Repository: `git@github.com:apanamaryov/sweethome.git` (remote `origin`, default branch `main`).
+- New changes go through feature branches and PRs — do not commit directly to `main`.
+- Do not merge into `main` without explicit confirmation from the user.
+- **Commit messages are written in English** (the repository is public, the README and the code are in English), in conventional-commits format: `feat(web): …`, `fix(mcp): …`, `docs: …`. Commits before 2026-07-28 are in Russian — that is legacy, no need to rewrite them. Conversation with the user still happens in Russian.
+- Secrets (`server/.env`, real passwords/Pi data) never enter the repository — they live outside git and in `.gitignore`.
