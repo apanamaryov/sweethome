@@ -21,7 +21,16 @@ import {
   decodeMode,
   buildControlWrite,
 } from "./protocol/smg";
-import { Snapshot, DeviceMode, Baseline, ControlType } from "@inverter/shared";
+import {
+  Snapshot,
+  DeviceMode,
+  Baseline,
+  ControlType,
+  SourceState,
+  initialSourceState,
+  instantSource,
+  stepSource,
+} from "@inverter/shared";
 import { Store } from "./store";
 
 /**
@@ -54,6 +63,8 @@ export class Inverter extends EventEmitter {
   private store: Store;
   private locked: boolean;
   private deviceId: string | null = null;
+  /** Состояние гистерезиса выведенного источника питания (см. shared/src/source.ts). */
+  private sourceState: SourceState = initialSourceState();
   private baseline: Baseline | null = null;
 
   private snapshot: Snapshot = {
@@ -137,6 +148,7 @@ export class Inverter extends EventEmitter {
     }
     this.deviceId = null; // re-identify on next connection
     this.ratedCounter = 0; // so settings are re-read on the first poll after reconnect
+    this.sourceState = initialSourceState(); // иначе после реконнекта всплывёт залежавшийся "Solar"
   }
 
   /** Capture the as-found settings once per device, and persist them. */
@@ -245,6 +257,7 @@ export class Inverter extends EventEmitter {
   }
 
   private setConnection(connected: boolean, t: Transport | null, err: string | null): void {
+    if (!connected) this.sourceState = initialSourceState();
     this.snapshot = {
       ...this.snapshot,
       connection: {
@@ -255,6 +268,7 @@ export class Inverter extends EventEmitter {
         mock: t ? t.mock : false,
         lastError: err,
       },
+      powerSource: connected ? this.snapshot.powerSource : "Unknown",
     };
     this.emit("snapshot", this.snapshot);
   }
@@ -277,6 +291,17 @@ export class Inverter extends EventEmitter {
       const statusRegs = await this.readBlocks(STATUS_BLOCKS);
       const status = decodeStatus(statusRegs);
       const mode: DeviceMode = decodeMode(statusRegs.get(201) ?? -1);
+      // Первый замер после (пере)подключения: засеваем состояние режимом с
+      // устройства. `mode` — прямое показание регистра 201, ему сглаживание не
+      // нужно; гистерезис нужен только выведенному "Solar". Иначе бейдж на
+      // целый цикл опроса провалился бы в "—" после каждого реконнекта.
+      // Сентинел надёжен: connect() отбраковывает кандидата, чей регистр 201
+      // декодируется в "Unknown", поэтому у подключённого устройства shown
+      // становится "Unknown" только через initialSourceState() при сбросе.
+      if (this.sourceState.shown === "Unknown") {
+        this.sourceState = initialSourceState(mode);
+      }
+      this.sourceState = stepSource(this.sourceState, instantSource(mode, status));
 
       let warnings = this.snapshot.warnings;
       try {
@@ -316,9 +341,7 @@ export class Inverter extends EventEmitter {
         },
         control: { allowControl: this.cfg.allowControl, locked: this.locked },
         mode,
-        // TODO(Task 2): вычислять через instantSource/stepSource с гистерезисом.
-        // Пока зеркалим mode, чтобы монорепо компилировалось.
-        powerSource: mode,
+        powerSource: this.sourceState.shown,
         status,
         info,
         flags,

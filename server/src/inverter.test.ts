@@ -599,3 +599,86 @@ describe("rawQuery — R always allowed, W gated exactly like control()", () => 
     expect(t.regs.get(331)).toBe(3);
   });
 });
+
+describe("powerSource — вывод источника питания с гистерезисом", () => {
+  it("подменяет Battery на Solar после двух подряд солнечных циклов, не после первого", async () => {
+    // 201=3 Battery, 223=900 Вт выработки, 232=0 (ни заряда, ни разряда)
+    const t = new FakeTransport({ regs: fullRegs({ 201: 3, 223: 900, 232: 0 }) });
+    detectTransportsMock.mockReturnValue([t]);
+    const inv = makeInverter();
+    const snaps: Snapshot[] = [];
+    inv.on("snapshot", (s: Snapshot) => snaps.push(s));
+
+    // connectAndFreeze() тут не годится: он clearAllTimers()'ит единственный
+    // запланированный poll(0) и больше ничего его не перепланирует — ни один
+    // "snapshot" от цикла поллинга никогда не придёт. Нужен реальный цикл
+    // поллинга (как в describe("poll()...") и describe("auto-reconnect...")).
+    await inv.start();
+
+    // Первый поллинг: кандидат Solar только взводит ожидание.
+    const first = await waitForSnapshot(snaps);
+    expect(first.mode).toBe("Battery");
+    expect(first.powerSource).toBe("Battery");
+
+    // Второй подряд такой же — переключение.
+    const second = await waitForSnapshot(snaps);
+    expect(second.powerSource).toBe("Solar");
+  });
+
+  it("возвращается к Battery через два цикла, когда батарея начала разряжаться", async () => {
+    const t = new FakeTransport({ regs: fullRegs({ 201: 3, 223: 900, 232: 0 }) });
+    detectTransportsMock.mockReturnValue([t]);
+    const inv = makeInverter();
+    const snaps: Snapshot[] = [];
+    inv.on("snapshot", (s: Snapshot) => snaps.push(s));
+
+    await inv.start();
+    await waitForSnapshot(snaps);
+    expect((await waitForSnapshot(snaps)).powerSource).toBe("Solar");
+
+    // Солнце село: выработки нет, из банки течёт 4.0 А (232 = -40).
+    t.regs.set(223, 0);
+    t.regs.set(232, 0x10000 - 40);
+
+    expect((await waitForSnapshot(snaps)).powerSource).toBe("Solar"); // взвели ожидание
+    expect((await waitForSnapshot(snaps)).powerSource).toBe("Battery"); // переключились
+  });
+
+  it("не подменяет режим Line даже при полном солнце", async () => {
+    // 201=2 Line
+    const t = new FakeTransport({ regs: fullRegs({ 201: 2, 223: 1500, 232: 0 }) });
+    detectTransportsMock.mockReturnValue([t]);
+    const inv = makeInverter();
+    const snaps: Snapshot[] = [];
+    inv.on("snapshot", (s: Snapshot) => snaps.push(s));
+
+    await inv.start();
+    await waitForSnapshot(snaps);
+    const s = await waitForSnapshot(snaps);
+    expect(s.mode).toBe("Line");
+    expect(s.powerSource).toBe("Line");
+  });
+
+  it("сбрасывает источник в Unknown на отключении, чтобы Solar не залежался", async () => {
+    const t = new FakeTransport({ regs: fullRegs({ 201: 3, 223: 900, 232: 0 }) });
+    detectTransportsMock.mockReturnValue([t]);
+    const inv = makeInverter();
+    const snaps: Snapshot[] = [];
+    inv.on("snapshot", (s: Snapshot) => snaps.push(s));
+
+    await inv.start();
+    await waitForSnapshot(snaps);
+    expect((await waitForSnapshot(snaps)).powerSource).toBe("Solar");
+
+    // Связь пропала — poll() ловит ошибку и эмитит отключённый снапшот.
+    t.failAll = true;
+    const dead = await waitForSnapshot(snaps);
+    expect(dead.connection.connected).toBe(false);
+    expect(dead.powerSource).toBe("Unknown");
+  });
+
+  it("отдаёт Unknown в снапшоте до первого успешного поллинга", () => {
+    const inv = makeInverter();
+    expect(inv.getSnapshot().powerSource).toBe("Unknown");
+  });
+});
