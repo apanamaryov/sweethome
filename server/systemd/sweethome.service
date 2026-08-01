@@ -1,0 +1,19 @@
+[Unit]
+Description=Sweethome home control (inverter, heating, ...)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/sweethome/server
+EnvironmentFile=-/home/pi/sweethome/server/.env
+ExecStart=/usr/local/bin/node dist/index.js
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sweethome
+
+[Install]
+WantedBy=multi-user.target
