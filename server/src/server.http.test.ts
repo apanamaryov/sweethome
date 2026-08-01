@@ -386,6 +386,25 @@ describe("server.ts (HTTP integration via supertest)", () => {
       expect(code).toBe(4401);
       await closeClient(ws);
     });
+
+    it("does not hand out a connection for an upgrade to an unknown module path", async () => {
+      const port = await listen();
+      const cookie = await freshSessionCookie("admin", "admin", "admin123");
+
+      // Одиночный WebSocketServer({noServer:true}) диспетчит по pathname; для
+      // неизвестного /ws/nope ожидаем socket.destroy() — никакого upgrade-хендшейка
+      // (никакой message-снапшот не придёт), а голый сокет со стороны клиента
+      // оборвётся ошибкой/закрытием без валидного WS-рукопожатия.
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/nope`, { headers: { Cookie: cookie } });
+      const outcome = await new Promise<"error" | "close" | "message">((resolve) => {
+        ws.once("error", () => resolve("error"));
+        ws.once("close", () => resolve("close"));
+        ws.once("message", () => resolve("message"));
+      });
+
+      expect(outcome).not.toBe("message");
+      await closeClient(ws).catch(() => {});
+    });
   });
 
   /** Выдать токен через тот же auth.db, который использует сервер. */

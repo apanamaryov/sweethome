@@ -280,19 +280,33 @@ export function createServer(host: ModuleHost, cfg: Config): http.Server {
   for (const m of host.modules) m.attachHttp?.(app, { authenticate });
 
   const server = http.createServer(app);
-  for (const m of host.modules) {
-    if (!m.ws) continue;
-    const wss = new WebSocketServer({ server, path: `/ws/${m.id}` });
-    const mod = m;
-    wss.on("connection", (ws, req) => {
-      const s = auth.verify(tokenFromCookieHeader(req.headers.cookie));
-      const authorized =
-        (!!s && !s.mustChangePassword) || !!auth.verifyToken(bearerFromHeader(req.headers.authorization));
-      if (!authorized) {
-        ws.close(4401, "Unauthorized");
+
+  // Один WebSocketServer на всех модулей: несколько `new WebSocketServer({server, path})`
+  // вешают свои собственные upgrade-listener'ы на один http.Server, и каждый отвечает
+  // abortHandshake(400) на путь чужого модуля — с двумя WS-модулями они бьют друг друга.
+  // noServer + единый server.on("upgrade", ...) с ручным диспетчем по pathname.
+  const wsModules = new Map<string, (typeof host.modules)[number]>(
+    host.modules.filter((m) => m.ws).map((m) => [`/ws/${m.id}`, m])
+  );
+  if (wsModules.size) {
+    const wss = new WebSocketServer({ noServer: true });
+    server.on("upgrade", (req, socket, head) => {
+      const { pathname } = new URL(req.url ?? "", "http://internal");
+      const mod = wsModules.get(pathname);
+      if (!mod) {
+        socket.destroy();
         return;
       }
-      mod.ws!.onConnection(ws);
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        const s = auth.verify(tokenFromCookieHeader(req.headers.cookie));
+        const authorized =
+          (!!s && !s.mustChangePassword) || !!auth.verifyToken(bearerFromHeader(req.headers.authorization));
+        if (!authorized) {
+          ws.close(4401, "Unauthorized");
+          return;
+        }
+        mod.ws!.onConnection(ws);
+      });
     });
   }
 
