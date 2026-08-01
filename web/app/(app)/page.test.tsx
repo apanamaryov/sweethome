@@ -20,7 +20,11 @@ describe("HomePage — overview", () => {
     const status = buildStatus({
       batteryCapacity: 87,
       acOutputActivePower: 350,
-      pvChargingPower: 280,
+      // PV на карточке — вся выработка (регистр 223), как на дашборде.
+      // pvChargingPower (224, только заряд) при полной батарее — честный 0,
+      // и карточка не должна его показывать: регресс-кейс из жизни.
+      pvPower: 280,
+      pvChargingPower: 0,
     });
     await renderWithProviders(<HomePage />, {
       snapshot: buildSnapshot({ mode: "Battery", powerSource: "Solar", status }),
@@ -31,14 +35,14 @@ describe("HomePage — overview", () => {
     expect(badge).toHaveClass("mode-badge", "mode-Solar");
     expect(screen.getByText("87")).toBeInTheDocument(); // SOC
     expect(screen.getByText("350")).toBeInTheDocument(); // load, acOutputActivePower
-    expect(screen.getByText("280")).toBeInTheDocument(); // PV, pvChargingPower
+    expect(screen.getByText("280")).toBeInTheDocument(); // PV, pvPower (223)
   });
 
   it("shows the card as a plain always-visible section, not a collapsed/collapsible Panel", async () => {
     // Regression guard: the overview's whole point is "status at a glance" —
     // it must never render inside a Panel (which starts collapsed, body
     // display:none, and needs a tap to reveal its content).
-    const status = buildStatus({ batteryCapacity: 87, acOutputActivePower: 350, pvChargingPower: 280 });
+    const status = buildStatus({ batteryCapacity: 87, acOutputActivePower: 350, pvPower: 280, pvChargingPower: 0 });
     const { container } = await renderWithProviders(<HomePage />, {
       snapshot: buildSnapshot({ status }),
       withMeta: false,

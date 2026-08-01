@@ -38,7 +38,7 @@ export default function HomePage() {
             </div>
             <div className="home-card-row">
               <span className="cap">{t.cardSolar}</span>
-              <span>{fmt(s.pvChargingPower, 0)}</span>
+              <span>{fmt(s.pvPower, 0)}</span>
               <span className="cap">{t.capW}</span>
             </div>
           </div>
