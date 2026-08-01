@@ -55,7 +55,7 @@ export function setMockPathname(path: string): void {
 /**
  * Fake WebSocket: same shape as the one in lib/snapshot.test.tsx (constructor +
  * on* setters + instances registry), swapped in globally so SnapshotProvider's
- * `new WebSocket(wsUrl())` doesn't blow up under jsdom (which has none).
+ * `new WebSocket(wsUrl(module))` doesn't blow up under jsdom (which has none).
  */
 export class FakeWebSocket {
   static instances: FakeWebSocket[] = [];

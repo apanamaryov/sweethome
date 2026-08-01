@@ -103,7 +103,7 @@ afterEach(() => {
 });
 
 describe("SnapshotProvider", () => {
-  it("opens a WebSocket to wsUrl() on mount", async () => {
+  it("opens a WebSocket to wsUrl(module) on mount", async () => {
     render(
       <SnapshotProvider>
         <TestConsumer />
