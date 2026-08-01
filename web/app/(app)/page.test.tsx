@@ -1,5 +1,11 @@
 import { screen } from "@testing-library/react";
-import { renderWithProviders, buildSnapshot, buildStatus, restoreLocation } from "@/test-utils/renderWithProviders";
+import {
+  renderWithProviders,
+  buildSnapshot,
+  buildStatus,
+  buildMeta,
+  restoreLocation,
+} from "@/test-utils/renderWithProviders";
 import { DICTS } from "@/lib/i18n/dict";
 import HomePage from "./page";
 
@@ -11,41 +17,48 @@ afterEach(() => {
 
 describe("HomePage — overview", () => {
   it("shows the connecting placeholder before a snapshot arrives", async () => {
-    await renderWithProviders(<HomePage />, { snapshot: null, withMeta: false });
+    await renderWithProviders(<HomePage />, { snapshot: null, withMeta: true });
 
     expect(screen.getByText(t.connecting)).toBeInTheDocument();
   });
 
-  it("renders the inverter card from the snapshot: source badge, SOC, load and PV", async () => {
+  it("renders the flow card: badge-free header, node values from the snapshot", async () => {
     const status = buildStatus({
       batteryCapacity: 87,
       acOutputActivePower: 350,
-      // PV на карточке — вся выработка (регистр 223), как на дашборде.
-      // pvChargingPower (224, только заряд) при полной батарее — честный 0,
-      // и карточка не должна его показывать: регресс-кейс из жизни.
       pvPower: 280,
-      pvChargingPower: 0,
+      mainsPower: 0,
+      batteryPower: 120,
     });
     await renderWithProviders(<HomePage />, {
-      snapshot: buildSnapshot({ mode: "Battery", powerSource: "Solar", status }),
-      withMeta: false,
+      snapshot: buildSnapshot({ status }),
+      withMeta: true,
+      meta: buildMeta("admin", { pvPeakW: 5160 }),
     });
 
-    const badge = screen.getByText(t.modeSolar);
-    expect(badge).toHaveClass("mode-badge", "mode-Solar");
-    expect(screen.getByText("87")).toBeInTheDocument(); // SOC
-    expect(screen.getByText("350")).toBeInTheDocument(); // load, acOutputActivePower
-    expect(screen.getByText("280")).toBeInTheDocument(); // PV, pvPower (223)
+    expect(document.querySelector(".flow-svg")).toBeInTheDocument();
+    expect(screen.getByText(/5% · 280/)).toBeInTheDocument(); // солнце: 280/5160 ≈ 5%
+    expect(screen.getByText(/87% · \+120/)).toBeInTheDocument(); // батарея: SOC · заряд
+    expect(screen.getByText(/6% · 350/)).toBeInTheDocument(); // нагрузка: 350/5500 ≈ 6%
+    expect(document.querySelector(".mode-badge")).not.toBeInTheDocument(); // бейджа больше нет
+  });
+
+  it("whole card is a link to /inverter (no separate 'open' link)", async () => {
+    await renderWithProviders(<HomePage />, { snapshot: buildSnapshot(), withMeta: true });
+
+    const link = screen.getByRole("link");
+    expect(link).toHaveAttribute("href", "/inverter");
+    expect(link.querySelector("section.card.home-card")).toBeInTheDocument();
+    expect(screen.queryByText(t.homeInverterCardOpen)).not.toBeInTheDocument();
   });
 
   it("shows the card as a plain always-visible section, not a collapsed/collapsible Panel", async () => {
-    // Regression guard: the overview's whole point is "status at a glance" —
-    // it must never render inside a Panel (which starts collapsed, body
-    // display:none, and needs a tap to reveal its content).
-    const status = buildStatus({ batteryCapacity: 87, acOutputActivePower: 350, pvPower: 280, pvChargingPower: 0 });
+    // Regression guard: обзор — «статус с одного взгляда», никакого Panel
+    // (он стартует свёрнутым, панель-тоггл прячет контент за .hidden).
+    const status = buildStatus({ batteryCapacity: 87, acOutputActivePower: 350, pvPower: 280 });
     const { container } = await renderWithProviders(<HomePage />, {
       snapshot: buildSnapshot({ status }),
-      withMeta: false,
+      withMeta: true,
     });
 
     expect(container.querySelector(".panel")).not.toBeInTheDocument();
@@ -54,16 +67,27 @@ describe("HomePage — overview", () => {
 
     const card = container.querySelector("section.card.home-card");
     expect(card).toBeInTheDocument();
-    // The values are direct, always-rendered content of the card — not tucked
-    // away behind a toggle.
     expect(card).toHaveTextContent("87");
-    expect(card).toHaveTextContent("350");
     expect(card).toHaveTextContent("280");
   });
 
-  it("links to /inverter", async () => {
-    await renderWithProviders(<HomePage />, { snapshot: buildSnapshot(), withMeta: false });
+  it("bypass shows the amber chip in the header", async () => {
+    await renderWithProviders(<HomePage />, {
+      snapshot: buildSnapshot({ mode: "Bypass", status: buildStatus({ outputLoadPercent: 107 }) }),
+      withMeta: true,
+    });
 
-    expect(screen.getByRole("link", { name: t.homeInverterCardOpen })).toHaveAttribute("href", "/inverter");
+    const chip = screen.getByText(t.flowChipBypass);
+    expect(chip.closest(".warnchip")).toHaveClass("amber");
+  });
+
+  it("fault with the Overload bit shows the brick overload chip", async () => {
+    await renderWithProviders(<HomePage />, {
+      snapshot: buildSnapshot({ mode: "Fault", warnings: { active: ["Overload"], raw: "" } }),
+      withMeta: true,
+    });
+
+    const chip = screen.getByText(t.flowChipOverload);
+    expect(chip.closest(".warnchip")).toHaveClass("brick");
   });
 });

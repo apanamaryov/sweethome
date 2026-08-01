@@ -2,51 +2,46 @@
 
 import Link from "next/link";
 import { useSnapshot } from "@/lib/snapshot";
-import { useT, useDocTitle, modeLabel } from "@/lib/i18n";
-import { fmt } from "@/lib/format";
+import { MetaProvider, useMeta } from "@/lib/meta";
+import { useT, useDocTitle } from "@/lib/i18n";
+import { InverterFlow, WarnChip, flowState } from "@/components/InverterFlow";
 
-export default function HomePage() {
+function InverterCard() {
   const t = useT();
-  useDocTitle("title"); // общий заголовок приложения; union-тип useDocTitle не расширяем
   const { snapshot } = useSnapshot();
-  const s = snapshot?.status ?? null;
-  const source = snapshot?.powerSource ?? snapshot?.mode ?? "Unknown";
+  const meta = useMeta();
+  const f = snapshot ? flowState(snapshot) : null;
 
-  // Обзор = статус с одного взгляда: карточка всегда видна (как карточки
-  // дашборда в inverter/page.tsx), никакого сворачиваемого Panel — тот
-  // предназначен для второстепенного/advanced-контента (diagnostics, settings).
+  // Обзор = статус с одного взгляда: карточка всегда видна, вся её площадь —
+  // ссылка в раздел инвертора; бейджа источника нет — активные источники
+  // показывает свечение на диаграмме, особые режимы — чип в шапке.
   return (
-    <main className="grid home-grid">
+    <Link href="/inverter" className="home-card-link-wrap">
       <section className="card home-card">
         <div className="card-head">
           <span className="card-title">{t.navInverter}</span>
-          <span className={"mode-badge mode-" + source}>{modeLabel(t, source)}</span>
+          {f?.bypass && <WarnChip tone="amber" label={t.flowChipBypass} />}
+          {f?.fault && (
+            <WarnChip tone="brick" label={f.overloadFault ? t.flowChipOverload : t.flowChipFault} />
+          )}
         </div>
-        {!s ? (
+        {!snapshot?.status ? (
           <p className="muted">{t.connecting}</p>
         ) : (
-          <div className="home-card-rows">
-            <div className="home-card-row">
-              <span className="cap">{t.cardBattery}</span>
-              <span>{fmt(s.batteryCapacity, 0)}</span>
-              <span className="cap">{t.unit_pct}</span>
-            </div>
-            <div className="home-card-row">
-              <span className="cap">{t.cardLoad}</span>
-              <span>{fmt(s.acOutputActivePower, 0)}</span>
-              <span className="cap">{t.capW}</span>
-            </div>
-            <div className="home-card-row">
-              <span className="cap">{t.cardSolar}</span>
-              <span>{fmt(s.pvPower, 0)}</span>
-              <span className="cap">{t.capW}</span>
-            </div>
-          </div>
+          <InverterFlow snapshot={snapshot} pvPeakW={meta?.pvPeakW} />
         )}
-        <Link href="/inverter" className="home-card-link">
-          {t.homeInverterCardOpen}
-        </Link>
       </section>
+    </Link>
+  );
+}
+
+export default function HomePage() {
+  useDocTitle("title");
+  return (
+    <main className="grid home-grid">
+      <MetaProvider>
+        <InverterCard />
+      </MetaProvider>
     </main>
   );
 }
