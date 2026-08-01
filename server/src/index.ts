@@ -1,8 +1,6 @@
 import { loadConfig } from "./config";
-import { Inverter } from "./inverter";
 import { createServer } from "./server";
-import { HaMqtt } from "./mqtt";
-import { createStats } from "./stats/recorder";
+import { Inverter, HaMqtt, createStats, loadInverterConfig } from "@sweethome/inverter";
 
 // Safety net: a long-running device service must survive stray async errors
 // from native transports (e.g. a benign serialport 'error' after unplug) rather
@@ -16,13 +14,14 @@ process.on("uncaughtException", (err) => {
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
-  const inverter = new Inverter(cfg);
+  const invCfg = loadInverterConfig(cfg.dataDir);
+  const inverter = new Inverter(invCfg);
 
-  const stats = createStats(cfg);
+  const stats = createStats(invCfg);
   if (stats) stats.attach(inverter);
   console.log(`[inverter-monitor] stats: ${stats ? "enabled (stats.db)" : "disabled"}`);
 
-  const server = createServer(inverter, cfg, stats);
+  const server = createServer(inverter, cfg, invCfg, stats);
   // A failed bind (e.g. port already in use) must be fatal: the global
   // uncaughtException guard would otherwise keep a listener-less process
   // alive, hiding the failure from systemd.
@@ -33,12 +32,12 @@ async function main(): Promise<void> {
   server.listen(cfg.port, cfg.host, () => {
     console.log(`[inverter-monitor] HTTP/WS listening on http://${cfg.host}:${cfg.port}`);
     console.log(
-      `[inverter-monitor] transport=${cfg.transport} baud=${cfg.baudRate} poll=${cfg.pollIntervalMs}ms ` +
-        `control=${cfg.allowControl ? "enabled" : "disabled"}`
+      `[inverter-monitor] transport=${invCfg.transport} baud=${invCfg.baudRate} poll=${invCfg.pollIntervalMs}ms ` +
+        `control=${invCfg.allowControl ? "enabled" : "disabled"}`
     );
   });
 
-  const mqtt = new HaMqtt(cfg, inverter);
+  const mqtt = new HaMqtt(invCfg, inverter);
   mqtt.start();
 
   await inverter.start();

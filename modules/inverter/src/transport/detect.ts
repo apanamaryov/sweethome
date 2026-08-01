@@ -1,14 +1,14 @@
 import { Transport } from "./types";
 import { SerialTransport } from "./serial";
 import { MockTransport } from "./mock";
-import { Config } from "../config";
+import { InverterConfig } from "../config";
 
 /**
  * Produce an ordered list of candidate transports to probe. The Inverter class
  * opens each in turn, sends a probe request, and keeps the first that answers.
  * A MockTransport is always appended last so the app is never dead in the water.
  */
-export async function detectTransports(cfg: Config): Promise<Transport[]> {
+export async function detectTransports(cfg: InverterConfig): Promise<Transport[]> {
   const candidates: Transport[] = [];
 
   if (cfg.transport === "mock") {

@@ -54,7 +54,7 @@ import {
   OUTPUT_SOURCE_PRIORITY,
   CHARGER_SOURCE_PRIORITY,
 } from "@sweethome/inverter-shared";
-import { Config } from "./config";
+import { InverterConfig } from "./config";
 import { Inverter } from "./inverter";
 
 jest.mock("mqtt", () => ({ connect: jest.fn() }));
@@ -93,11 +93,9 @@ function fakeInverter(snapshot: Snapshot) {
   return emitter;
 }
 
-/** A complete, valid Config; only cfg.mqtt varies test to test in this file. */
-function baseConfig(mqttOverrides: Partial<Config["mqtt"]> = {}): Config {
+/** A complete, valid InverterConfig; only cfg.mqtt varies test to test in this file. */
+function baseConfig(mqttOverrides: Partial<InverterConfig["mqtt"]> = {}): InverterConfig {
   return {
-    port: 3000,
-    host: "0.0.0.0",
     transport: "mock",
     serialDevice: null,
     baudRate: 9600,
@@ -110,7 +108,6 @@ function baseConfig(mqttOverrides: Partial<Config["mqtt"]> = {}): Config {
     autoRelock: true,
     dataDir: "data",
     stats: { enabled: true, rawDays: 30, minuteDays: 730, solarThresholdW: 200, solarDwellMin: 15 },
-    auth: { sessionTtlDays: 30 },
     mcp: { enabled: false, maxSessions: 8 },
     mqtt: {
       url: "mqtt://broker:1883",
@@ -213,7 +210,7 @@ function makeSnapshot(
  * (marking the client as connected first, mirroring real mqtt.js). This is
  * what fires the availability publish, HA discovery, and the initial state
  * publish from inverter.getSnapshot(). */
-function startConnected(cfg: Config, inverter: ReturnType<typeof fakeInverter>) {
+function startConnected(cfg: InverterConfig, inverter: ReturnType<typeof fakeInverter>) {
   const haMqtt = new HaMqtt(cfg, inverter as unknown as Inverter);
   const client = fakeMqttClient();
   mqttMock.connect.mockReturnValue(client);
@@ -410,7 +407,7 @@ describe("HaMqtt — Home Assistant autodiscovery", () => {
 });
 
 describe("HaMqtt — MQTT control gate (MQTT_ENABLE_CONTROL)", () => {
-  function startAndGetClient(cfg: Config, inverter: ReturnType<typeof fakeInverter>) {
+  function startAndGetClient(cfg: InverterConfig, inverter: ReturnType<typeof fakeInverter>) {
     const haMqtt = new HaMqtt(cfg, inverter as unknown as Inverter);
     const client = fakeMqttClient();
     mqttMock.connect.mockReturnValue(client);

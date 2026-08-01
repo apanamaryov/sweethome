@@ -7,7 +7,7 @@ import {
 } from "@sweethome/inverter-shared";
 import type { ControlType, Snapshot } from "@sweethome/inverter-shared";
 import type { Inverter } from "../inverter";
-import type { Config } from "../config";
+import type { InverterConfig } from "../config";
 import type { StatsRecorder } from "../stats/recorder";
 import { GAUGE_FIELDS, type GaugeField, localDay } from "../stats/db";
 
@@ -21,7 +21,7 @@ const EXPORT_CHUNK = 10_000;
  */
 export function createLocalGateway(
   inverter: Inverter,
-  cfg: Config,
+  cfg: InverterConfig,
   stats: StatsRecorder | null,
   caps: GatewayCapabilities,
   source: string

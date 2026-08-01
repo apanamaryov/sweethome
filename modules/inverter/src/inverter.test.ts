@@ -1,10 +1,10 @@
 /**
- * Unit tests for Inverter (server/src/inverter.ts) — the core: transport
+ * Unit tests for Inverter (modules/inverter/src/inverter.ts) — the core: transport
  * queue/pacing, polling, connect probe, auto-reconnect, baseline capture,
  * write gates.
  *
  * How inverter.ts actually works (read from source, not assumed):
- *   - `new Inverter(cfg: Config)` takes no transport — the only seam is
+ *   - `new Inverter(cfg: InverterConfig)` takes no transport — the only seam is
  *     transport/detect.ts's `detectTransports(cfg)`, which the private
  *     `connect()` calls to get an ordered candidate list. That module is
  *     mocked below so tests fully control which Transport instances answer
@@ -86,7 +86,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { Snapshot } from "@sweethome/inverter-shared";
-import { Config } from "./config";
+import { InverterConfig } from "./config";
 import { Transport } from "./transport/types";
 import { crc16 } from "./protocol/modbus";
 
@@ -204,10 +204,8 @@ class FakeTransport implements Transport {
 
 let tmp: string;
 
-function baseConfig(overrides: Partial<Config> = {}): Config {
+function baseConfig(overrides: Partial<InverterConfig> = {}): InverterConfig {
   return {
-    port: 3000,
-    host: "0.0.0.0",
     transport: "mock",
     serialDevice: null,
     baudRate: 9600,
@@ -220,7 +218,6 @@ function baseConfig(overrides: Partial<Config> = {}): Config {
     autoRelock: true,
     dataDir: tmp,
     stats: { enabled: false, rawDays: 30, minuteDays: 730, solarThresholdW: 200, solarDwellMin: 15 },
-    auth: { sessionTtlDays: 30 },
     mcp: { enabled: false, maxSessions: 8 },
     mqtt: {
       url: null,
@@ -238,7 +235,7 @@ function baseConfig(overrides: Partial<Config> = {}): Config {
 
 let inverter: Inverter | null;
 
-function makeInverter(overrides: Partial<Config> = {}): Inverter {
+function makeInverter(overrides: Partial<InverterConfig> = {}): Inverter {
   inverter = new Inverter(baseConfig(overrides));
   return inverter;
 }

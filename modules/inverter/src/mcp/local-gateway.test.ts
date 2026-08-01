@@ -1,4 +1,4 @@
-import { loadConfig } from "../config";
+import { loadInverterConfig } from "../config";
 import { Inverter } from "../inverter";
 import { StatsDb } from "../stats/db";
 import { StatsRecorder } from "../stats/recorder";
@@ -16,7 +16,7 @@ const DAY_MS = 86_400_000;
 
 function gateway(db: StatsDb) {
   process.env.INVERTER_TRANSPORT = "mock";
-  const cfg = loadConfig();
+  const cfg = loadInverterConfig("data");
   const inverter = new Inverter(cfg);
   const recorder = new StatsRecorder(db, { pollIntervalMs: 5000, rawDays: 30, minuteDays: 730 });
   const caps: GatewayCapabilities = {
@@ -115,7 +115,7 @@ describe("LocalGateway against a real StatsDb", () => {
 
   it("reports no stats gateway when statistics are disabled", () => {
     process.env.INVERTER_TRANSPORT = "mock";
-    const cfg = loadConfig();
+    const cfg = loadInverterConfig("data");
     const inverter = new Inverter(cfg);
     const gw = createLocalGateway(
       inverter,

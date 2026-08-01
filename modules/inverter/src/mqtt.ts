@@ -1,4 +1,4 @@
-import { Config } from "./config";
+import { InverterConfig } from "./config";
 import { Inverter } from "./inverter";
 import {
   Snapshot,
@@ -78,7 +78,7 @@ const SETTINGS: SettingDef[] = [
 ];
 
 export class HaMqtt {
-  private cfg: Config;
+  private cfg: InverterConfig;
   private inverter: Inverter;
   private client: any = null;
   private base: string;
@@ -86,7 +86,7 @@ export class HaMqtt {
   private availTopic: string;
   private cmdRoot: string;
 
-  constructor(cfg: Config, inverter: Inverter) {
+  constructor(cfg: InverterConfig, inverter: Inverter) {
     this.cfg = cfg;
     this.inverter = inverter;
     const { baseTopic, nodeId } = cfg.mqtt;

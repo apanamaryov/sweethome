@@ -4,9 +4,9 @@ import path from "path";
 import http from "http";
 import request from "supertest";
 import { loadConfig } from "../config";
-import { Inverter } from "../inverter";
 import { createServer } from "../server";
 import { Auth } from "../auth/service";
+import { Inverter, loadInverterConfig } from "@sweethome/inverter";
 
 /**
  * /mcp — Streamable HTTP поверх того же гейта авторизации, что и /api. Здесь
@@ -46,8 +46,9 @@ describe("/mcp endpoint", () => {
     delete process.env.MCP_MAX_SESSIONS;
 
     const cfg = loadConfig();
-    inverter = new Inverter(cfg);
-    server = createServer(inverter, cfg, null);
+    const invCfg = loadInverterConfig(cfg.dataDir);
+    inverter = new Inverter(invCfg);
+    server = createServer(inverter, cfg, invCfg, null);
     token = makeToken(["read", "write"], "mcp");
   });
 
@@ -158,8 +159,9 @@ describe("/mcp endpoint", () => {
   it("refuses more sessions than MCP_MAX_SESSIONS", async () => {
     process.env.MCP_MAX_SESSIONS = "1";
     const cfg = loadConfig();
-    const inv = new Inverter(cfg);
-    const srv = createServer(inv, cfg, null);
+    const invCfg = loadInverterConfig(cfg.dataDir);
+    const inv = new Inverter(invCfg);
+    const srv = createServer(inv, cfg, invCfg, null);
     try {
       const first = await request(srv)
         .post("/mcp")
@@ -183,8 +185,9 @@ describe("/mcp endpoint", () => {
   it("returns 404 when MCP_ENABLED=false", async () => {
     process.env.MCP_ENABLED = "false";
     const cfg = loadConfig();
-    const inv = new Inverter(cfg);
-    const srv = createServer(inv, cfg, null);
+    const invCfg = loadInverterConfig(cfg.dataDir);
+    const inv = new Inverter(invCfg);
+    const srv = createServer(inv, cfg, invCfg, null);
     try {
       const res = await request(srv)
         .post("/mcp")

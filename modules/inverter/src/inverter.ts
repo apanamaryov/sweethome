@@ -1,5 +1,5 @@
 import { EventEmitter } from "events";
-import { Config } from "./config";
+import { InverterConfig } from "./config";
 import { Transport } from "./transport/types";
 import { detectTransports } from "./transport/detect";
 import {
@@ -54,7 +54,7 @@ export interface WriteEvent {
 }
 
 export class Inverter extends EventEmitter {
-  private cfg: Config;
+  private cfg: InverterConfig;
   private transport: Transport | null = null;
   private queue: Promise<unknown> = Promise.resolve();
   private pollTimer: NodeJS.Timeout | null = null;
@@ -82,7 +82,7 @@ export class Inverter extends EventEmitter {
     baseline: null,
   };
 
-  constructor(cfg: Config) {
+  constructor(cfg: InverterConfig) {
     super();
     this.cfg = cfg;
     this.store = new Store(cfg.dataDir);

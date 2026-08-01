@@ -1,15 +1,15 @@
 /**
- * Unit tests for detectTransports (server/src/transport/detect.ts).
+ * Unit tests for detectTransports (modules/inverter/src/transport/detect.ts).
  *
  * How detect.ts actually works (read from source, not assumed):
- *   - detectTransports(cfg: Config) takes an already-loaded Config object —
+ *   - detectTransports(cfg: InverterConfig) takes an already-loaded InverterConfig object —
  *     it never touches process.env itself. Env is read once by
- *     config.ts's loadConfig() (INVERTER_TRANSPORT, INVERTER_SERIAL_DEVICE,
- *     INVERTER_BAUD, ALLOW_MOCK) and the resulting Config is what detect.ts
- *     consumes. So most tests below build Config objects directly to
+ *     config.ts's loadInverterConfig() (INVERTER_TRANSPORT, INVERTER_SERIAL_DEVICE,
+ *     INVERTER_BAUD, ALLOW_MOCK) and the resulting InverterConfig is what detect.ts
+ *     consumes. So most tests below build InverterConfig objects directly to
  *     exercise detect.ts's own branching; a separate "integration" section
- *     goes through the real loadConfig() with mocked process.env to prove
- *     the env → Config → detectTransports pipeline as a whole.
+ *     goes through the real loadInverterConfig() with mocked process.env to prove
+ *     the env → InverterConfig → detectTransports pipeline as a whole.
  *   - It returns Promise<Transport[]> — an ORDERED CANDIDATE LIST, not a
  *     single chosen transport. (The Inverter class, elsewhere, opens each
  *     candidate in turn and keeps the first that answers a probe.) "Mock is
@@ -49,17 +49,15 @@ jest.mock("serialport", () => ({
 import { detectTransports } from "./detect";
 import { SerialTransport } from "./serial";
 import { MockTransport } from "./mock";
-import { Config, loadConfig } from "../config";
+import { InverterConfig, loadInverterConfig } from "../config";
 
 const serialportMock = jest.requireMock("serialport") as {
   SerialPort: { list: jest.Mock };
 };
 
-/** A complete, valid Config with sane defaults; override only what a test cares about. */
-function baseConfig(overrides: Partial<Config> = {}): Config {
+/** A complete, valid InverterConfig with sane defaults; override only what a test cares about. */
+function baseConfig(overrides: Partial<InverterConfig> = {}): InverterConfig {
   return {
-    port: 3000,
-    host: "0.0.0.0",
     transport: "auto",
     serialDevice: null,
     baudRate: 9600,
@@ -72,7 +70,6 @@ function baseConfig(overrides: Partial<Config> = {}): Config {
     autoRelock: true,
     dataDir: "data",
     stats: { enabled: true, rawDays: 30, minuteDays: 730, solarThresholdW: 200, solarDwellMin: 15 },
-    auth: { sessionTtlDays: 30 },
     mcp: { enabled: false, maxSessions: 8 },
     mqtt: {
       url: null,
@@ -204,7 +201,7 @@ describe("detectTransports — explicit INVERTER_SERIAL_DEVICE bypasses the UART
   });
 });
 
-describe("detectTransports — integration with loadConfig() env parsing", () => {
+describe("detectTransports — integration with loadInverterConfig() env parsing", () => {
   const ORIGINAL_ENV = process.env;
 
   beforeEach(() => {
@@ -217,10 +214,10 @@ describe("detectTransports — integration with loadConfig() env parsing", () =>
     process.env = ORIGINAL_ENV;
   });
 
-  it("INVERTER_TRANSPORT=mock round-trips through loadConfig() into a mock-only candidate list", async () => {
+  it("INVERTER_TRANSPORT=mock round-trips through loadInverterConfig() into a mock-only candidate list", async () => {
     process.env.INVERTER_TRANSPORT = "mock";
 
-    const cfg = loadConfig();
+    const cfg = loadInverterConfig("data");
     expect(cfg.transport).toBe("mock");
 
     const result = await detectTransports(cfg);
@@ -228,11 +225,11 @@ describe("detectTransports — integration with loadConfig() env parsing", () =>
     expect(result[0]).toBeInstanceOf(MockTransport);
   });
 
-  it("INVERTER_SERIAL_DEVICE in env round-trips through loadConfig() to bypass the UART filter", async () => {
+  it("INVERTER_SERIAL_DEVICE in env round-trips through loadInverterConfig() to bypass the UART filter", async () => {
     process.env.INVERTER_TRANSPORT = "auto";
     process.env.INVERTER_SERIAL_DEVICE = "/dev/ttyAMA0";
 
-    const cfg = loadConfig();
+    const cfg = loadInverterConfig("data");
     expect(cfg.serialDevice).toBe("/dev/ttyAMA0");
 
     const result = await detectTransports(cfg);

@@ -24,7 +24,6 @@ module.exports = {
   collectCoverageFrom: [
     "server/src/**/*.ts",
     "!server/src/index.ts",
-    "!server/src/**/types.ts",
     "!server/src/**/*.d.ts",
     "packages/inverter-shared/src/api.ts",
     "packages/inverter-shared/src/source.ts",

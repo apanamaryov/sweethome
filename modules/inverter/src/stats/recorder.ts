@@ -3,7 +3,7 @@ import { Snapshot } from "@sweethome/inverter-shared";
 import { Inverter, WriteEvent } from "../inverter";
 import { FAULTS } from "../protocol/smg";
 import { localDay, SAMPLE_FIELDS, SampleRow, StatsDb, StatsEventRow } from "./db";
-import { Config } from "../config";
+import { InverterConfig } from "../config";
 
 export interface RecorderOpts {
   pollIntervalMs: number;
@@ -171,7 +171,7 @@ export class StatsRecorder {
 }
 
 /** Открывает БД и создаёт recorder; при любой ошибке статистика выключается, демон живёт. */
-export function createStats(cfg: Config): StatsRecorder | null {
+export function createStats(cfg: InverterConfig): StatsRecorder | null {
   if (!cfg.stats.enabled) return null;
   try {
     const db = new StatsDb(path.join(cfg.dataDir, "stats.db"), {

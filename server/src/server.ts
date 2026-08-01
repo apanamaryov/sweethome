@@ -2,11 +2,10 @@ import http from "http";
 import path from "path";
 import express from "express";
 import { WebSocketServer, WebSocket } from "ws";
-import { Inverter } from "./inverter";
 import { Config } from "./config";
 import { Auth, tokenFromCookieHeader, bearerFromHeader } from "./auth/service";
 import { canAccess } from "@sweethome/shared";
-import "@sweethome/shared/module"; // augments express-serve-static-core with req.user/req.auth
+import { writeSource, denyWithoutWrite } from "@sweethome/shared/module"; // augments express-serve-static-core with req.user/req.auth
 import { normalizeUsername } from "./auth/db";
 import { validatePassword } from "./auth/hash";
 import {
@@ -18,9 +17,15 @@ import {
 } from "@sweethome/inverter-shared";
 import { Snapshot } from "@sweethome/inverter-shared";
 import type { TokenScope } from "@sweethome/inverter-shared";
-import { GAUGE_FIELDS, GaugeField, localDay } from "./stats/db";
-import { StatsRecorder } from "./stats/recorder";
-import { mountMcp } from "./mcp/http";
+import {
+  Inverter,
+  InverterConfig,
+  GAUGE_FIELDS,
+  GaugeField,
+  localDay,
+  StatsRecorder,
+  mountMcp,
+} from "@sweethome/inverter";
 
 const CONTROL_TYPES: ControlType[] = [
   "outputSourcePriority",
@@ -31,7 +36,12 @@ const CONTROL_TYPES: ControlType[] = [
   "batteryRedischargeVoltage",
 ];
 
-export function createServer(inverter: Inverter, cfg: Config, stats: StatsRecorder | null): http.Server {
+export function createServer(
+  inverter: Inverter,
+  cfg: Config,
+  invCfg: InverterConfig,
+  stats: StatsRecorder | null
+): http.Server {
   const app = express();
   app.set("trust proxy", 1); // ровно один прокси-хоп — Caddy на Pi (см. CLAUDE.md); dev без прокси не мешает
   app.use(express.json());
@@ -168,19 +178,6 @@ export function createServer(inverter: Inverter, cfg: Config, stats: StatsRecord
     next();
   });
 
-  /** Кто именно пишет — попадает в журнал событий (тип `control`). */
-  const writeSource = (req: express.Request): string =>
-    req.auth?.kind === "token" ? `token:${req.auth.tokenName ?? "?"}` : `ui:${req.user?.username ?? "?"}`;
-
-  /** Скоуп write обязателен для токенов; cookie-сессия из UI им обладает всегда. */
-  const denyWithoutWrite = (req: express.Request, res: express.Response): boolean => {
-    if (req.auth?.kind === "token" && !req.auth.scopes.includes("write")) {
-      res.status(403).json({ ok: false, code: "scope_required", error: "Token lacks the 'write' scope" });
-      return true;
-    }
-    return false;
-  };
-
   app.get("/api/users", (_req, res) => {
     res.json(auth.db.listUsers());
   });
@@ -299,7 +296,7 @@ export function createServer(inverter: Inverter, cfg: Config, stats: StatsRecord
     const u = req.user!;
     res.json({
       session: { username: u.username, role: u.role, mustChangePassword: u.mustChangePassword },
-      allowControl: cfg.allowControl,
+      allowControl: invCfg.allowControl,
       outputSourcePriority: OUTPUT_SOURCE_PRIORITY,
       chargerSourcePriority: CHARGER_SOURCE_PRIORITY,
       maxChargingCurrent: ALLOWED_MAX_CHARGE_CURRENT,
@@ -507,7 +504,7 @@ export function createServer(inverter: Inverter, cfg: Config, stats: StatsRecord
   });
 
   // MCP для агентов — под тем же гейтом авторизации, что и /api.
-  mountMcp(app, { inverter, cfg, stats, authenticate });
+  mountMcp(app, { inverter, cfg: invCfg, stats, authenticate });
 
   const server = http.createServer(app);
   const wss = new WebSocketServer({ server, path: "/ws" });

@@ -5,9 +5,9 @@ import http from "http";
 import request from "supertest";
 import { WebSocket } from "ws";
 import { loadConfig } from "./config";
-import { Inverter } from "./inverter";
 import { createServer } from "./server";
 import { Auth } from "./auth/service";
+import { Inverter, loadInverterConfig } from "@sweethome/inverter";
 
 /**
  * Migrated from scripts/selfcheck-auth-http.ts: that script hand-rolls http.request
@@ -36,8 +36,9 @@ describe("server.ts (HTTP integration via supertest)", () => {
     process.env.DATA_DIR = tmp;
 
     const cfg = loadConfig();
-    inverter = new Inverter(cfg);
-    server = createServer(inverter, cfg, null);
+    const invCfg = loadInverterConfig(cfg.dataDir);
+    inverter = new Inverter(invCfg);
+    server = createServer(inverter, cfg, invCfg, null);
   });
 
   afterEach(async () => {

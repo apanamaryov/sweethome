@@ -4,8 +4,9 @@ import type express from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { buildMcpServer } from "@sweethome/inverter-mcp";
+import "@sweethome/shared/module"; // augments express-serve-static-core with req.user/req.auth
 import type { Inverter } from "../inverter";
-import type { Config } from "../config";
+import type { InverterConfig } from "../config";
 import type { StatsRecorder } from "../stats/recorder";
 import { createLocalGateway } from "./local-gateway";
 
@@ -21,7 +22,7 @@ const nodeRes = (res: express.Response) => res as unknown as ServerResponse<Inco
 
 export interface McpMountDeps {
   inverter: Inverter;
-  cfg: Config;
+  cfg: InverterConfig;
   stats: StatsRecorder | null;
   /** Тот же гейт авторизации, что у /api: заполняет req.user и req.auth. */
   authenticate: express.RequestHandler;

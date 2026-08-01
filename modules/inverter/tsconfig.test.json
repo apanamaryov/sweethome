@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts", "../../packages/inverter-shared/src/**/*.ts", "../../packages/shared/src/**/*.ts"]
+}
