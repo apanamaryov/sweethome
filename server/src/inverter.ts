@@ -30,7 +30,7 @@ import {
   initialSourceState,
   instantSource,
   stepSource,
-} from "@inverter/shared";
+} from "@sweethome/inverter-shared";
 import { Store } from "./store";
 
 /**

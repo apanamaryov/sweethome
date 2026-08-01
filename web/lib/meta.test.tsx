@@ -1,5 +1,5 @@
 import { render, screen, act } from "@testing-library/react";
-import type { ApiMeta } from "@inverter/shared";
+import type { ApiMeta } from "@sweethome/inverter-shared";
 import { MetaProvider, useMeta } from "./meta";
 
 function TestConsumer() {

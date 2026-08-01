@@ -1,5 +1,5 @@
 import { DatabaseSync, StatementSync } from "node:sqlite";
-import { InverterStatus } from "@inverter/shared";
+import { InverterStatus } from "@sweethome/inverter-shared";
 import { computeSolarWindow, SolarParams, SolarWindow } from "./solar";
 
 /** Числовые поля InverterStatus в сырой таблице (порядок = порядок колонок). */

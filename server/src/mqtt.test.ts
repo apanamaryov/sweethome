@@ -53,7 +53,7 @@ import {
   InverterRatedInfo,
   OUTPUT_SOURCE_PRIORITY,
   CHARGER_SOURCE_PRIORITY,
-} from "@inverter/shared";
+} from "@sweethome/inverter-shared";
 import { Config } from "./config";
 import { Inverter } from "./inverter";
 

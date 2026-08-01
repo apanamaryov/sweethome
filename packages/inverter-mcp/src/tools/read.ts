@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { diffSettings } from "@inverter/shared";
+import { diffSettings } from "@sweethome/inverter-shared";
 import type { McpContext } from "../server";
 import { summarizeSnapshot } from "../format";
 import { NOOP_LOGGER, type Logger } from "../logging";

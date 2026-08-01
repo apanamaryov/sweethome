@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from "http";
 import type express from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
-import { buildMcpServer } from "@inverter/mcp";
+import { buildMcpServer } from "@sweethome/inverter-mcp";
 import type { Inverter } from "../inverter";
 import type { Config } from "../config";
 import type { StatsRecorder } from "../stats/recorder";

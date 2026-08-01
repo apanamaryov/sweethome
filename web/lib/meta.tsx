@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import type { ApiMeta } from "@inverter/shared";
+import type { ApiMeta } from "@sweethome/inverter-shared";
 import { redirectToLogin } from "./api";
 
 const Ctx = createContext<ApiMeta | null>(null);

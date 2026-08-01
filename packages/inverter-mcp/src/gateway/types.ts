@@ -6,7 +6,7 @@ import type {
   Role,
   Snapshot,
   TokenScope,
-} from "@inverter/shared";
+} from "@sweethome/inverter-shared";
 
 /** Что инструментам разрешено — считается один раз при старте сервера MCP. */
 export interface GatewayCapabilities {

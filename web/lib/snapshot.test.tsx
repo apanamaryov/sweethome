@@ -1,5 +1,5 @@
 import { render, screen, act } from "@testing-library/react";
-import type { Snapshot } from "@inverter/shared";
+import type { Snapshot } from "@sweethome/inverter-shared";
 import { SnapshotProvider, useSnapshot } from "./snapshot";
 
 /**

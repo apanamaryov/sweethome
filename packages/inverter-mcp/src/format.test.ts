@@ -1,4 +1,4 @@
-import type { Snapshot } from "@inverter/shared";
+import type { Snapshot } from "@sweethome/inverter-shared";
 import { summarizeSnapshot, formatWatts } from "./format";
 
 const NOW = 1_700_000_010_000;

@@ -1,11 +1,11 @@
-import type { GatewayCapabilities, InverterGateway, StatsGateway } from "@inverter/mcp";
+import type { GatewayCapabilities, InverterGateway, StatsGateway } from "@sweethome/inverter-mcp";
 import {
   ALLOWED_MAX_AC_CHARGE_CURRENT,
   ALLOWED_MAX_CHARGE_CURRENT,
   CHARGER_SOURCE_PRIORITY,
   OUTPUT_SOURCE_PRIORITY,
-} from "@inverter/shared";
-import type { ControlType, Snapshot } from "@inverter/shared";
+} from "@sweethome/inverter-shared";
+import type { ControlType, Snapshot } from "@sweethome/inverter-shared";
 import type { Inverter } from "../inverter";
 import type { Config } from "../config";
 import type { StatsRecorder } from "../stats/recorder";

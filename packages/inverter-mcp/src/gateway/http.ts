@@ -1,5 +1,5 @@
 import { WebSocket } from "ws";
-import type { ApiMeta, Baseline, ControlResponse, ControlType, Snapshot, TokenScope } from "@inverter/shared";
+import type { ApiMeta, Baseline, ControlResponse, ControlType, Snapshot, TokenScope } from "@sweethome/inverter-shared";
 import {
   ControlPreview,
   CSV_LIMIT_BYTES,

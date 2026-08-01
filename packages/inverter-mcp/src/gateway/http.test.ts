@@ -1,4 +1,4 @@
-import type { Snapshot } from "@inverter/shared";
+import type { Snapshot } from "@sweethome/inverter-shared";
 import { createHttpGateway } from "./http";
 import { GatewayError } from "./types";
 

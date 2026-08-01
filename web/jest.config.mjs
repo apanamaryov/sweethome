@@ -7,7 +7,7 @@ const config = {
   testEnvironment: "jsdom",
   setupFilesAfterEnv: ["<rootDir>/jest.setup.ts"],
   moduleNameMapper: {
-    "^@inverter/shared$": "<rootDir>/../shared/src/index.ts",
+    "^@sweethome/inverter-shared$": "<rootDir>/../packages/inverter-shared/src/index.ts",
     // next/jest только резолвит "@/*" через SWC-транспиляцию import-стейтментов;
     // строковый аргумент jest.mock("@/...") этой трансформации не подвергается,
     // поэтому нужен явный маппер для рантайм-резолва jest (см. web/components/SolarToday.test.tsx).

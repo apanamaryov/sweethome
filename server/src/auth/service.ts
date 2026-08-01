@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
-import type { SessionUser, TokenScope, PublicApiToken } from "@inverter/shared";
+import type { SessionUser, TokenScope, PublicApiToken } from "@sweethome/inverter-shared";
 import { AuthDb, SessionInfo, TokenInfo } from "./db";
 import { verifyPassword, validatePassword } from "./hash";
 

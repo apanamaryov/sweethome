@@ -1,4 +1,4 @@
-import type { ApiMeta, Baseline, ControlResponse, ControlType, Snapshot } from "@inverter/shared";
+import type { ApiMeta, Baseline, ControlResponse, ControlType, Snapshot } from "@sweethome/inverter-shared";
 import type { ControlPreview, GatewayCapabilities, InverterGateway, StatsGateway } from "../gateway/types";
 
 /** Ин-мемори шлюз для тестов ядра: пишет все вызовы в `calls`. */

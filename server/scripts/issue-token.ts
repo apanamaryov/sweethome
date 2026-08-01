@@ -1,5 +1,5 @@
 import { Auth } from "../src/auth/service";
-import type { TokenScope } from "@inverter/shared";
+import type { TokenScope } from "@sweethome/inverter-shared";
 
 /**
  * Выдача API-токена из CLI (первый токен для MCP, когда UI ещё не под рукой).

@@ -15,9 +15,9 @@ import {
   ALLOWED_MAX_CHARGE_CURRENT,
   ALLOWED_MAX_AC_CHARGE_CURRENT,
   ControlType,
-} from "@inverter/shared";
-import { Snapshot } from "@inverter/shared";
-import type { TokenScope } from "@inverter/shared";
+} from "@sweethome/inverter-shared";
+import { Snapshot } from "@sweethome/inverter-shared";
+import type { TokenScope } from "@sweethome/inverter-shared";
 import { GAUGE_FIELDS, GaugeField, localDay } from "./stats/db";
 import { StatsRecorder } from "./stats/recorder";
 import { mountMcp } from "./mcp/http";

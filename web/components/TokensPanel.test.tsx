@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { PublicApiToken } from "@inverter/shared";
+import type { PublicApiToken } from "@sweethome/inverter-shared";
 import { renderWithProviders, restoreLocation } from "@/test-utils/renderWithProviders";
 import { DICTS } from "@/lib/i18n/dict";
 import { TokensPanel } from "./TokensPanel";

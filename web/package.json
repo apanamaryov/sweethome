@@ -1,5 +1,5 @@
 {
-  "name": "@inverter/web",
+  "name": "@sweethome/web",
   "version": "1.0.0",
   "private": true,
   "scripts": {
@@ -10,7 +10,7 @@
     "test:coverage": "jest --coverage"
   },
   "dependencies": {
-    "@inverter/shared": "1.0.0",
+    "@sweethome/inverter-shared": "1.0.0",
     "next": "^15.3.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

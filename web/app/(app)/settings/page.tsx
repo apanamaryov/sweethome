@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { ControlType, InverterRatedInfo, Snapshot } from "@inverter/shared";
+import type { ControlType, InverterRatedInfo, Snapshot } from "@sweethome/inverter-shared";
 import { useT } from "@/lib/i18n";
 import { flagLabel } from "@/lib/i18n";
 import type { Dict } from "@/lib/i18n/dict";

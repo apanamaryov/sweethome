@@ -1,4 +1,4 @@
-import type { Role } from "@inverter/shared";
+import type { Role } from "@sweethome/inverter-shared";
 
 /** Уровень доступа эндпоинта/страницы. */
 export type Access = "public" | "auth" | "admin";

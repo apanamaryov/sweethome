@@ -1,23 +1,14 @@
 {
-  "name": "inverter-monitor-root",
+  "name": "sweethome",
   "private": true,
-  "workspaces": [
-    "shared",
-    "mcp",
-    "server",
-    "web"
-  ],
+  "workspaces": ["packages/*", "modules/*", "server", "web"],
   "scripts": {
-    "build": "npm run build -w shared && npm run build -w mcp && npm run build -w server && npm run build -w web",
-    "check": "npm run check -w mcp && npm run check -w server && npm run typecheck -w web",
-    "dev": "concurrently -k -n server,web -c blue,magenta \"npm run dev -w server\" \"npm run dev -w web\"",
-    "test": "npm test -w mcp && npm test -w server && npm test -w web",
-    "test:coverage": "npm run test:coverage -w mcp && npm run test:coverage -w server && npm run test:coverage -w web"
+    "build": "npm run build -w @sweethome/inverter-shared && npm run build -w @sweethome/inverter-mcp && npm run build -w @sweethome/server && npm run build -w @sweethome/web",
+    "check": "npm run check -w @sweethome/inverter-mcp && npm run check -w @sweethome/server && npm run typecheck -w @sweethome/web",
+    "dev": "concurrently -k -n server,web -c blue,magenta \"npm run dev -w @sweethome/server\" \"npm run dev -w @sweethome/web\"",
+    "test": "npm test -w @sweethome/inverter-mcp && npm test -w @sweethome/server && npm test -w @sweethome/web",
+    "test:coverage": "npm run test:coverage -w @sweethome/inverter-mcp && npm run test:coverage -w @sweethome/server && npm run test:coverage -w @sweethome/web"
   },
-  "devDependencies": {
-    "concurrently": "^9.1.0"
-  },
-  "engines": {
-    "node": ">=24"
-  }
+  "devDependencies": { "concurrently": "^9.1.0" },
+  "engines": { "node": ">=24" }
 }

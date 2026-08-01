@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { PublicUser, Role } from "@inverter/shared";
+import type { PublicUser, Role } from "@sweethome/inverter-shared";
 import { getJson, postJson } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { useToast } from "@/lib/toast";

@@ -1,5 +1,5 @@
 import { EventEmitter } from "events";
-import { Snapshot, InverterStatus, DeviceMode } from "@inverter/shared";
+import { Snapshot, InverterStatus, DeviceMode } from "@sweethome/inverter-shared";
 import { Inverter } from "../inverter";
 import { StatsDb, SAMPLE_FIELDS, SampleField } from "./db";
 import { StatsRecorder, RecorderOpts } from "./recorder";

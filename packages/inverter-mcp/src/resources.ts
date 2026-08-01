@@ -7,7 +7,7 @@ import {
   OUTPUT_SOURCE_PRIORITY,
   REGISTER_DOCS,
   registerDocsMarkdown,
-} from "@inverter/shared";
+} from "@sweethome/inverter-shared";
 import type { McpContext } from "./server";
 
 const SNAPSHOT_URI = "inverter://snapshot";

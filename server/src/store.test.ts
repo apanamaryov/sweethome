@@ -28,7 +28,7 @@ jest.mock("fs", () => ({
 
 import fs from "fs";
 import path from "path";
-import { Baseline } from "@inverter/shared";
+import { Baseline } from "@sweethome/inverter-shared";
 import { Store } from "./store";
 
 const mkdirSync = fs.mkdirSync as jest.Mock;

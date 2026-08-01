@@ -1,5 +1,5 @@
 import { DatabaseSync, StatementSync } from "node:sqlite";
-import type { Role, PublicUser, TokenScope, PublicApiToken } from "@inverter/shared";
+import type { Role, PublicUser, TokenScope, PublicApiToken } from "@sweethome/inverter-shared";
 import { hashPassword } from "./hash";
 
 const USERNAME_RE = /^[a-z0-9_-]{1,32}$/;

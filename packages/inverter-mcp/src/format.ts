@@ -1,4 +1,4 @@
-import type { Snapshot } from "@inverter/shared";
+import type { Snapshot } from "@sweethome/inverter-shared";
 
 /** Ватты в читаемом виде: до киловатта — W, дальше — kW с двумя знаками. */
 export function formatWatts(w: number): string {

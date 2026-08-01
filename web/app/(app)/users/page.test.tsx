@@ -1,6 +1,6 @@
 import { fireEvent, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { PublicUser } from "@inverter/shared";
+import type { PublicUser } from "@sweethome/inverter-shared";
 import { renderWithProviders, restoreLocation } from "@/test-utils/renderWithProviders";
 import { DICTS } from "@/lib/i18n/dict";
 import UsersPage from "./page";

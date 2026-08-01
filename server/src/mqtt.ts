@@ -7,7 +7,7 @@ import {
   CHARGER_SOURCE_PRIORITY,
   ALLOWED_MAX_CHARGE_CURRENT,
   ALLOWED_MAX_AC_CHARGE_CURRENT,
-} from "@inverter/shared";
+} from "@sweethome/inverter-shared";
 
 interface SensorDef {
   key: string;

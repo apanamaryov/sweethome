@@ -1,5 +1,5 @@
-import { REGISTER_DOCS, registerDocsMarkdown } from "@inverter/shared";
-import type { InverterStatus, InverterRatedInfo } from "@inverter/shared";
+import { REGISTER_DOCS, registerDocsMarkdown } from "@sweethome/inverter-shared";
+import type { InverterStatus, InverterRatedInfo } from "@sweethome/inverter-shared";
 import { STATUS_BLOCKS, ALARM_BLOCKS, SETTINGS_BLOCKS, decodeStatus, decodeSettings } from "./smg";
 
 /**

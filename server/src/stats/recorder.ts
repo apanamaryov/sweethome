@@ -1,5 +1,5 @@
 import path from "path";
-import { Snapshot } from "@inverter/shared";
+import { Snapshot } from "@sweethome/inverter-shared";
 import { Inverter, WriteEvent } from "../inverter";
 import { FAULTS } from "../protocol/smg";
 import { localDay, SAMPLE_FIELDS, SampleRow, StatsDb, StatsEventRow } from "./db";

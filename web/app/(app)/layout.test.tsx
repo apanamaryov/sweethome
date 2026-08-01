@@ -3,7 +3,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { LangProvider } from "@/lib/i18n";
 import { DICTS } from "@/lib/i18n/dict";
-import type { ApiMeta, Snapshot } from "@inverter/shared";
+import type { ApiMeta, Snapshot } from "@sweethome/inverter-shared";
 import {
   buildMeta,
   buildSnapshot,

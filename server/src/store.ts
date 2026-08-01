@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { Baseline } from "@inverter/shared";
+import { Baseline } from "@sweethome/inverter-shared";
 
 /**
  * Tiny JSON persistence for the captured settings baseline. Kept deliberately

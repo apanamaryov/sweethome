@@ -8,13 +8,13 @@ import type {
   InverterStatus,
   Role,
   Snapshot,
-} from "@inverter/shared";
+} from "@sweethome/inverter-shared";
 import {
   ALLOWED_MAX_AC_CHARGE_CURRENT,
   ALLOWED_MAX_CHARGE_CURRENT,
   CHARGER_SOURCE_PRIORITY,
   OUTPUT_SOURCE_PRIORITY,
-} from "@inverter/shared";
+} from "@sweethome/inverter-shared";
 import { LangProvider } from "@/lib/i18n";
 import { SnapshotProvider } from "@/lib/snapshot";
 import { MetaProvider } from "@/lib/meta";

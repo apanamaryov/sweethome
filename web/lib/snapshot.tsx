@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from "react";
-import type { Snapshot } from "@inverter/shared";
+import type { Snapshot } from "@sweethome/inverter-shared";
 import { wsUrl, redirectToLogin } from "./api";
 
 interface SnapshotState {

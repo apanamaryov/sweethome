@@ -3,7 +3,7 @@ import { Inverter } from "../inverter";
 import { StatsDb } from "../stats/db";
 import { StatsRecorder } from "../stats/recorder";
 import { createLocalGateway } from "./local-gateway";
-import type { GatewayCapabilities } from "@inverter/mcp";
+import type { GatewayCapabilities } from "@sweethome/inverter-mcp";
 
 /**
  * Контракт между статистикой сервера и инструментами MCP. Фейковый шлюз в

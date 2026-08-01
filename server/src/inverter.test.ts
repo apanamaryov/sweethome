@@ -85,7 +85,7 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { Snapshot } from "@inverter/shared";
+import { Snapshot } from "@sweethome/inverter-shared";
 import { Config } from "./config";
 import { Transport } from "./transport/types";
 import { crc16 } from "./protocol/modbus";
