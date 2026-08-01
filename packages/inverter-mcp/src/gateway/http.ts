@@ -97,26 +97,26 @@ class HttpGateway implements InverterGateway {
   }
 
   snapshot(): Promise<Snapshot> {
-    return this.request<Snapshot>("/api/snapshot");
+    return this.request<Snapshot>("/api/inverter/snapshot");
   }
 
   meta(): Promise<ApiMeta> {
-    return this.request<ApiMeta>("/api/meta");
+    return this.request<ApiMeta>("/api/inverter/meta");
   }
 
   baseline(): Promise<Baseline | null> {
-    return this.request<Baseline | null>("/api/baseline");
+    return this.request<Baseline | null>("/api/inverter/baseline");
   }
 
   control(type: ControlType, value: number): Promise<ControlResponse> {
-    return this.request<ControlResponse>("/api/control", {
+    return this.request<ControlResponse>("/api/inverter/control", {
       method: "POST",
       body: JSON.stringify({ type, value }),
     });
   }
 
   async previewControl(type: ControlType, value: number): Promise<ControlPreview> {
-    const r = await this.request<ControlPreview & { ok: boolean; preview: boolean }>("/api/control", {
+    const r = await this.request<ControlPreview & { ok: boolean; preview: boolean }>("/api/inverter/control", {
       method: "POST",
       body: JSON.stringify({ type, value, preview: true }),
     });
@@ -130,7 +130,7 @@ class HttpGateway implements InverterGateway {
   }
 
   async setLock(locked: boolean): Promise<{ locked: boolean }> {
-    const r = await this.request<{ ok: boolean; locked: boolean }>("/api/lock", {
+    const r = await this.request<{ ok: boolean; locked: boolean }>("/api/inverter/lock", {
       method: "POST",
       body: JSON.stringify({ locked }),
     });
@@ -138,7 +138,7 @@ class HttpGateway implements InverterGateway {
   }
 
   async recaptureBaseline(): Promise<Baseline> {
-    const r = await this.request<{ ok: boolean; baseline: Baseline }>("/api/baseline/recapture", {
+    const r = await this.request<{ ok: boolean; baseline: Baseline }>("/api/inverter/baseline/recapture", {
       method: "POST",
       body: JSON.stringify({}),
     });
@@ -146,7 +146,7 @@ class HttpGateway implements InverterGateway {
   }
 
   async raw(command: string): Promise<string> {
-    const r = await this.request<{ ok: boolean; reply: string }>("/api/raw", {
+    const r = await this.request<{ ok: boolean; reply: string }>("/api/inverter/raw", {
       method: "POST",
       body: JSON.stringify({ command }),
     });
@@ -164,19 +164,19 @@ class HttpGateway implements InverterGateway {
     return {
       series: (q: SeriesQuery) =>
         this.request(
-          `/api/stats/series?${qs({ fields: q.fields.join(","), from: q.from, to: q.to, res: q.res })}`
+          `/api/inverter/stats/series?${qs({ fields: q.fields.join(","), from: q.from, to: q.to, res: q.res })}`
         ),
-      daily: (from: string, to: string) => this.request(`/api/stats/daily?${qs({ from, to })}`),
+      daily: (from: string, to: string) => this.request(`/api/inverter/stats/daily?${qs({ from, to })}`),
       energy: (from: number, to: number, bucket: "hour" | "day") =>
-        this.request(`/api/stats/energy?${qs({ from, to, bucket })}`),
+        this.request(`/api/inverter/stats/energy?${qs({ from, to, bucket })}`),
       events: (q: EventsQuery) =>
         this.request(
-          `/api/stats/events?${qs({ from: q.from, to: q.to, type: q.type, limit: q.limit, offset: q.offset })}`
+          `/api/inverter/stats/events?${qs({ from: q.from, to: q.to, type: q.type, limit: q.limit, offset: q.offset })}`
         ),
-      solarWindow: (day?: string) => this.request<SolarWindowResult>(`/api/stats/solar-window?${qs({ day })}`),
+      solarWindow: (day?: string) => this.request<SolarWindowResult>(`/api/inverter/stats/solar-window?${qs({ day })}`),
       exportCsv: async (q) => {
         const csv = await this.request<string>(
-          `/api/stats/export.csv?${qs({ from: q.from, to: q.to, res: q.res })}`,
+          `/api/inverter/stats/export.csv?${qs({ from: q.from, to: q.to, res: q.res })}`,
           { raw: true }
         );
         return csv.length > CSV_LIMIT_BYTES
@@ -242,7 +242,7 @@ export async function createHttpGateway(opts: HttpGatewayOptions): Promise<Inver
   const meta = await probe.meta();
   let statsEnabled = true;
   try {
-    await probe.request("/api/stats/solar-window");
+    await probe.request("/api/inverter/stats/solar-window");
   } catch (e) {
     if (e instanceof GatewayError && e.status === 503) statsEnabled = false;
     else throw e;

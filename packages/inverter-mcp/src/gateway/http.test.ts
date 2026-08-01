@@ -35,8 +35,8 @@ function fetchMock(routes: Record<string, () => Response>) {
 
 const BASE_ROUTES = {
   "/api/me": () => res(ME),
-  "/api/meta": () => res(META),
-  "/api/stats/solar-window": () => res({ day: "2026-07-27", start: null, end: null, state: "idle" }),
+  "/api/inverter/meta": () => res(META),
+  "/api/inverter/stats/solar-window": () => res({ day: "2026-07-27", start: null, end: null, state: "idle" }),
 };
 
 const OPTS = { baseUrl: "http://pi:3000", token: "inv_x" };
@@ -62,7 +62,7 @@ describe("HttpGateway", () => {
       ...OPTS,
       fetchImpl: fetchMock({
         ...BASE_ROUTES,
-        "/api/stats/solar-window": () => res({ ok: false }, 503),
+        "/api/inverter/stats/solar-window": () => res({ ok: false }, 503),
       }) as unknown as typeof fetch,
     });
     expect(gw.capabilities().statsEnabled).toBe(false);
@@ -73,7 +73,7 @@ describe("HttpGateway", () => {
   it("fetches a snapshot", async () => {
     const gw = await createHttpGateway({
       ...OPTS,
-      fetchImpl: fetchMock({ ...BASE_ROUTES, "/api/snapshot": () => res(SNAPSHOT) }) as unknown as typeof fetch,
+      fetchImpl: fetchMock({ ...BASE_ROUTES, "/api/inverter/snapshot": () => res(SNAPSHOT) }) as unknown as typeof fetch,
     });
     await expect(gw.snapshot()).resolves.toEqual(SNAPSHOT);
     gw.close();
@@ -84,7 +84,7 @@ describe("HttpGateway", () => {
       ...OPTS,
       fetchImpl: fetchMock({
         ...BASE_ROUTES,
-        "/api/control": () => res({ ok: false, error: "Settings are locked (read-only)" }, 400),
+        "/api/inverter/control": () => res({ ok: false, error: "Settings are locked (read-only)" }, 400),
       }) as unknown as typeof fetch,
     });
     await expect(gw.control("chargerSourcePriority", 3)).rejects.toBeInstanceOf(GatewayError);
@@ -95,7 +95,7 @@ describe("HttpGateway", () => {
   it("explains an unreachable service", async () => {
     const failing = jest.fn(async (url: string | URL, _init?: RequestInit) => {
       const path = new URL(String(url)).pathname;
-      if (path === "/api/snapshot") throw new Error("ECONNREFUSED");
+      if (path === "/api/inverter/snapshot") throw new Error("ECONNREFUSED");
       return BASE_ROUTES[path as keyof typeof BASE_ROUTES]();
     });
     const gw = await createHttpGateway({ ...OPTS, fetchImpl: failing as unknown as typeof fetch });
@@ -104,9 +104,9 @@ describe("HttpGateway", () => {
     gw.close();
   });
 
-  it("passes preview through to /api/control", async () => {
+  it("passes preview through to /api/inverter/control", async () => {
     const preview = { register: 331, rawValue: 3, label: "Only PV", currentValue: 1, baselineValue: 1 };
-    const f = fetchMock({ ...BASE_ROUTES, "/api/control": () => res({ ok: true, preview: true, ...preview }) });
+    const f = fetchMock({ ...BASE_ROUTES, "/api/inverter/control": () => res({ ok: true, preview: true, ...preview }) });
     const gw = await createHttpGateway({ ...OPTS, fetchImpl: f as unknown as typeof fetch });
 
     await expect(gw.previewControl("chargerSourcePriority", 3)).resolves.toEqual(preview);
@@ -116,18 +116,18 @@ describe("HttpGateway", () => {
   });
 
   it("builds stats queries with the expected query string", async () => {
-    const f = fetchMock({ ...BASE_ROUTES, "/api/stats/series": () => res([{ t: 1, pvPower: 100 }]) });
+    const f = fetchMock({ ...BASE_ROUTES, "/api/inverter/stats/series": () => res([{ t: 1, pvPower: 100 }]) });
     const gw = await createHttpGateway({ ...OPTS, fetchImpl: f as unknown as typeof fetch });
 
     await gw.stats!.series({ fields: ["pvPower", "batteryPower"], from: 10, to: 20, res: "minute" });
     const url = String(f.mock.calls.at(-1)![0]);
-    expect(url).toContain("/api/stats/series?fields=pvPower%2CbatteryPower&from=10&to=20&res=minute");
+    expect(url).toContain("/api/inverter/stats/series?fields=pvPower%2CbatteryPower&from=10&to=20&res=minute");
     gw.close();
   });
 
   it("caps a huge CSV export and reports the truncation", async () => {
     const huge = "x".repeat(6 * 1024 * 1024);
-    const f = fetchMock({ ...BASE_ROUTES, "/api/stats/export.csv": () => res(null, 200, huge) });
+    const f = fetchMock({ ...BASE_ROUTES, "/api/inverter/stats/export.csv": () => res(null, 200, huge) });
     const gw = await createHttpGateway({ ...OPTS, fetchImpl: f as unknown as typeof fetch });
 
     const r = await gw.stats!.exportCsv({ from: 1, to: 2, res: "minute" });
