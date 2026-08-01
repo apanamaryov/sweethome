@@ -32,7 +32,7 @@ export interface McpMountDeps {
  * Монтирует /mcp на Streamable HTTP. McpServer создаётся на сессию, потому что
  * набор инструментов зависит от прав предъявленного токена.
  */
-export function mountMcp(app: express.Express, deps: McpMountDeps): void {
+export function mountMcp(app: express.Application, deps: McpMountDeps): void {
   const { inverter, cfg, stats } = deps;
   if (!cfg.mcp.enabled) return;
 

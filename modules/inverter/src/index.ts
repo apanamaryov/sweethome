@@ -6,3 +6,5 @@ export { HaMqtt } from "./mqtt";
 export { mountMcp } from "./mcp/http";
 export { loadInverterConfig } from "./config";
 export type { InverterConfig } from "./config";
+export { createInverterModule } from "./module";
+export { createInverterRouter } from "./router";

@@ -5,13 +5,16 @@ import http from "http";
 import request from "supertest";
 import { loadConfig } from "../config";
 import { createServer } from "../server";
+import { ModuleHost } from "../host";
 import { Auth } from "../auth/service";
-import { Inverter, loadInverterConfig } from "@sweethome/inverter";
+import { createInverterModule } from "@sweethome/inverter";
 
 /**
  * /mcp — Streamable HTTP поверх того же гейта авторизации, что и /api. Здесь
  * проверяется именно обвязка: авторизация, сессии, лимит и выключатель; сами
- * инструменты покрыты тестами воркспейса mcp/.
+ * инструменты покрыты тестами воркспейса mcp/. STATS_ENABLED=false воспроизводит
+ * прежний `stats = null`, который раньше передавался в createServer(...) явно —
+ * теперь stats создаётся внутри createInverterModule по конфигу.
  */
 
 const INIT = {
@@ -25,7 +28,6 @@ const ACCEPT = "application/json, text/event-stream";
 
 describe("/mcp endpoint", () => {
   let tmp: string;
-  let inverter: Inverter;
   let server: http.Server;
   let token: string;
 
@@ -40,21 +42,20 @@ describe("/mcp endpoint", () => {
 
   beforeEach(() => {
     process.env.INVERTER_TRANSPORT = "mock";
+    process.env.STATS_ENABLED = "false";
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-http-test-"));
     process.env.DATA_DIR = tmp;
     delete process.env.MCP_ENABLED;
     delete process.env.MCP_MAX_SESSIONS;
 
     const cfg = loadConfig();
-    const invCfg = loadInverterConfig(cfg.dataDir);
-    inverter = new Inverter(invCfg);
-    server = createServer(inverter, cfg, invCfg, null);
+    const host = new ModuleHost([createInverterModule(cfg.dataDir)]);
+    server = createServer(host, cfg);
     token = makeToken(["read", "write"], "mcp");
   });
 
   afterEach(async () => {
     await new Promise<void>((resolve) => (server.listening ? server.close(() => resolve()) : resolve()));
-    inverter.removeAllListeners();
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -143,7 +144,7 @@ describe("/mcp endpoint", () => {
       .set("Mcp-Session-Id", sid)
       .send({ jsonrpc: "2.0", id: 2, method: "tools/list" });
 
-    expect(list.text).not.toContain("get_series"); // createServer(..., stats = null)
+    expect(list.text).not.toContain("get_series"); // STATS_ENABLED=false → createInverterModule builds stats = null
   });
 
   it("answers 404 for an unknown session id", async () => {
@@ -159,44 +160,34 @@ describe("/mcp endpoint", () => {
   it("refuses more sessions than MCP_MAX_SESSIONS", async () => {
     process.env.MCP_MAX_SESSIONS = "1";
     const cfg = loadConfig();
-    const invCfg = loadInverterConfig(cfg.dataDir);
-    const inv = new Inverter(invCfg);
-    const srv = createServer(inv, cfg, invCfg, null);
-    try {
-      const first = await request(srv)
-        .post("/mcp")
-        .set("Authorization", `Bearer ${token}`)
-        .set("Accept", ACCEPT)
-        .send(INIT);
-      expect(first.status).toBe(200);
+    const host = new ModuleHost([createInverterModule(cfg.dataDir)]);
+    const srv = createServer(host, cfg);
+    const first = await request(srv)
+      .post("/mcp")
+      .set("Authorization", `Bearer ${token}`)
+      .set("Accept", ACCEPT)
+      .send(INIT);
+    expect(first.status).toBe(200);
 
-      const second = await request(srv)
-        .post("/mcp")
-        .set("Authorization", `Bearer ${token}`)
-        .set("Accept", ACCEPT)
-        .send(INIT);
-      expect(second.status).toBe(503);
-      expect(second.body.error.message).toContain("MCP_MAX_SESSIONS");
-    } finally {
-      inv.removeAllListeners();
-    }
+    const second = await request(srv)
+      .post("/mcp")
+      .set("Authorization", `Bearer ${token}`)
+      .set("Accept", ACCEPT)
+      .send(INIT);
+    expect(second.status).toBe(503);
+    expect(second.body.error.message).toContain("MCP_MAX_SESSIONS");
   });
 
   it("returns 404 when MCP_ENABLED=false", async () => {
     process.env.MCP_ENABLED = "false";
     const cfg = loadConfig();
-    const invCfg = loadInverterConfig(cfg.dataDir);
-    const inv = new Inverter(invCfg);
-    const srv = createServer(inv, cfg, invCfg, null);
-    try {
-      const res = await request(srv)
-        .post("/mcp")
-        .set("Authorization", `Bearer ${token}`)
-        .set("Accept", ACCEPT)
-        .send(INIT);
-      expect(res.status).toBe(404);
-    } finally {
-      inv.removeAllListeners();
-    }
+    const host = new ModuleHost([createInverterModule(cfg.dataDir)]);
+    const srv = createServer(host, cfg);
+    const res = await request(srv)
+      .post("/mcp")
+      .set("Authorization", `Bearer ${token}`)
+      .set("Accept", ACCEPT)
+      .send(INIT);
+    expect(res.status).toBe(404);
   });
 });

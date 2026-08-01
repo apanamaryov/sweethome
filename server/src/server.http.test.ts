@@ -6,8 +6,9 @@ import request from "supertest";
 import { WebSocket } from "ws";
 import { loadConfig } from "./config";
 import { createServer } from "./server";
+import { ModuleHost } from "./host";
 import { Auth } from "./auth/service";
-import { Inverter, loadInverterConfig } from "@sweethome/inverter";
+import { createInverterModule } from "@sweethome/inverter";
 
 /**
  * Migrated from scripts/selfcheck-auth-http.ts: that script hand-rolls http.request
@@ -19,26 +20,33 @@ import { Inverter, loadInverterConfig } from "@sweethome/inverter";
  *
  * Like service.test.ts, Auth's AuthDb always lives on a real file (constructor does
  * fs.mkdirSync(dataDir) + new AuthDb(...)), so each test gets its own fs.mkdtempSync
- * DATA_DIR. INVERTER_TRANSPORT=mock avoids needing real hardware; the Inverter is
- * never start()-ed (matches selfcheck-auth-http.ts) so there's no poll loop to clean
- * up — getSnapshot() still returns the default Snapshot object synchronously.
+ * DATA_DIR. INVERTER_TRANSPORT=mock avoids needing real hardware; the inverter module
+ * is built but never start()-ed (matches selfcheck-auth-http.ts) so there's no poll
+ * loop to clean up — getSnapshot() still returns the default Snapshot object
+ * synchronously. STATS_ENABLED=false keeps this host-level suite from creating a real
+ * stats.db per test — the inverter-specific /api/inverter/stats/* routes and their
+ * 503-when-disabled behavior are covered by modules/inverter/src/router.test.ts.
+ *
+ * Gates that are now the inverter module's own concern (admin-role and write-scope
+ * checks on control/lock/raw/baseline) moved to router.test.ts along with them; this
+ * file keeps only host-level concerns — login/session/must_change/users/tokens — plus
+ * a couple of smoke cases proving an inverter route sits behind the general /api auth.
  */
 
 describe("server.ts (HTTP integration via supertest)", () => {
   let tmp: string;
-  let inverter: Inverter;
   let server: http.Server;
 
   beforeEach(() => {
     // env must be set before loadConfig() — it reads process.env synchronously.
     process.env.INVERTER_TRANSPORT = "mock";
+    process.env.STATS_ENABLED = "false";
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), "server-http-test-"));
     process.env.DATA_DIR = tmp;
 
     const cfg = loadConfig();
-    const invCfg = loadInverterConfig(cfg.dataDir);
-    inverter = new Inverter(invCfg);
-    server = createServer(inverter, cfg, invCfg, null);
+    const host = new ModuleHost([createInverterModule(cfg.dataDir)]);
+    server = createServer(host, cfg);
   });
 
   afterEach(async () => {
@@ -46,7 +54,6 @@ describe("server.ts (HTTP integration via supertest)", () => {
       if (server.listening) server.close(() => resolve());
       else resolve();
     });
-    inverter.removeAllListeners();
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -74,14 +81,8 @@ describe("server.ts (HTTP integration via supertest)", () => {
   }
 
   describe("no session", () => {
-    it("GET /api/meta -> 401 Unauthorized", async () => {
-      const res = await request(server).get("/api/meta");
-      expect(res.status).toBe(401);
-      expect(res.body).toEqual({ ok: false, error: "Unauthorized" });
-    });
-
-    it("GET /api/snapshot -> 401 Unauthorized", async () => {
-      const res = await request(server).get("/api/snapshot");
+    it("GET /api/inverter/snapshot -> 401 Unauthorized (inverter route behind the general /api auth)", async () => {
+      const res = await request(server).get("/api/inverter/snapshot");
       expect(res.status).toBe(401);
       expect(res.body).toEqual({ ok: false, error: "Unauthorized" });
     });
@@ -114,41 +115,36 @@ describe("server.ts (HTTP integration via supertest)", () => {
       expect(res.headers["set-cookie"]).toBeUndefined();
     });
 
-    it("grants admin routes access once the password has been changed", async () => {
+    it("grants admin routes access once the password has been changed (200 on /api/inverter/snapshot)", async () => {
       const cookie = await freshSessionCookie("admin", "admin", "admin123");
 
       const users = await request(server).get("/api/users").set("Cookie", cookie);
       expect(users.status).toBe(200);
       expect(Array.isArray(users.body)).toBe(true);
 
-      const snapshot = await request(server).get("/api/snapshot").set("Cookie", cookie);
+      const snapshot = await request(server).get("/api/inverter/snapshot").set("Cookie", cookie);
       expect(snapshot.status).toBe(200);
     });
   });
 
-  describe("GET /api/stats/solar-window", () => {
-    it("без сессии → 401", async () => {
-      const res = await request(server).get("/api/stats/solar-window");
-      expect(res.status).toBe(401);
-    });
-
-    it("с сессией, но статистика выключена (stats=null) → 503", async () => {
-      const cookie = await freshSessionCookie("admin", "admin", "admin123");
-      const res = await request(server).get("/api/stats/solar-window").set("Cookie", cookie);
-      expect(res.status).toBe(503);
+  describe("GET /api/health", () => {
+    it("aggregates module health under host.health(), always 200", async () => {
+      const res = await request(server).get("/api/health");
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ ok: true, modules: { inverter: expect.objectContaining({ ok: true }) } });
     });
   });
 
   describe("must_change_password gate", () => {
-    it("blocks /api/snapshot and /api/control but allows me/change-password/logout", async () => {
+    it("blocks /api/inverter/snapshot and /api/inverter/control but allows me/change-password/logout", async () => {
       const cookie = await loginAs("admin", "admin");
 
-      let res = await request(server).get("/api/snapshot").set("Cookie", cookie);
+      let res = await request(server).get("/api/inverter/snapshot").set("Cookie", cookie);
       expect(res.status).toBe(403);
       expect(res.body).toEqual({ ok: false, code: "must_change_password", error: "Password change required" });
 
       res = await request(server)
-        .post("/api/control")
+        .post("/api/inverter/control")
         .set("Cookie", cookie)
         .send({ type: "outputSourcePriority", value: 0 });
       expect(res.status).toBe(403);
@@ -172,7 +168,7 @@ describe("server.ts (HTTP integration via supertest)", () => {
       expect(res.body).toEqual({ ok: true });
 
       // Gate lifts once the password is actually changed.
-      res = await request(server).get("/api/snapshot").set("Cookie", cookie);
+      res = await request(server).get("/api/inverter/snapshot").set("Cookie", cookie);
       expect(res.status).toBe(200);
       res = await request(server).get("/api/me").set("Cookie", cookie);
       expect(res.body.mustChangePassword).toBe(false);
@@ -203,24 +199,14 @@ describe("server.ts (HTTP integration via supertest)", () => {
   });
 
   describe("viewer login (seeded user/user)", () => {
-    it("gets 403 on admin-only API routes", async () => {
+    it("gets 403 on /api/users (admin-only, host-level gate)", async () => {
       const cookie = await freshSessionCookie("user", "user", "viewer1");
 
-      let res = await request(server)
-        .post("/api/control")
-        .set("Cookie", cookie)
-        .send({ type: "outputSourcePriority", value: 0 });
-      expect(res.status).toBe(403);
-      expect(res.body).toEqual({ ok: false, code: "forbidden", error: "Admins only" });
-
-      res = await request(server).get("/api/users").set("Cookie", cookie);
-      expect(res.status).toBe(403);
-
-      res = await request(server).post("/api/lock").set("Cookie", cookie).send({ locked: true });
+      const res = await request(server).get("/api/users").set("Cookie", cookie);
       expect(res.status).toBe(403);
     });
 
-    it("gets 200 on / and /stats pages, and can read /api/snapshot", async () => {
+    it("gets 200 on / and /stats pages, and can read /api/inverter/snapshot", async () => {
       const cookie = await freshSessionCookie("user", "user", "viewer1");
 
       let res = await request(server).get("/").set("Cookie", cookie);
@@ -229,7 +215,7 @@ describe("server.ts (HTTP integration via supertest)", () => {
       res = await request(server).get("/stats").set("Cookie", cookie);
       expect(res.status).toBe(200);
 
-      res = await request(server).get("/api/snapshot").set("Cookie", cookie);
+      res = await request(server).get("/api/inverter/snapshot").set("Cookie", cookie);
       expect(res.status).toBe(200);
     });
 
@@ -280,7 +266,7 @@ describe("server.ts (HTTP integration via supertest)", () => {
     });
   });
 
-  describe("WebSocket /ws", () => {
+  describe("WebSocket /ws/inverter", () => {
     async function listen(): Promise<number> {
       await new Promise<void>((resolve, reject) => {
         server.once("error", reject);
@@ -310,13 +296,13 @@ describe("server.ts (HTTP integration via supertest)", () => {
       const port = await listen();
       const cookie = await freshSessionCookie("admin", "admin", "admin123");
 
-      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers: { Cookie: cookie } });
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/inverter`, { headers: { Cookie: cookie } });
       const raw = await waitForEvent<Buffer>(ws, "message");
       const msg = JSON.parse(raw.toString());
 
       expect(msg.type).toBe("snapshot");
       expect(msg.data).toBeDefined();
-      expect(msg.data.mode).toBe("Unknown"); // default Snapshot — Inverter was never start()-ed
+      expect(msg.data.mode).toBe("Unknown"); // default Snapshot — the inverter module was never start()-ed
 
       await closeClient(ws);
     });
@@ -324,7 +310,7 @@ describe("server.ts (HTTP integration via supertest)", () => {
     it("closes the connection with code 4401 when there is no valid session", async () => {
       const port = await listen();
 
-      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/inverter`);
       const code = await waitForEvent<number>(ws, "close");
 
       expect(code).toBe(4401);
@@ -335,7 +321,7 @@ describe("server.ts (HTTP integration via supertest)", () => {
       const port = await listen();
       const cookie = await loginAs("admin", "admin"); // fresh seed, must_change_password still true
 
-      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers: { Cookie: cookie } });
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/inverter`, { headers: { Cookie: cookie } });
       const code = await waitForEvent<number>(ws, "close");
 
       expect(code).toBe(4401);
@@ -346,7 +332,7 @@ describe("server.ts (HTTP integration via supertest)", () => {
       const port = await listen();
       const token = issue(["read"]);
 
-      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/inverter`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const raw = await waitForEvent<Buffer>(ws, "message");
@@ -358,7 +344,7 @@ describe("server.ts (HTTP integration via supertest)", () => {
     it("closes with 4401 for a bogus Bearer token", async () => {
       const port = await listen();
 
-      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/inverter`, {
         headers: { Authorization: "Bearer inv_nope" },
       });
       const code = await waitForEvent<number>(ws, "close");
@@ -384,7 +370,7 @@ describe("server.ts (HTTP integration via supertest)", () => {
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({ username: "admin", role: "admin", auth: "token", scopes: ["read"] });
 
-      const snap = await request(server).get("/api/snapshot").set("Authorization", `Bearer ${token}`);
+      const snap = await request(server).get("/api/inverter/snapshot").set("Authorization", `Bearer ${token}`);
       expect(snap.status).toBe(200);
     });
 
@@ -395,50 +381,9 @@ describe("server.ts (HTTP integration via supertest)", () => {
     });
 
     it("rejects a missing or bogus token with 401", async () => {
-      expect((await request(server).get("/api/snapshot")).status).toBe(401);
-      const res = await request(server).get("/api/snapshot").set("Authorization", "Bearer inv_nope");
+      expect((await request(server).get("/api/inverter/snapshot")).status).toBe(401);
+      const res = await request(server).get("/api/inverter/snapshot").set("Authorization", "Bearer inv_nope");
       expect(res.status).toBe(401);
-    });
-
-    it("refuses writes for a read-only token but allows preview", async () => {
-      const token = issue(["read"]);
-
-      const lock = await request(server)
-        .post("/api/lock")
-        .set("Authorization", `Bearer ${token}`)
-        .send({ locked: false });
-      expect(lock.status).toBe(403);
-      expect(lock.body.code).toBe("scope_required");
-
-      const write = await request(server)
-        .post("/api/control")
-        .set("Authorization", `Bearer ${token}`)
-        .send({ type: "chargerSourcePriority", value: 3 });
-      expect(write.status).toBe(403);
-
-      const preview = await request(server)
-        .post("/api/control")
-        .set("Authorization", `Bearer ${token}`)
-        .send({ type: "chargerSourcePriority", value: 3, preview: true });
-      expect(preview.status).toBe(200);
-      expect(preview.body).toMatchObject({ ok: true, preview: true, register: 331 });
-
-      const rawWrite = await request(server)
-        .post("/api/raw")
-        .set("Authorization", `Bearer ${token}`)
-        .send({ command: "W 331 3" });
-      expect(rawWrite.status).toBe(403);
-      expect(rawWrite.body.code).toBe("scope_required");
-    });
-
-    it("allows writes for a write-scoped token once unlocked", async () => {
-      const token = issue(["read", "write"]);
-      const unlock = await request(server)
-        .post("/api/lock")
-        .set("Authorization", `Bearer ${token}`)
-        .send({ locked: false });
-      expect(unlock.status).toBe(200);
-      expect(unlock.body.locked).toBe(false);
     });
 
     it("never lets a token reach user or token management", async () => {
@@ -478,7 +423,7 @@ describe("server.ts (HTTP integration via supertest)", () => {
 
       // отозванный токен больше не работает
       const after = await request(server)
-        .get("/api/snapshot")
+        .get("/api/inverter/snapshot")
         .set("Authorization", `Bearer ${created.body.token}`);
       expect(after.status).toBe(401);
     });
