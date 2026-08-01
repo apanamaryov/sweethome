@@ -126,7 +126,9 @@ export function InverterFlow({ snapshot, pvPeakW }: { snapshot: Snapshot; pvPeak
 
   const loadAlarm = f.overload || f.fault;
   const battActive = f.batteryDischarging || f.batteryCharging;
-  const battPath = f.batteryDischarging ? "M66 178 L140 136" : "M140 136 L66 178";
+  // Лучи укорочены с обеих сторон (~9 ед. вдоль направления): зазор и от
+  // дисков узлов (r19), и от корпуса инвертора — линии не касаются иконок.
+  const battPath = f.batteryDischarging ? "M74 173.5 L132 140.5" : "M132 140.5 L74 173.5";
   const line = (active: boolean, boost = false) =>
     active ? `flow-line${boost ? " boost" : ""}` : "flow-line-idle";
 
@@ -149,13 +151,13 @@ export function InverterFlow({ snapshot, pvPeakW }: { snapshot: Snapshot; pvPeak
         data-branch="sun"
         data-active={f.sunActive ? "1" : "0"}
         className={`${line(f.sunActive, true)} flow-sun`}
-        d="M66 62 L140 104"
+        d="M74 66.5 L132 99.5"
       />
       <path
         data-branch="grid"
         data-active={f.gridActive ? "1" : "0"}
         className={`${line(f.gridActive, true)} flow-grid`}
-        d="M254 62 L180 104"
+        d="M246 66.5 L188 99.5"
       />
       <path
         data-branch="battery"
@@ -168,7 +170,7 @@ export function InverterFlow({ snapshot, pvPeakW }: { snapshot: Snapshot; pvPeak
         data-branch="load"
         data-active={!f.fault && loadW > 0 ? "1" : "0"}
         className={`${line(!f.fault && loadW > 0)} ${loadAlarm ? "flow-brick" : "flow-slate"}`}
-        d="M180 136 L254 178"
+        d="M188 140.5 L246 173.5"
       />
 
       {/* инвертор в центре */}
