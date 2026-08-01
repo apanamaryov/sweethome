@@ -16,7 +16,7 @@ export function MetaProvider({ children }: { children: ReactNode }) {
     // (перенос поведения trySetupControls из старого app.js).
     const load = async () => {
       try {
-        const res = await fetch("/api/meta");
+        const res = await fetch("/api/inverter/meta");
         if (res.status === 401) return redirectToLogin();
         if (!res.ok) throw new Error(String(res.status));
         const m = (await res.json()) as ApiMeta;

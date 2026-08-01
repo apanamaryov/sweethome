@@ -42,8 +42,8 @@ export async function getJson<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-export function wsUrl(): string {
-  if (process.env.NODE_ENV === "development") return "ws://localhost:3000/ws";
+export function wsUrl(module: string): string {
+  if (process.env.NODE_ENV === "development") return `ws://localhost:3000/ws/${module}`;
   const proto = window.location.protocol === "https:" ? "wss" : "ws";
-  return `${proto}://${window.location.host}/ws`;
+  return `${proto}://${window.location.host}/ws/${module}`;
 }

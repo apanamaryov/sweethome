@@ -213,25 +213,53 @@ describe("server.ts (HTTP integration via supertest)", () => {
       expect(res.status).toBe(403);
     });
 
-    it("gets 200 on / and /stats pages, and can read /api/inverter/snapshot", async () => {
+    it("gets 200 on / and /inverter/stats pages, and can read /api/inverter/snapshot", async () => {
       const cookie = await freshSessionCookie("user", "user", "viewer1");
 
       let res = await request(server).get("/").set("Cookie", cookie);
       expect(res.status).toBe(200);
 
-      res = await request(server).get("/stats").set("Cookie", cookie);
+      res = await request(server).get("/inverter/stats").set("Cookie", cookie);
       expect(res.status).toBe(200);
 
       res = await request(server).get("/api/inverter/snapshot").set("Cookie", cookie);
       expect(res.status).toBe(200);
     });
 
-    it("redirects away from admin-only pages (e.g. /settings) to /", async () => {
+    it("redirects away from admin-only pages (e.g. /inverter/settings) to /", async () => {
       const cookie = await freshSessionCookie("user", "user", "viewer1");
 
-      const res = await request(server).get("/settings").set("Cookie", cookie);
+      const res = await request(server).get("/inverter/settings").set("Cookie", cookie);
       expect(res.status).toBe(302);
       expect(res.headers.location).toBe("/");
+    });
+  });
+
+  describe("legacy page redirects (moved under /inverter)", () => {
+    it("redirects legacy page urls to the inverter section", async () => {
+      for (const [from, to] of [
+        ["/stats", "/inverter/stats"],
+        ["/settings", "/inverter/settings"],
+        ["/diagnostics", "/inverter/diagnostics"],
+      ] as const) {
+        const res = await request(server).get(from);
+        expect(res.status).toBe(301);
+        expect(res.headers.location).toBe(to);
+      }
+    });
+  });
+
+  describe("GET /inverter (a page with nested child routes)", () => {
+    it("serves the page itself with 200, not a broken directory redirect", async () => {
+      // Next's static export puts both inverter.html and an inverter/ directory
+      // (holding stats.html/settings.html/diagnostics.html) side by side on disk;
+      // express.static's own directory-redirect would otherwise shadow the flat
+      // file and send the browser into a "/inverter/" 404 dead end.
+      const cookie = await freshSessionCookie("admin", "admin", "admin123");
+
+      const res = await request(server).get("/inverter").set("Cookie", cookie);
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toMatch(/html/);
     });
   });
 

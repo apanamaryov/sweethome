@@ -30,7 +30,7 @@ export function SnapshotProvider({ children }: { children: ReactNode }) {
     };
 
     // Первый снапшот — по HTTP, чтобы не ждать первого пуша.
-    fetch("/api/snapshot")
+    fetch("/api/inverter/snapshot")
       .then(async (r) => {
         if (r.status === 401) return redirectToLogin();
         if (r.ok) gotSnapshot(await r.json());
@@ -39,7 +39,7 @@ export function SnapshotProvider({ children }: { children: ReactNode }) {
 
     const connect = () => {
       if (closed) return;
-      ws = new WebSocket(wsUrl());
+      ws = new WebSocket(wsUrl("inverter"));
       ws.onopen = () => {
         reconnectDelay = 1000;
       };

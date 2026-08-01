@@ -36,19 +36,19 @@ describe("wsUrl", () => {
   it("returns the fixed dev URL when NODE_ENV=development, ignoring window.location", () => {
     setNodeEnv("development");
     setLocation({ protocol: "https:", host: "example.com" });
-    expect(wsUrl()).toBe("ws://localhost:3000/ws");
+    expect(wsUrl("inverter")).toBe("ws://localhost:3000/ws/inverter");
   });
 
   it("derives ws:// from window.location when not in development and page is http", () => {
     setNodeEnv("production");
     setLocation({ protocol: "http:", host: "192.168.1.112:3000" });
-    expect(wsUrl()).toBe("ws://192.168.1.112:3000/ws");
+    expect(wsUrl("inverter")).toBe("ws://192.168.1.112:3000/ws/inverter");
   });
 
   it("derives wss:// from window.location when the page is https", () => {
     setNodeEnv("production");
     setLocation({ protocol: "https:", host: "inverter.example.com" });
-    expect(wsUrl()).toBe("wss://inverter.example.com/ws");
+    expect(wsUrl("inverter")).toBe("wss://inverter.example.com/ws/inverter");
   });
 });
 

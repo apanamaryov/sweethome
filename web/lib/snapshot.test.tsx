@@ -91,7 +91,7 @@ beforeEach(() => {
   FakeWebSocket.instances = [];
   (global as unknown as { WebSocket: unknown }).WebSocket = FakeWebSocket;
   setLocation({});
-  // Начальный HTTP GET /api/snapshot по умолчанию молча падает (см. .catch(() => {}) в
+  // Начальный HTTP GET /api/inverter/snapshot по умолчанию молча падает (см. .catch(() => {}) в
   // snapshot.tsx), чтобы тесты сами контролировали, откуда придёт первый снапшот (HTTP или WS).
   global.fetch = jest.fn().mockRejectedValue(new Error("no initial http snapshot"));
 });
@@ -112,10 +112,10 @@ describe("SnapshotProvider", () => {
     await act(async () => flushMicrotasks());
 
     expect(FakeWebSocket.instances).toHaveLength(1);
-    expect(FakeWebSocket.instances[0].url).toMatch(/\/ws$/);
+    expect(FakeWebSocket.instances[0].url).toMatch(/\/ws\/inverter$/);
   });
 
-  it("loads the first snapshot via HTTP GET /api/snapshot on mount", async () => {
+  it("loads the first snapshot via HTTP GET /api/inverter/snapshot on mount", async () => {
     (global.fetch as jest.Mock).mockResolvedValue({
       status: 200,
       ok: true,

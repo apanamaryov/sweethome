@@ -68,7 +68,7 @@ describe("SettingsPage — settings table & baseline", () => {
     expect(off).toHaveClass("flag-chip", "off");
   });
 
-  it("recapture button POSTs /api/baseline/recapture and toasts on success", async () => {
+  it("recapture button POSTs /api/inverter/baseline/recapture and toasts on success", async () => {
     global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
     const user = userEvent.setup();
     await renderWithProviders(<SettingsPage />, { snapshot: buildSnapshot() });
@@ -77,7 +77,7 @@ describe("SettingsPage — settings table & baseline", () => {
 
     expect(await screen.findByText(t.toastBaselineOk)).toBeInTheDocument();
     expect(global.fetch).toHaveBeenCalledWith(
-      "/api/baseline/recapture",
+      "/api/inverter/baseline/recapture",
       expect.objectContaining({ method: "POST" })
     );
   });
@@ -117,7 +117,7 @@ describe("SettingsPage — control panel (lock bar)", () => {
     expect(screen.getByRole("button", { name: t.osp[0] })).toBeEnabled();
   });
 
-  it("toggling the lock POSTs /api/lock and toasts the new state", async () => {
+  it("toggling the lock POSTs /api/inverter/lock and toasts the new state", async () => {
     global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true, locked: true }) });
     const user = userEvent.setup();
     await renderWithProviders(<SettingsPage />, {
@@ -127,7 +127,7 @@ describe("SettingsPage — control panel (lock bar)", () => {
     await user.click(screen.getByRole("button", { name: t.btnLock }));
 
     expect(await screen.findByText(t.toastLocked)).toBeInTheDocument();
-    expect(global.fetch).toHaveBeenCalledWith("/api/lock", expect.objectContaining({ method: "POST" }));
+    expect(global.fetch).toHaveBeenCalledWith("/api/inverter/lock", expect.objectContaining({ method: "POST" }));
   });
 
   it("picking a new output-source-priority opens a confirm dialog, and confirming applies it", async () => {
@@ -144,7 +144,7 @@ describe("SettingsPage — control panel (lock bar)", () => {
 
     expect(await screen.findByText(t.toastDone + "W 301 1 → ACK")).toBeInTheDocument();
     expect(global.fetch).toHaveBeenCalledWith(
-      "/api/control",
+      "/api/inverter/control",
       expect.objectContaining({ body: JSON.stringify({ type: "outputSourcePriority", value: 1 }) })
     );
   });
@@ -160,7 +160,7 @@ describe("SettingsPage — control panel (lock bar)", () => {
     await user.click(screen.getByRole("button", { name: t.modalCancel }));
 
     expect(screen.queryByText(t.modalConfirm.replace("{label}", t.osp[1]))).not.toBeInTheDocument();
-    expect(global.fetch).not.toHaveBeenCalledWith("/api/control", expect.anything());
+    expect(global.fetch).not.toHaveBeenCalledWith("/api/inverter/control", expect.anything());
   });
 
   it("a rejected control write toasts the rejection reason", async () => {

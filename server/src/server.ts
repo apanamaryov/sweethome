@@ -18,12 +18,20 @@ export function createServer(host: ModuleHost, cfg: Config): http.Server {
   const auth = new Auth(cfg.dataDir, cfg.auth.sessionTtlDays);
   const reqToken = (req: express.Request) => tokenFromCookieHeader(req.headers.cookie);
 
+  // Совместимость закладок: страницы инвертора переехали под /inverter.
+  const LEGACY_PAGES: Record<string, string> = {
+    "/stats": "/inverter/stats",
+    "/settings": "/inverter/settings",
+    "/diagnostics": "/inverter/diagnostics",
+  };
+  app.get(Object.keys(LEGACY_PAGES), (req, res) => res.redirect(301, LEGACY_PAGES[req.path]));
+
   // Страничные редиректы: без сессии → /login; must_change → /change-password;
   // admin-страницы для viewer → /. Статика (css/js/страницы) отдаётся свободно —
   // данные защищены на уровне /api.
-  const ADMIN_PAGES = new Set(["/settings", "/diagnostics", "/users"]);
+  const ADMIN_PAGES = new Set(["/inverter/settings", "/inverter/diagnostics", "/users"]);
   app.get(
-    ["/", "/index.html", "/settings", "/diagnostics", "/stats", "/users", "/change-password"],
+    ["/", "/index.html", "/inverter", "/inverter/stats", "/inverter/settings", "/inverter/diagnostics", "/users", "/change-password"],
     (req, res, next) => {
       const u = auth.verify(reqToken(req));
       if (!u) return res.redirect("/login");
@@ -37,6 +45,16 @@ export function createServer(host: ModuleHost, cfg: Config): http.Server {
 
   // Статика Next.js (web/out); extensions отдаёт /settings как settings.html.
   const publicDir = path.join(__dirname, "..", "..", "web", "out");
+
+  // /inverter одновременно и страница (inverter.html), и родитель вложенных
+  // маршрутов (inverter/stats.html и т.п.) — статический экспорт Next кладёт
+  // и файл inverter.html, и каталог inverter/ рядом. express.static, наткнувшись
+  // на путь, который на диске оказывается каталогом, сам 301-редиректит на
+  // "/inverter/" ещё до того, как пробует расширение из `extensions` — и тот
+  // редирект ведёт в никуда (внутри inverter/ нет index.html). Отдаём файл
+  // явно, до общего static-миддлвара.
+  app.get("/inverter", (_req, res) => res.sendFile(path.join(publicDir, "inverter.html")));
+
   app.use(express.static(publicDir, { extensions: ["html"] }));
 
   app.post("/api/login", (req, res) => {

@@ -214,9 +214,9 @@ export default function StatsPage() {
         </span>
         <strong className="stats-period">{periodLabel}</strong>
         <span className="stats-export">
-          <a href={`/api/stats/export.csv?${exportQs}&res=raw`} download>{t.stExportRaw}</a>
+          <a href={`/api/inverter/stats/export.csv?${exportQs}&res=raw`} download>{t.stExportRaw}</a>
           {" · "}
-          <a href={`/api/stats/export.csv?${exportQs}&res=minute`} download>{t.stExportMinute}</a>
+          <a href={`/api/inverter/stats/export.csv?${exportQs}&res=minute`} download>{t.stExportMinute}</a>
         </span>
       </div>
 

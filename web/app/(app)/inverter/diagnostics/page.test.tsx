@@ -37,7 +37,7 @@ describe("DiagnosticsPage", () => {
 
     expect(await screen.findByText("01 03 02 00 03")).toBeInTheDocument();
     expect(global.fetch).toHaveBeenCalledWith(
-      "/api/raw",
+      "/api/inverter/raw",
       expect.objectContaining({ body: JSON.stringify({ command: "R 201 1" }) })
     );
   });

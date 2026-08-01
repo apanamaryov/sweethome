@@ -90,7 +90,7 @@ function SettingsTable() {
 
   const recapture = async () => {
     try {
-      const data = await (await postJson("/api/baseline/recapture", {})).json();
+      const data = await (await postJson("/api/inverter/baseline/recapture", {})).json();
       if (data.ok) toast(t.toastBaselineOk, "ok");
       else toast(data.error || t.toastError, "bad");
     } catch (e) {
@@ -187,7 +187,7 @@ function ControlPanel() {
     setPending(null);
     if (!a) return;
     try {
-      const data = await (await postJson("/api/control", { type: a.type, value: a.value })).json();
+      const data = await (await postJson("/api/inverter/control", { type: a.type, value: a.value })).json();
       if (data.ok) toast(t.toastDone + data.command + " → ACK", "ok");
       else toast(t.toastRejected + (data.error || data.reply || "NAK"), "bad");
     } catch (e) {
@@ -198,7 +198,7 @@ function ControlPanel() {
   const toggleLock = async () => {
     const currentlyLocked = control?.locked !== false;
     try {
-      const data = await (await postJson("/api/lock", { locked: !currentlyLocked })).json();
+      const data = await (await postJson("/api/inverter/lock", { locked: !currentlyLocked })).json();
       if (data.ok) toast(data.locked ? t.toastLocked : t.toastUnlocked, data.locked ? "ok" : "");
       else toast(data.error || t.toastError, "bad");
     } catch (e) {

@@ -37,7 +37,7 @@ describe("SolarWindowPanel — single day", () => {
     await render({ kind: "day", day: "2026-07-24", daily: [] }, fetchMock);
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    expect(String(fetchMock.mock.calls[0][0])).toContain("/api/stats/solar-window?day=2026-07-24");
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/api/inverter/stats/solar-window?day=2026-07-24");
   });
 
   it("renders start, end and the length for a closed day", async () => {

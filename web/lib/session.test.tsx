@@ -1,26 +1,22 @@
 import { render, screen, act } from "@testing-library/react";
-import type { ApiMeta } from "@sweethome/inverter-shared";
-import { MetaProvider, useMeta } from "./meta";
+import type { SessionUser } from "@sweethome/inverter-shared";
+import { SessionProvider, useSession } from "./session";
 
 function TestConsumer() {
-  const meta = useMeta();
+  const session = useSession();
   return (
     <div>
-      <span data-testid="role">{meta ? meta.session.role : "loading"}</span>
-      <span data-testid="username">{meta ? meta.session.username : ""}</span>
-      <span data-testid="allow">{meta ? String(meta.allowControl) : ""}</span>
+      <span data-testid="role">{session ? session.role : "loading"}</span>
+      <span data-testid="username">{session ? session.username : ""}</span>
     </div>
   );
 }
 
-function makeMeta(overrides: Partial<ApiMeta> = {}): ApiMeta {
+function makeSession(overrides: Partial<SessionUser> = {}): SessionUser {
   return {
-    session: { username: "admin", role: "admin", mustChangePassword: false },
-    allowControl: true,
-    outputSourcePriority: { 0: "Utility → PV → Battery (UTI)" },
-    chargerSourcePriority: { 0: "Utility first" },
-    maxChargingCurrent: [10, 20, 30],
-    maxAcChargingCurrent: [10, 20, 30],
+    username: "admin",
+    role: "admin",
+    mustChangePassword: false,
     ...overrides,
   };
 }
@@ -60,38 +56,37 @@ afterEach(() => {
   restoreLocation();
 });
 
-describe("MetaProvider", () => {
-  it("exposes the loaded ApiMeta (including session/role) after a successful fetch", async () => {
+describe("SessionProvider", () => {
+  it("exposes the loaded session (username/role/mustChangePassword) after a successful fetch", async () => {
     global.fetch = jest.fn().mockResolvedValue({
       status: 200,
       ok: true,
-      json: async () => makeMeta({ session: { username: "bob", role: "viewer", mustChangePassword: false } }),
+      json: async () => makeSession({ username: "bob", role: "viewer" }),
     });
 
     render(
-      <MetaProvider>
+      <SessionProvider>
         <TestConsumer />
-      </MetaProvider>
+      </SessionProvider>
     );
     await act(async () => flushMicrotasks());
 
-    expect(global.fetch).toHaveBeenCalledWith("/api/inverter/meta");
+    expect(global.fetch).toHaveBeenCalledWith("/api/me");
     expect(screen.getByTestId("role")).toHaveTextContent("viewer");
     expect(screen.getByTestId("username")).toHaveTextContent("bob");
-    expect(screen.getByTestId("allow")).toHaveTextContent("true");
   });
 
-  it("retries 5s after a failed fetch (network error), then exposes meta on the successful retry", async () => {
+  it("retries 5s after a failed fetch (network error), then exposes the session on the successful retry", async () => {
     const fetchMock = jest
       .fn()
       .mockRejectedValueOnce(new Error("network down"))
-      .mockResolvedValueOnce({ status: 200, ok: true, json: async () => makeMeta() });
+      .mockResolvedValueOnce({ status: 200, ok: true, json: async () => makeSession() });
     global.fetch = fetchMock;
 
     render(
-      <MetaProvider>
+      <SessionProvider>
         <TestConsumer />
-      </MetaProvider>
+      </SessionProvider>
     );
     await act(async () => flushMicrotasks());
 
@@ -116,13 +111,13 @@ describe("MetaProvider", () => {
       .fn()
       .mockRejectedValueOnce(new Error("e1"))
       .mockRejectedValueOnce(new Error("e2"))
-      .mockResolvedValueOnce({ status: 200, ok: true, json: async () => makeMeta() });
+      .mockResolvedValueOnce({ status: 200, ok: true, json: async () => makeSession() });
     global.fetch = fetchMock;
 
     render(
-      <MetaProvider>
+      <SessionProvider>
         <TestConsumer />
-      </MetaProvider>
+      </SessionProvider>
     );
     await act(async () => flushMicrotasks());
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -144,13 +139,13 @@ describe("MetaProvider", () => {
     const fetchMock = jest
       .fn()
       .mockResolvedValueOnce({ status: 500, ok: false })
-      .mockResolvedValueOnce({ status: 200, ok: true, json: async () => makeMeta() });
+      .mockResolvedValueOnce({ status: 200, ok: true, json: async () => makeSession() });
     global.fetch = fetchMock;
 
     render(
-      <MetaProvider>
+      <SessionProvider>
         <TestConsumer />
-      </MetaProvider>
+      </SessionProvider>
     );
     await act(async () => flushMicrotasks());
     expect(screen.getByTestId("role")).toHaveTextContent("loading");
@@ -162,38 +157,42 @@ describe("MetaProvider", () => {
     expect(screen.getByTestId("role")).toHaveTextContent("admin");
   });
 
-  it("redirects to /login on 401 and never sets meta", async () => {
-    global.fetch = jest.fn().mockResolvedValue({ status: 401, ok: false });
+  it("redirects to /login on 401 and never sets the session, without scheduling a retry", async () => {
+    const fetchMock = jest.fn().mockResolvedValue({ status: 401, ok: false });
+    global.fetch = fetchMock;
 
     render(
-      <MetaProvider>
+      <SessionProvider>
         <TestConsumer />
-      </MetaProvider>
+      </SessionProvider>
     );
     await act(async () => flushMicrotasks());
 
     expect(window.location.href).toBe("/login");
     expect(screen.getByTestId("role")).toHaveTextContent("loading");
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(10000);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1); // без ретрая — редирект уже произошёл
   });
 
   it("does not apply a late successful fetch after the provider has unmounted (cancelled guard)", async () => {
     const fetchMock = jest.fn().mockImplementation(
       () =>
         new Promise((resolve) =>
-          setTimeout(() => resolve({ status: 200, ok: true, json: async () => makeMeta() }), 100)
+          setTimeout(() => resolve({ status: 200, ok: true, json: async () => makeSession() }), 100)
         )
     );
     global.fetch = fetchMock;
 
     const { unmount } = render(
-      <MetaProvider>
+      <SessionProvider>
         <TestConsumer />
-      </MetaProvider>
+      </SessionProvider>
     );
     unmount();
 
-    // Резолвfetch происходит уже после unmount; ошибок/предупреждений о setState на
-    // размонтированном компоненте быть не должно (иначе тест упадёт/выведет warning в консоль).
     await act(async () => {
       await jest.advanceTimersByTimeAsync(200);
     });

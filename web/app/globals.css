@@ -168,6 +168,36 @@ body.stale .topbar { opacity: 0.45; filter: contrast(0.75); transition: opacity 
    Никаких grid-auto-rows: 1fr — иначе все ряды растягиваются до самой высокой
    карточки (батарея с кольцом) и получаются огромные пустоты. */
 .grid { display: grid; grid-template-columns: 1fr; gap: 12px; padding: 0 16px 16px; }
+
+/* ---------- обзор дома (/): карточка инвертора внутри Panel ---------- */
+.home-grid { grid-template-columns: 1fr; max-width: 480px; margin: 0 auto; }
+.home-card { display: flex; flex-direction: column; gap: 10px; }
+.home-card-rows { display: flex; flex-direction: column; gap: 8px; margin-top: 2px; }
+.home-card-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--hairline);
+}
+.home-card-row > span:nth-child(2) {
+  font-family: var(--mono);
+  font-size: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  margin-right: 4px;
+}
+.home-card-link {
+  align-self: flex-start;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant: small-caps;
+  letter-spacing: 0.1em;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .card {
   background: var(--card);
   border: 1.5px solid var(--ink);

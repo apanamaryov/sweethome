@@ -84,13 +84,13 @@ function mockStatsFetch(overrides: {
 }) {
   global.fetch = jest.fn((input: RequestInfo | URL) => {
     const url = String(input);
-    if (url.includes("/api/stats/series")) {
+    if (url.includes("/api/inverter/stats/series")) {
       return overrides.rows instanceof Error ? Promise.reject(overrides.rows) : jsonOk(overrides.rows ?? []);
     }
-    if (url.includes("/api/stats/daily")) return jsonOk(overrides.daily ?? []);
-    if (url.includes("/api/stats/energy")) return jsonOk(overrides.energy ?? []);
-    if (url.includes("/api/stats/events")) return jsonOk(overrides.events ?? []);
-    if (url.includes("/api/stats/solar-window")) {
+    if (url.includes("/api/inverter/stats/daily")) return jsonOk(overrides.daily ?? []);
+    if (url.includes("/api/inverter/stats/energy")) return jsonOk(overrides.energy ?? []);
+    if (url.includes("/api/inverter/stats/events")) return jsonOk(overrides.events ?? []);
+    if (url.includes("/api/inverter/stats/solar-window")) {
       return jsonOk(overrides.solarWindow ?? { day: "2026-07-25", start: null, end: null, state: "idle" });
     }
     return Promise.reject(new Error(`unexpected fetch: ${url}`));
@@ -144,7 +144,7 @@ describe("StatsPage", () => {
 
     const asked = (global.fetch as jest.Mock).mock.calls
       .map((c) => String(c[0]))
-      .filter((u) => u.includes("/api/stats/solar-window"));
+      .filter((u) => u.includes("/api/inverter/stats/solar-window"));
     expect(asked).toHaveLength(1);
     expect(asked[0]).toMatch(/day=\d{4}-\d{2}-\d{2}/);
   });
@@ -208,7 +208,7 @@ describe("StatsPage", () => {
     await renderStats();
 
     const countSeriesCalls = () =>
-      (global.fetch as jest.Mock).mock.calls.filter(([u]: [string]) => String(u).includes("/api/stats/series"))
+      (global.fetch as jest.Mock).mock.calls.filter(([u]: [string]) => String(u).includes("/api/inverter/stats/series"))
         .length;
     const seriesCallsBefore = countSeriesCalls();
 

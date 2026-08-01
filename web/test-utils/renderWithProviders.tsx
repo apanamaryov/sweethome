@@ -7,6 +7,7 @@ import type {
   InverterRatedInfo,
   InverterStatus,
   Role,
+  SessionUser,
   Snapshot,
 } from "@sweethome/inverter-shared";
 import {
@@ -18,6 +19,7 @@ import {
 import { LangProvider } from "@/lib/i18n";
 import { SnapshotProvider } from "@/lib/snapshot";
 import { MetaProvider } from "@/lib/meta";
+import { SessionProvider } from "@/lib/session";
 import { ToastProvider } from "@/lib/toast";
 
 /**
@@ -119,28 +121,38 @@ export function jsonResponse(status: number, body: unknown): Response {
 }
 
 /**
- * Installs a global.fetch that answers /api/snapshot and /api/meta (consumed by
- * SnapshotProvider/MetaProvider on mount) and delegates everything else to
- * whatever global.fetch the test already set up (if any). `snapshot`/`meta` set
- * to null means "never resolves this endpoint" — the provider stays in its
- * initial loading state, same as a real backend that's briefly unreachable.
+ * Installs a global.fetch that answers /api/inverter/snapshot, /api/inverter/meta and
+ * /api/me (consumed by SnapshotProvider/MetaProvider/SessionProvider on mount) and
+ * delegates everything else to whatever global.fetch the test already set up (if
+ * any). `snapshot`/`meta`/`session` set to null means "never resolves this endpoint" —
+ * the provider stays in its initial loading state, same as a real backend that's
+ * briefly unreachable.
  */
-export function wrapProviderFetch(opts: { snapshot?: Snapshot | null; meta?: ApiMeta | null }): void {
+export function wrapProviderFetch(opts: {
+  snapshot?: Snapshot | null;
+  meta?: ApiMeta | null;
+  session?: SessionUser | null;
+}): void {
   const existing = global.fetch as unknown as
     | ((input: RequestInfo | URL, init?: RequestInit) => Promise<Response>)
     | undefined;
 
   const handler = jest.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    if (url === "/api/snapshot") {
+    if (url === "/api/inverter/snapshot") {
       return opts.snapshot
         ? Promise.resolve(jsonResponse(200, opts.snapshot))
         : Promise.reject(new Error("renderWithProviders: no snapshot configured"));
     }
-    if (url === "/api/meta") {
+    if (url === "/api/inverter/meta") {
       return opts.meta
         ? Promise.resolve(jsonResponse(200, opts.meta))
         : Promise.reject(new Error("renderWithProviders: no meta configured"));
+    }
+    if (url === "/api/me") {
+      return opts.session
+        ? Promise.resolve(jsonResponse(200, opts.session))
+        : Promise.reject(new Error("renderWithProviders: no session configured"));
     }
     if (existing) return existing(input, init);
     return Promise.reject(new Error(`renderWithProviders: unmocked fetch to ${url}`));
@@ -268,15 +280,28 @@ export function buildMeta(role: Role = "admin", overrides: Partial<ApiMeta> = {}
   };
 }
 
+/** Full SessionUser fixture (the /api/me shape) for a given role. */
+export function buildSession(role: Role = "admin", overrides: Partial<SessionUser> = {}): SessionUser {
+  return {
+    username: role === "admin" ? "admin" : "viewer",
+    role,
+    mustChangePassword: false,
+    ...overrides,
+  };
+}
+
 export interface RenderWithProvidersOptions {
-  /** Role baked into the default ApiMeta; ignored if `meta` is passed explicitly. */
+  /** Role baked into the default ApiMeta/SessionUser; ignored if `meta`/`session` is passed explicitly. */
   role?: Role;
-  /** Wrap in SnapshotProvider and answer /api/snapshot with this (default: none configured -> stays loading). */
+  /** Wrap in SnapshotProvider and answer /api/inverter/snapshot with this (default: none configured -> stays loading). */
   withSnapshot?: boolean;
   snapshot?: Snapshot | null;
-  /** Wrap in MetaProvider and answer /api/meta with this (default: built from `role`). */
+  /** Wrap in MetaProvider and answer /api/inverter/meta with this (default: built from `role`). */
   withMeta?: boolean;
   meta?: ApiMeta | null;
+  /** Wrap in SessionProvider and answer /api/me with this (default: off — most pages don't need it). */
+  withSession?: boolean;
+  session?: SessionUser | null;
   /** What next/navigation's mocked usePathname() reports. */
   pathname?: string;
 }
@@ -285,26 +310,29 @@ function Providers({
   children,
   withSnapshot,
   withMeta,
+  withSession,
 }: {
   children: ReactNode;
   withSnapshot: boolean;
   withMeta: boolean;
+  withSession: boolean;
 }) {
   let tree = <ToastProvider>{children}</ToastProvider>;
   if (withMeta) tree = <MetaProvider>{tree}</MetaProvider>;
   if (withSnapshot) tree = <SnapshotProvider>{tree}</SnapshotProvider>;
+  if (withSession) tree = <SessionProvider>{tree}</SessionProvider>;
   return <LangProvider>{tree}</LangProvider>;
 }
 
 /**
  * Renders `ui` inside the real i18n/toast providers, and optionally the real
- * snapshot/meta providers (driven by a mocked global.fetch + fake WebSocket so
- * they resolve deterministically instead of hitting the network). Awaits the
+ * snapshot/meta/session providers (driven by a mocked global.fetch + fake WebSocket
+ * so they resolve deterministically instead of hitting the network). Awaits the
  * initial provider fetches before returning, wrapped in `act`.
  *
  * Any global.fetch the test already installed (e.g. for a page's own POST
  * calls) is preserved and used as the fallback for URLs other than
- * /api/snapshot and /api/meta.
+ * /api/inverter/snapshot, /api/inverter/meta and /api/me.
  */
 export async function renderWithProviders(
   ui: ReactElement,
@@ -316,20 +344,22 @@ export async function renderWithProviders(
     snapshot = null,
     withMeta = true,
     meta = buildMeta(role),
+    withSession = false,
+    session = buildSession(role),
     pathname = "/",
   } = options;
 
   setMockPathname(pathname);
   setLocation({});
-  if (withSnapshot || withMeta) {
+  if (withSnapshot || withMeta || withSession) {
     installFakeWebSocket();
-    wrapProviderFetch({ snapshot, meta });
+    wrapProviderFetch({ snapshot, meta, session });
   }
 
   let utils!: RenderResult;
   await act(async () => {
     utils = render(
-      <Providers withSnapshot={withSnapshot} withMeta={withMeta}>
+      <Providers withSnapshot={withSnapshot} withMeta={withMeta} withSession={withSession}>
         {ui}
       </Providers>
     );

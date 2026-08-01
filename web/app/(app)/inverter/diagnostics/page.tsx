@@ -15,7 +15,7 @@ export default function DiagnosticsPage() {
     if (!command) return;
     setOut("…");
     try {
-      const data = await (await postJson("/api/raw", { command })).json();
+      const data = await (await postJson("/api/inverter/raw", { command })).json();
       setOut(data.ok ? data.reply : t.toastError + ": " + data.error);
     } catch (e) {
       setOut(t.toastNetErr + (e as Error).message);

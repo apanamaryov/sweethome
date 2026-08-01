@@ -13,7 +13,7 @@ beforeEach(() => {
 });
 
 describe("fetchSeries", () => {
-  it("requests /api/stats/series with fields/from/to/res=auto and parses the response", async () => {
+  it("requests /api/inverter/stats/series with fields/from/to/res=auto and parses the response", async () => {
     const points = [
       { t: 1000, pv: 10, soc: 80 },
       { t: 2000, pv: 20, soc: 81 },
@@ -22,13 +22,13 @@ describe("fetchSeries", () => {
 
     const result = await fetchSeries(["pv", "soc"], 1000, 2000);
 
-    expect(global.fetch).toHaveBeenCalledWith("/api/stats/series?fields=pv,soc&from=1000&to=2000&res=auto");
+    expect(global.fetch).toHaveBeenCalledWith("/api/inverter/stats/series?fields=pv,soc&from=1000&to=2000&res=auto");
     expect(result).toEqual(points);
   });
 });
 
 describe("fetchDaily", () => {
-  it("requests /api/stats/daily with from/to day strings and parses the response", async () => {
+  it("requests /api/inverter/stats/daily with from/to day strings and parses the response", async () => {
     const rows = [
       {
         day: "2024-01-01",
@@ -47,7 +47,7 @@ describe("fetchDaily", () => {
 
     const result = await fetchDaily("2024-01-01", "2024-01-31");
 
-    expect(global.fetch).toHaveBeenCalledWith("/api/stats/daily?from=2024-01-01&to=2024-01-31");
+    expect(global.fetch).toHaveBeenCalledWith("/api/inverter/stats/daily?from=2024-01-01&to=2024-01-31");
     expect(result).toEqual(rows);
   });
 });
@@ -58,7 +58,7 @@ describe("fetchEvents", () => {
 
     await fetchEvents(100, 200);
 
-    expect(global.fetch).toHaveBeenCalledWith("/api/stats/events?from=100&to=200&limit=200");
+    expect(global.fetch).toHaveBeenCalledWith("/api/inverter/stats/events?from=100&to=200&limit=200");
   });
 
   it("appends an URL-encoded type param when a type is given", async () => {
@@ -67,7 +67,7 @@ describe("fetchEvents", () => {
     await fetchEvents(100, 200, "grid loss");
 
     expect(global.fetch).toHaveBeenCalledWith(
-      "/api/stats/events?from=100&to=200&limit=200&type=grid%20loss"
+      "/api/inverter/stats/events?from=100&to=200&limit=200&type=grid%20loss"
     );
   });
 
@@ -85,7 +85,7 @@ describe("fetchEnergy", () => {
   it("requests with bucket=hour", async () => {
     mockFetchOk([]);
     await fetchEnergy(100, 200, "hour");
-    expect(global.fetch).toHaveBeenCalledWith("/api/stats/energy?from=100&to=200&bucket=hour");
+    expect(global.fetch).toHaveBeenCalledWith("/api/inverter/stats/energy?from=100&to=200&bucket=hour");
   });
 
   it("requests with bucket=day and parses the response", async () => {
@@ -94,7 +94,7 @@ describe("fetchEnergy", () => {
 
     const result = await fetchEnergy(100, 200, "day");
 
-    expect(global.fetch).toHaveBeenCalledWith("/api/stats/energy?from=100&to=200&bucket=day");
+    expect(global.fetch).toHaveBeenCalledWith("/api/inverter/stats/energy?from=100&to=200&bucket=day");
     expect(result).toEqual(buckets);
   });
 });
