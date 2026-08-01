@@ -203,11 +203,11 @@ body.stale .topbar { opacity: 0.45; filter: contrast(0.75); transition: opacity 
 .home-card-link-wrap { display: block; color: inherit; text-decoration: none; cursor: pointer; }
 .home-card-link-wrap:hover .home-card { outline: 1px solid var(--ink-soft); }
 .flow-svg { display: block; width: 100%; height: auto; }
-.flow-line { fill: none; stroke-width: 2; stroke-dasharray: 3 5; animation: flow-march 0.9s linear infinite; }
+/* «Марш» штрихов активных веток — SMIL <animate> в самом компоненте (мобильный
+   Safari не гоняет CSS-анимацию stroke-dashoffset на SVG), тут только штрихи. */
+.flow-line { fill: none; stroke-width: 2; stroke-dasharray: 3 5; }
 .flow-line.boost { stroke-width: 2.5; }
 .flow-line-idle { fill: none; stroke-width: 2; stroke-dasharray: 2 4; stroke: var(--paper-2); }
-@keyframes flow-march { to { stroke-dashoffset: -16; } }
-@media (prefers-reduced-motion: reduce) { .flow-line { animation: none; } }
 .flow-sun { stroke: var(--sun); }
 .flow-grid { stroke: var(--plum); }
 .flow-moss { stroke: var(--moss); }

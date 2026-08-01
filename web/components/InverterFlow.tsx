@@ -131,6 +131,10 @@ export function InverterFlow({ snapshot, pvPeakW }: { snapshot: Snapshot; pvPeak
   const battPath = f.batteryDischarging ? "M74 173.5 L132 140.5" : "M132 140.5 L74 173.5";
   const line = (active: boolean, boost = false) =>
     active ? `flow-line${boost ? " boost" : ""}` : "flow-line-idle";
+  const marching = (active: boolean) =>
+    active ? (
+      <animate attributeName="stroke-dashoffset" from="0" to="-16" dur="0.9s" repeatCount="indefinite" />
+    ) : null;
 
   // viewBox с боковыми полями (−24…344): значения центрированы под краевыми
   // узлами (x=48 и x=272) и при длинных строках («100% · −5500 Вт») выходят
@@ -146,32 +150,42 @@ export function InverterFlow({ snapshot, pvPeakW }: { snapshot: Snapshot; pvPeak
         </filter>
       </defs>
 
-      {/* ветки */}
+      {/* ветки; «марш» штрихов — SMIL, а не CSS-keyframes: мобильный Safari
+          не гоняет CSS-анимацию stroke-dashoffset на SVG (и глушит её при
+          «Уменьшении движения»), а <animate> работает нативно везде */}
       <path
         data-branch="sun"
         data-active={f.sunActive ? "1" : "0"}
         className={`${line(f.sunActive, true)} flow-sun`}
         d="M74 66.5 L132 99.5"
-      />
+      >
+        {marching(f.sunActive)}
+      </path>
       <path
         data-branch="grid"
         data-active={f.gridActive ? "1" : "0"}
         className={`${line(f.gridActive, true)} flow-grid`}
         d="M246 66.5 L188 99.5"
-      />
+      >
+        {marching(f.gridActive)}
+      </path>
       <path
         data-branch="battery"
         data-active={battActive ? "1" : "0"}
         data-dir={f.batteryDischarging ? "discharge" : "charge"}
         className={`${line(battActive, f.batteryDischarging)} flow-moss`}
         d={battPath}
-      />
+      >
+        {marching(battActive)}
+      </path>
       <path
         data-branch="load"
         data-active={!f.fault && loadW > 0 ? "1" : "0"}
         className={`${line(!f.fault && loadW > 0)} ${loadAlarm ? "flow-brick" : "flow-slate"}`}
         d="M188 140.5 L246 173.5"
-      />
+      >
+        {marching(!f.fault && loadW > 0)}
+      </path>
 
       {/* инвертор в центре */}
       {f.bypass && (

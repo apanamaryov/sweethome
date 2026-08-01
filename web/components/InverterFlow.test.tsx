@@ -112,6 +112,17 @@ describe("InverterFlow render", () => {
     expect(container.textContent).toContain("немає"); // язык по умолчанию uk
   });
 
+  it("animates active branches with SMIL <animate> (CSS dashoffset keyframes don't run in mobile Safari)", () => {
+    const { container } = render(
+      <InverterFlow snapshot={snap({ pvPower: 380, mainsPower: 0, batteryPower: -520 })} />
+    );
+    const sun = container.querySelector('path[data-branch="sun"]');
+    expect(sun?.querySelector("animate")?.getAttribute("attributeName")).toBe("stroke-dashoffset");
+    // неактивная ветка не анимируется
+    const grid = container.querySelector('path[data-branch="grid"]');
+    expect(grid?.querySelector("animate")).toBeNull();
+  });
+
   it("reserves horizontal viewBox margins so edge-centered values don't clip", () => {
     // Регресс: «90% · −703 Вт» под батареей (x=48) и «19% · 1036 Вт» под
     // нагрузкой (x=272) обрезались краями viewBox 0..320 — SVG клипает всё
