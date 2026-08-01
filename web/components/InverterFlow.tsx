@@ -69,7 +69,11 @@ export function WarnChip({ tone, label }: { tone: "amber" | "brick"; label: stri
    нагрузка (272,196). Ветки рисуются ОТ источника К приёмнику — CSS-анимация
    штрихов течёт по направлению пути, т.е. по направлению энергии. */
 
-const GLOW = { wide: 24, tight: 18, disc: 16 };
+const GLOW = { wide: 28, tight: 22, disc: 19 };
+
+/** Масштаб глифа иконки вокруг центра узла (диски выросли 16→19). */
+const iconScale = (cx: number, cy: number) =>
+  `translate(${cx} ${cy}) scale(1.2) translate(${-cx} ${-cy})`;
 
 function NodeGlow({ x, y, color, node }: { x: number; y: number; color: string; node: string }) {
   return (
@@ -218,7 +222,7 @@ export function InverterFlow({ snapshot, pvPeakW }: { snapshot: Snapshot; pvPeak
       {/* солнце */}
       {f.sunActive && <NodeGlow x={48} y={44} color="var(--sun)" node="sun" />}
       <circle cx="48" cy="44" r={GLOW.disc} className={f.sunActive ? "flow-disc disc-sun" : "flow-disc disc-off"} />
-      <g className="flow-icon" strokeLinecap="round">
+      <g className="flow-icon" strokeLinecap="round" transform={iconScale(48, 44)}>
         <circle cx="48" cy="44" r="5.5" />
         <path d="M48 33v3.5M48 51.5v3.5M37 44h3.5M55.5 44h3.5M40 36l2.5 2.5M53.5 49.5l2.5 2.5M56 36l-2.5 2.5M42.5 49.5L40 52" />
       </g>
@@ -237,7 +241,7 @@ export function InverterFlow({ snapshot, pvPeakW }: { snapshot: Snapshot; pvPeak
         r={GLOW.disc}
         className={f.gridActive ? "flow-disc disc-grid" : "flow-disc disc-off"}
       />
-      <g className="flow-icon thin" strokeLinecap="round" strokeLinejoin="round">
+      <g className="flow-icon thin" strokeLinecap="round" strokeLinejoin="round" transform={iconScale(272, 44)}>
         <path d="M267 53 L271.2 34 h1.6 L277 53" />
         <path d="M264 39 H280" />
         <path d="M266 39 v3 M278 39 v3" />
@@ -258,7 +262,7 @@ export function InverterFlow({ snapshot, pvPeakW }: { snapshot: Snapshot; pvPeak
       {/* батарея */}
       {f.batteryDischarging && <NodeGlow x={48} y={196} color="var(--moss)" node="battery" />}
       <circle cx="48" cy="196" r={GLOW.disc} className="flow-disc disc-batt" />
-      <g className="flow-icon" strokeLinecap="round">
+      <g className="flow-icon" strokeLinecap="round" transform={iconScale(48, 196)}>
         <rect x="39" y="191" width="16" height="10" rx="1.5" />
         <line x1="57.5" y1="193.5" x2="57.5" y2="198.5" />
         <rect x="41.5" y="193.5" width="8" height="5" className="flow-icon-fill" />
@@ -277,7 +281,7 @@ export function InverterFlow({ snapshot, pvPeakW }: { snapshot: Snapshot; pvPeak
         r={GLOW.disc}
         className={`flow-disc ${loadAlarm ? "disc-alarm" : f.fault ? "disc-off" : "disc-load"}`}
       />
-      <g className="flow-icon house" strokeLinecap="round" strokeLinejoin="round">
+      <g className="flow-icon house" strokeLinecap="round" strokeLinejoin="round" transform={iconScale(272, 196)}>
         <path d="M262.5 197.5 L272 188 L281.5 197.5" />
         <path d="M265.5 196 V204.5 H278.5 V196" />
         <path d="M270.5 204.5 V200 H273.5 V204.5" />
