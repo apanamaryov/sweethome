@@ -34,6 +34,29 @@ describe("HomePage — overview", () => {
     expect(screen.getByText("280")).toBeInTheDocument(); // PV, pvChargingPower
   });
 
+  it("shows the card as a plain always-visible section, not a collapsed/collapsible Panel", async () => {
+    // Regression guard: the overview's whole point is "status at a glance" —
+    // it must never render inside a Panel (which starts collapsed, body
+    // display:none, and needs a tap to reveal its content).
+    const status = buildStatus({ batteryCapacity: 87, acOutputActivePower: 350, pvChargingPower: 280 });
+    const { container } = await renderWithProviders(<HomePage />, {
+      snapshot: buildSnapshot({ status }),
+      withMeta: false,
+    });
+
+    expect(container.querySelector(".panel")).not.toBeInTheDocument();
+    expect(container.querySelector(".panel-toggle")).not.toBeInTheDocument();
+    expect(container.querySelector(".hidden")).not.toBeInTheDocument();
+
+    const card = container.querySelector("section.card.home-card");
+    expect(card).toBeInTheDocument();
+    // The values are direct, always-rendered content of the card — not tucked
+    // away behind a toggle.
+    expect(card).toHaveTextContent("87");
+    expect(card).toHaveTextContent("350");
+    expect(card).toHaveTextContent("280");
+  });
+
   it("links to /inverter", async () => {
     await renderWithProviders(<HomePage />, { snapshot: buildSnapshot(), withMeta: false });
 

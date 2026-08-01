@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useSnapshot } from "@/lib/snapshot";
 import { useT, useDocTitle, modeLabel } from "@/lib/i18n";
-import { Panel } from "@/components/Panel";
 import { fmt } from "@/lib/format";
 
 export default function HomePage() {
@@ -13,37 +12,41 @@ export default function HomePage() {
   const s = snapshot?.status ?? null;
   const source = snapshot?.powerSource ?? snapshot?.mode ?? "Unknown";
 
+  // Обзор = статус с одного взгляда: карточка всегда видна (как карточки
+  // дашборда в inverter/page.tsx), никакого сворачиваемого Panel — тот
+  // предназначен для второстепенного/advanced-контента (diagnostics, settings).
   return (
     <main className="grid home-grid">
-      <Panel title={t.navInverter}>
-        <div className="home-card">
+      <section className="card home-card">
+        <div className="card-head">
+          <span className="card-title">{t.navInverter}</span>
           <span className={"mode-badge mode-" + source}>{modeLabel(t, source)}</span>
-          {!s ? (
-            <p className="muted">{t.connecting}</p>
-          ) : (
-            <div className="home-card-rows">
-              <div className="home-card-row">
-                <span className="cap">{t.cardBattery}</span>
-                <span>{fmt(s.batteryCapacity, 0)}</span>
-                <span className="cap">{t.unit_pct}</span>
-              </div>
-              <div className="home-card-row">
-                <span className="cap">{t.cardLoad}</span>
-                <span>{fmt(s.acOutputActivePower, 0)}</span>
-                <span className="cap">{t.capW}</span>
-              </div>
-              <div className="home-card-row">
-                <span className="cap">{t.cardSolar}</span>
-                <span>{fmt(s.pvChargingPower, 0)}</span>
-                <span className="cap">{t.capW}</span>
-              </div>
-            </div>
-          )}
         </div>
+        {!s ? (
+          <p className="muted">{t.connecting}</p>
+        ) : (
+          <div className="home-card-rows">
+            <div className="home-card-row">
+              <span className="cap">{t.cardBattery}</span>
+              <span>{fmt(s.batteryCapacity, 0)}</span>
+              <span className="cap">{t.unit_pct}</span>
+            </div>
+            <div className="home-card-row">
+              <span className="cap">{t.cardLoad}</span>
+              <span>{fmt(s.acOutputActivePower, 0)}</span>
+              <span className="cap">{t.capW}</span>
+            </div>
+            <div className="home-card-row">
+              <span className="cap">{t.cardSolar}</span>
+              <span>{fmt(s.pvChargingPower, 0)}</span>
+              <span className="cap">{t.capW}</span>
+            </div>
+          </div>
+        )}
         <Link href="/inverter" className="home-card-link">
           {t.homeInverterCardOpen}
         </Link>
-      </Panel>
+      </section>
     </main>
   );
 }
