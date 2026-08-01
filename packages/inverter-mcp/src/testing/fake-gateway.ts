@@ -45,6 +45,7 @@ export const FAKE_SNAPSHOT: Snapshot = {
 export const FAKE_META: ApiMeta = {
   session: { username: "bot", role: "admin", mustChangePassword: false },
   allowControl: true,
+  pvPeakW: 5160,
   outputSourcePriority: { 0: "UTI", 1: "SOL", 2: "SBU", 3: "SUB" },
   chargerSourcePriority: { 0: "Utility first", 1: "PV first", 2: "PV and Utility", 3: "Only PV" },
   maxChargingCurrent: [10, 20, 30, 40, 50, 60],

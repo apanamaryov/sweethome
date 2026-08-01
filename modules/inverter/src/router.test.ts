@@ -70,6 +70,25 @@ describe("createInverterRouter", () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
+  describe("GET /meta", () => {
+    it("exposes pvPeakW only when configured", async () => {
+      process.env.INVERTER_PV_PEAK_W = "5160";
+      const cfgWithPeak = loadInverterConfig(tmp);
+      delete process.env.INVERTER_PV_PEAK_W;
+
+      const withPeak = appWith({ inverter, stats: null, cfg: cfgWithPeak }, admin(), sessionAuth);
+      const res = await request(withPeak).get("/api/inverter/meta");
+      expect(res.status).toBe(200);
+      expect(res.body.pvPeakW).toBe(5160);
+
+      // без env (beforeEach строит cfg с пустым INVERTER_PV_PEAK_W) поле отсутствует
+      const without = appWith({ inverter, stats: null, cfg }, admin(), sessionAuth);
+      const res2 = await request(without).get("/api/inverter/meta");
+      expect(res2.status).toBe(200);
+      expect(res2.body).not.toHaveProperty("pvPeakW");
+    });
+  });
+
   describe("admin gate on control/lock/raw/baseline", () => {
     it("403s a viewer", async () => {
       const app = appWith({ inverter, stats: null, cfg }, viewer(), sessionAuth);

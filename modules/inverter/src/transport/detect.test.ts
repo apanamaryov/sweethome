@@ -65,6 +65,7 @@ function baseConfig(overrides: Partial<InverterConfig> = {}): InverterConfig {
     pollIntervalMs: 5000,
     commandTimeoutMs: 3000,
     allowMock: true,
+    pvPeakW: 0,
     allowControl: true,
     startupLocked: true,
     autoRelock: true,

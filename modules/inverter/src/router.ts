@@ -38,6 +38,7 @@ export function createInverterRouter(deps: {
     res.json({
       session: { username: u.username, role: u.role, mustChangePassword: u.mustChangePassword },
       allowControl: cfg.allowControl,
+      pvPeakW: cfg.pvPeakW > 0 ? cfg.pvPeakW : undefined,
       outputSourcePriority: OUTPUT_SOURCE_PRIORITY,
       chargerSourcePriority: CHARGER_SOURCE_PRIORITY,
       maxChargingCurrent: ALLOWED_MAX_CHARGE_CURRENT,

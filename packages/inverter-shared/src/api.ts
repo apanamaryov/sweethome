@@ -34,6 +34,8 @@ export const ALLOWED_MAX_AC_CHARGE_CURRENT = [10, 20, 30, 40, 50, 60, 70, 80];
 export interface ApiMeta {
   session: SessionUser;
   allowControl: boolean;
+  /** Пик PV-массива, Вт (INVERTER_PV_PEAK_W); отсутствует, если не задан. */
+  pvPeakW?: number;
   outputSourcePriority: Record<number, string>;
   chargerSourcePriority: Record<number, string>;
   maxChargingCurrent: number[];

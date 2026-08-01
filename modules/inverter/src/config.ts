@@ -10,6 +10,8 @@ export interface InverterConfig {
   pollIntervalMs: number;
   commandTimeoutMs: number;
   allowMock: boolean;
+  /** Пик PV-массива, Вт (для % выработки на карточке обзора); 0 = не задан. */
+  pvPeakW: number;
   /** Master switch: when false, all setter/control commands are rejected. */
   allowControl: boolean;
   /** Start in read-only (locked) mode; writes require an explicit unlock. */
@@ -54,6 +56,7 @@ export function loadInverterConfig(rootDataDir: string): InverterConfig {
     pollIntervalMs: envInt("POLL_INTERVAL_MS", 5000),
     commandTimeoutMs: envInt("COMMAND_TIMEOUT_MS", 3000),
     allowMock: envBool("ALLOW_MOCK", true),
+    pvPeakW: envInt("INVERTER_PV_PEAK_W", 0),
     allowControl: envBool("ALLOW_CONTROL", true),
     startupLocked: envBool("STARTUP_LOCKED", true),
     autoRelock: envBool("AUTO_RELOCK", true),

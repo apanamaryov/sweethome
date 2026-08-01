@@ -131,6 +131,13 @@ describe("loadInverterConfig — env overrides", () => {
     expect(cfg.slaveId).toBe(1);
   });
 
+  it("reads INVERTER_PV_PEAK_W (default 0 = unset)", () => {
+    expect(loadInverterConfig("data").pvPeakW).toBe(0);
+
+    process.env.INVERTER_PV_PEAK_W = "5160";
+    expect(loadInverterConfig("data").pvPeakW).toBe(5160);
+  });
+
   it("applies the INVERTER_SERIAL_DEVICE string override", () => {
     process.env.INVERTER_SERIAL_DEVICE = "/dev/ttyUSB0";
 
