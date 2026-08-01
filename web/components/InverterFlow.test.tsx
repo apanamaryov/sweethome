@@ -112,6 +112,14 @@ describe("InverterFlow render", () => {
     expect(container.textContent).toContain("немає"); // язык по умолчанию uk
   });
 
+  it("reserves horizontal viewBox margins so edge-centered values don't clip", () => {
+    // Регресс: «90% · −703 Вт» под батареей (x=48) и «19% · 1036 Вт» под
+    // нагрузкой (x=272) обрезались краями viewBox 0..320 — SVG клипает всё
+    // за пределами. Боковые поля −24…344 дают запас под длинные значения.
+    const { container } = render(<InverterFlow snapshot={snap({})} />);
+    expect(container.querySelector(".flow-svg")?.getAttribute("viewBox")).toBe("-24 0 368 250");
+  });
+
   it("fault: idle branches, brick inverter with the '!' mark", () => {
     const { container } = render(
       <InverterFlow

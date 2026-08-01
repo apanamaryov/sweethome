@@ -126,8 +126,11 @@ export function InverterFlow({ snapshot, pvPeakW }: { snapshot: Snapshot; pvPeak
   const line = (active: boolean, boost = false) =>
     active ? `flow-line${boost ? " boost" : ""}` : "flow-line-idle";
 
+  // viewBox с боковыми полями (−24…344): значения центрированы под краевыми
+  // узлами (x=48 и x=272) и при длинных строках («100% · −5500 Вт») выходят
+  // за 0…320 — без запаса SVG их клипает по краю карточки.
   return (
-    <svg className="flow-svg" viewBox="0 0 320 250" role="img" aria-label={t.navInverter}>
+    <svg className="flow-svg" viewBox="-24 0 368 250" role="img" aria-label={t.navInverter}>
       <defs>
         <filter id="flowGlowWide" x="-80%" y="-80%" width="260%" height="260%">
           <feGaussianBlur stdDeviation="7" />
