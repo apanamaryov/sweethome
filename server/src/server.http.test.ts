@@ -128,8 +128,15 @@ describe("server.ts (HTTP integration via supertest)", () => {
   });
 
   describe("GET /api/health", () => {
-    it("aggregates module health under host.health(), always 200", async () => {
+    it("401s without a session, same as any other /api route (deploy.sh/uptime-kuma treat this as \"alive\")", async () => {
       const res = await request(server).get("/api/health");
+      expect(res.status).toBe(401);
+      expect(res.body).toEqual({ ok: false, error: "Unauthorized" });
+    });
+
+    it("aggregates module health under host.health() once authenticated", async () => {
+      const cookie = await freshSessionCookie("admin", "admin", "admin123");
+      const res = await request(server).get("/api/health").set("Cookie", cookie);
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true, modules: { inverter: expect.objectContaining({ ok: true }) } });
     });

@@ -39,9 +39,6 @@ export function createServer(host: ModuleHost, cfg: Config): http.Server {
   const publicDir = path.join(__dirname, "..", "..", "web", "out");
   app.use(express.static(publicDir, { extensions: ["html"] }));
 
-  // Liveness — вне гейта авторизации (нужен uptime-kuma/deploy.sh без сессии), всегда 200.
-  app.get("/api/health", (_req, res) => res.json(host.health()));
-
   app.post("/api/login", (req, res) => {
     const { username, password } = req.body ?? {};
     if (typeof username !== "string" || typeof password !== "string") {
@@ -128,6 +125,10 @@ export function createServer(host: ModuleHost, cfg: Config): http.Server {
     }
     next();
   });
+
+  // Liveness — за тем же гейтом, что и остальной /api (401 без сессии = «жив», как и раньше;
+  // deploy.sh/uptime-kuma принимают и 200, и 401). res.json(host.health()) сам по себе всегда 200.
+  app.get("/api/health", (_req, res) => res.json(host.health()));
 
   // Admin-only зона.
   app.use(["/api/users", "/api/tokens"], (req, res, next) => {
