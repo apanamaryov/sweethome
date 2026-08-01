@@ -7,5 +7,8 @@
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@sweethome/shared": "1.0.0"
   }
 }

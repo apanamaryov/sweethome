@@ -19,6 +19,7 @@
   "dependencies": {
     "@sweethome/inverter-mcp": "1.0.0",
     "@sweethome/inverter-shared": "1.0.0",
+    "@sweethome/shared": "1.0.0",
     "express": "^4.19.2",
     "mqtt": "^5.10.1",
     "ws": "^8.18.0"

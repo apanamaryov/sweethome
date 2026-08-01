@@ -1,4 +1,4 @@
-import { canAccess } from "./policy";
+import { canAccess } from "./auth";
 
 // Migrated 1:1 from scripts/selfcheck-auth.ts section 5 (access matrix), expanded into
 // a full role x required-access truth table.

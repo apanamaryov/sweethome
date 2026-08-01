@@ -1,4 +1,4 @@
-import type { SessionUser } from "./auth";
+import type { SessionUser } from "@sweethome/shared";
 
 /** Whitelist управляющих команд, доступный API/UI. */
 export type ControlType =

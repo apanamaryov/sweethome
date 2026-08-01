@@ -11,6 +11,7 @@ module.exports = {
   testMatch: ["**/*.test.ts"],
   moduleNameMapper: {
     "^@sweethome/inverter-shared$": "<rootDir>/packages/inverter-shared/src/index.ts",
+    "^@sweethome/shared$": "<rootDir>/packages/shared/src/index.ts",
   },
   transform: {
     "^.+\\.ts$": ["ts-jest", { tsconfig: "<rootDir>/packages/inverter-mcp/tsconfig.test.json" }],

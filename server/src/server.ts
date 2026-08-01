@@ -5,8 +5,8 @@ import { WebSocketServer, WebSocket } from "ws";
 import { Inverter } from "./inverter";
 import { Config } from "./config";
 import { Auth, tokenFromCookieHeader, bearerFromHeader } from "./auth/service";
-import { canAccess } from "./auth/policy";
-import type { SessionInfo } from "./auth/db";
+import { canAccess } from "@sweethome/shared";
+import "@sweethome/shared/module"; // augments express-serve-static-core with req.user/req.auth
 import { normalizeUsername } from "./auth/db";
 import { validatePassword } from "./auth/hash";
 import {
@@ -21,20 +21,6 @@ import type { TokenScope } from "@sweethome/inverter-shared";
 import { GAUGE_FIELDS, GaugeField, localDay } from "./stats/db";
 import { StatsRecorder } from "./stats/recorder";
 import { mountMcp } from "./mcp/http";
-
-/** Контекст авторизации запроса: сессия из UI или API-токен. */
-export interface AuthContext {
-  kind: "session" | "token";
-  scopes: TokenScope[];
-  tokenName?: string;
-}
-
-declare module "express-serve-static-core" {
-  interface Request {
-    user?: SessionInfo & { tokenHash?: string };
-    auth?: AuthContext;
-  }
-}
 
 const CONTROL_TYPES: ControlType[] = [
   "outputSourcePriority",
