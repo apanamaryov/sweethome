@@ -27,8 +27,8 @@ if [ -d "$OLD_DIR" ] && [ ! -d "$PI_DIR" ]; then
   mv "$OLD_DIR" "$PI_DIR"
   # Раскладка данных: модульные файлы инвертора уезжают в data/inverter/
   mkdir -p "$PI_DIR/server/data/inverter"
-  [ -f "$PI_DIR/server/data/stats.db" ] && mv "$PI_DIR/server/data/stats.db" "$PI_DIR/server/data/inverter/stats.db" || true
-  [ -f "$PI_DIR/server/data/baseline.json" ] && mv "$PI_DIR/server/data/baseline.json" "$PI_DIR/server/data/inverter/baseline.json" || true
+  if [ -f "$PI_DIR/server/data/stats.db" ]; then mv "$PI_DIR/server/data/stats.db" "$PI_DIR/server/data/inverter/stats.db"; fi
+  if [ -f "$PI_DIR/server/data/baseline.json" ]; then mv "$PI_DIR/server/data/baseline.json" "$PI_DIR/server/data/inverter/baseline.json"; fi
   sudo rm -f /etc/systemd/system/inverter-monitor.service
 fi
 EOF
