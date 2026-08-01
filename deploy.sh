@@ -25,12 +25,15 @@ set -euo pipefail
 if [ -d "$OLD_DIR" ] && [ ! -d "$PI_DIR" ]; then
   sudo systemctl disable --now inverter-monitor 2>/dev/null || true
   mv "$OLD_DIR" "$PI_DIR"
-  # Раскладка данных: модульные файлы инвертора уезжают в data/inverter/
-  mkdir -p "$PI_DIR/server/data/inverter"
-  if [ -f "$PI_DIR/server/data/stats.db" ]; then mv "$PI_DIR/server/data/stats.db" "$PI_DIR/server/data/inverter/stats.db"; fi
-  if [ -f "$PI_DIR/server/data/baseline.json" ]; then mv "$PI_DIR/server/data/baseline.json" "$PI_DIR/server/data/inverter/baseline.json"; fi
   sudo rm -f /etc/systemd/system/inverter-monitor.service
 fi
+# Раскладка данных: модульные файлы инвертора уезжают в data/inverter/. Вынесено
+# из-под guard'а каталога выше — идемпотентно само по себе, и должно выполняться
+# на каждом деплое, а не только вместе с переносом каталога (иначе смерть между
+# mv каталога и переносом данных навсегда пропустит разнос при повторном запуске).
+mkdir -p "$PI_DIR/server/data/inverter"
+if [ -f "$PI_DIR/server/data/stats.db" ]; then mv "$PI_DIR/server/data/stats.db" "$PI_DIR/server/data/inverter/stats.db"; fi
+if [ -f "$PI_DIR/server/data/baseline.json" ]; then mv "$PI_DIR/server/data/baseline.json" "$PI_DIR/server/data/inverter/baseline.json"; fi
 EOF
 
 echo "==> rsync на $PI_HOST:$PI_DIR"
