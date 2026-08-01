@@ -160,7 +160,7 @@ describe("HttpGateway", () => {
     const seen: Snapshot[] = [];
     const off = gw.onSnapshot((s) => seen.push(s));
 
-    expect(String((ctorArgs[0] as [string, unknown])[0])).toBe("ws://pi:3000/ws");
+    expect(String((ctorArgs[0] as [string, unknown])[0])).toBe("ws://pi:3000/ws/inverter");
     expect((ctorArgs[0] as [string, { headers: Record<string, string> }])[1].headers.Authorization).toBe(
       "Bearer inv_x"
     );

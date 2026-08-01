@@ -198,7 +198,7 @@ class HttpGateway implements InverterGateway {
   private ensureSocket(): void {
     if (this.ws || this.closed) return;
     const Impl = this.opts.webSocketImpl ?? WebSocket;
-    const url = this.url("/ws").replace(/^http/, "ws");
+    const url = this.url("/ws/inverter").replace(/^http/, "ws");
     const sock = new Impl(url, { headers: { Authorization: `Bearer ${this.opts.token}` } });
     this.ws = sock;
 
