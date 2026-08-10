@@ -249,13 +249,16 @@ export function InverterFlow({ snapshot, pvPeakW }: { snapshot: Snapshot; pvPeak
         {f.sunActive || pvW > 0 ? sunVal : `0${w}`}
       </text>
 
-      {/* сеть: опора ЛЭП */}
+      {/* сеть: опора ЛЭП. Диск цветной при самом наличии напряжения в сети —
+          иначе при mainsPower=0 не отличить «сеть есть, но не используется»
+          от «сети нет»; свечение и луч — только при фактическом потоке. */}
       {f.gridActive && <NodeGlow x={272} y={44} color="var(--plum)" node="grid" />}
       <circle
+        data-disc="grid"
         cx="272"
         cy="44"
         r={GLOW.disc}
-        className={f.gridActive ? "flow-disc disc-grid" : "flow-disc disc-off"}
+        className={f.gridActive || !f.gridAbsent ? "flow-disc disc-grid" : "flow-disc disc-off"}
       />
       <g className="flow-icon thin" strokeLinecap="round" strokeLinejoin="round" transform={iconScale(272, 44)}>
         <path d="M267 53 L271.2 34 h1.6 L277 53" />

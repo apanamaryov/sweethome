@@ -112,6 +112,30 @@ describe("InverterFlow render", () => {
     expect(container.textContent).toContain("немає"); // язык по умолчанию uk
   });
 
+  it("grid present but idle: colored disc without glow or beam", () => {
+    const { container } = render(
+      <InverterFlow snapshot={snap({ gridVoltage: 230, mainsPower: 0 })} />
+    );
+    expect(container.querySelector('[data-disc="grid"]')?.getAttribute("class")).toContain(
+      "disc-grid"
+    );
+    expect(
+      [...container.querySelectorAll(".flow-glow")].map((el) => el.getAttribute("data-node"))
+    ).not.toContain("grid");
+    expect(container.querySelector('path[data-branch="grid"]')?.getAttribute("data-active")).toBe(
+      "0"
+    );
+  });
+
+  it("grid absent: disc stays gray", () => {
+    const { container } = render(
+      <InverterFlow snapshot={snap({ gridVoltage: 0, mainsPower: 0 })} />
+    );
+    expect(container.querySelector('[data-disc="grid"]')?.getAttribute("class")).toContain(
+      "disc-off"
+    );
+  });
+
   it("animates active branches with SMIL <animate> (CSS dashoffset keyframes don't run in mobile Safari)", () => {
     const { container } = render(
       <InverterFlow snapshot={snap({ pvPower: 380, mainsPower: 0, batteryPower: -520 })} />
