@@ -746,3 +746,13 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
 /* сводка за неделю/месяц: колонки переносятся на узком экране */
 .solar-range-grid { display: flex; flex-wrap: wrap; gap: 6px 22px; }
 .solar-range-grid > div { display: flex; flex-direction: column; }
+
+/* ---------- раздел видеонаблюдения (/cctv, /cctv/archive) ---------- */
+.cctv-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.cctv-live video, .cctv-archive-video { width: 100%; max-width: 100%; background: #000; display: block; }
+.cctv-timeline { position: relative; height: 28px; background: var(--bg-muted, #222); border-radius: 4px; cursor: pointer; margin: .75rem 0; }
+.cctv-span { position: absolute; top: 0; bottom: 0; background: var(--accent, #4a9); opacity: .65; }
+.cctv-mark { position: absolute; top: 0; bottom: 0; width: 2px; background: #f5a623; }
+.cctv-cursor { position: absolute; top: -3px; bottom: -3px; width: 2px; background: #fff; }
+.cctv-controls { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.cctv-warn, .cctv-error { color: #e05; }

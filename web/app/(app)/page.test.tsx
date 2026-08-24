@@ -46,7 +46,9 @@ describe("HomePage — overview", () => {
   it("whole card is a link to /inverter (no separate 'open' link)", async () => {
     await renderWithProviders(<HomePage />, { snapshot: buildSnapshot(), withMeta: true });
 
-    const link = screen.getByRole("link");
+    // Обзор теперь содержит и карточку камер (свой отдельный <Link href="/cctv">) —
+    // выбираем именно ссылку инвертора, а не первую попавшуюся.
+    const link = screen.getAllByRole("link").find((l) => l.getAttribute("href") === "/inverter")!;
     expect(link).toHaveAttribute("href", "/inverter");
     expect(link.querySelector("section.card.home-card")).toBeInTheDocument();
     expect(screen.queryByText(t.homeInverterCardOpen)).not.toBeInTheDocument();
