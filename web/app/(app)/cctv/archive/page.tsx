@@ -13,6 +13,7 @@ export default function CctvArchivePage() {
   const [day, setDay] = useState<Date>(() => new Date());
   const [tl, setTl] = useState<TimelineResponse | null>(null);
   const [seekToMs, setSeekToMs] = useState<number | null>(null);
+  const [gapNotice, setGapNotice] = useState(false);
 
   const { fromMs, toMs } = useMemo(() => dayRange(day), [day]);
 
@@ -35,6 +36,27 @@ export default function CctvArchivePage() {
     d.setDate(d.getDate() + delta);
     setDay(d);
     setSeekToMs(null);
+    setGapNotice(false);
+  };
+
+  const selectCam = (id: string) => {
+    setCam(id);
+    setSeekToMs(null);
+    setGapNotice(false);
+  };
+
+  // Разрывы должны читаться как разрывы: клик в пустой участок не двигает курсор
+  // (позиционировать нечего) и не предлагает скачать заведомо пустой кусок — вместо
+  // этого короткое пояснение.
+  const seekTo = (tsMs: number) => {
+    const spans = tl?.spans ?? [];
+    const hasFootage = spans.some((s) => tsMs >= s.startMs && tsMs < s.endMs);
+    if (!hasFootage) {
+      setGapNotice(true);
+      return;
+    }
+    setGapNotice(false);
+    setSeekToMs(tsMs);
   };
 
   return (
@@ -42,7 +64,7 @@ export default function CctvArchivePage() {
       <h1>{t.cctvArchiveTitle}</h1>
 
       <div className="cctv-controls">
-        <select value={cam} onChange={(e) => setCam(e.target.value)} aria-label={t.cctvCamera}>
+        <select value={cam} onChange={(e) => selectCam(e.target.value)} aria-label={t.cctvCamera}>
           {cams.map((c) => (
             <option key={c.id} value={c.id}>{c.name}</option>
           ))}
@@ -65,8 +87,10 @@ export default function CctvArchivePage() {
         fromMs={fromMs}
         toMs={toMs}
         positionMs={seekToMs ?? fromMs}
-        onSeek={setSeekToMs}
+        onSeek={seekTo}
       />
+
+      {gapNotice && <p className="cctv-gap-notice">{t.cctvNoFootageHere}</p>}
 
       {tl && tl.segments === 0 && <p>{t.cctvNothingThisDay}</p>}
     </main>
