@@ -5,7 +5,27 @@ import { loadCctvConfig } from "./config";
 import { CctvDb } from "./index/db";
 import { createCctvRouter } from "./router";
 
-function app(db: CctvDb, over: { cameras?: CameraInfo[]; storage?: boolean; spawns?: { cmd: string; args: string[] }[] } = {}) {
+type FakeSpawn = (
+  cmd: string,
+  args: string[]
+) => {
+  stdout: { pipe(dest: unknown): void } | null;
+  on(ev: "exit" | "error", cb: (arg?: unknown) => void): void;
+  kill(sig?: string): void;
+};
+
+type FakeTmpFile = (content: string) => Promise<{ path: string; cleanup: () => Promise<void> }>;
+
+function app(
+  db: CctvDb,
+  over: {
+    cameras?: CameraInfo[];
+    storage?: boolean;
+    spawns?: { cmd: string; args: string[] }[];
+    spawn?: FakeSpawn;
+    tmpFile?: FakeTmpFile;
+  } = {}
+) {
   const sent: string[] = [];
   const spawns = over.spawns ?? [];
   const cfg = loadCctvConfig("/data", { CCTV_CAMERAS: "drive=10.0.0.1", CCTV_STORAGE_DIR: "/st" });
@@ -24,15 +44,19 @@ function app(db: CctvDb, over: { cameras?: CameraInfo[]; storage?: boolean; spaw
         sent.push(abs);
         res.status(200).end();
       },
-      spawn: (cmd, args) => {
-        spawns.push({ cmd, args });
-        return {
-          stdout: { pipe: (dest: unknown) => (dest as { end(): void }).end() },
-          on: (_ev: "exit", cb: (code: number | null) => void) => setImmediate(() => cb(0)),
-          kill: () => {},
-        };
-      },
-      tmpFile: async () => ({ path: "/tmp/list.txt", cleanup: async () => {} }),
+      spawn:
+        over.spawn ??
+        ((cmd, args) => {
+          spawns.push({ cmd, args });
+          return {
+            stdout: { pipe: (dest: unknown) => (dest as { end(): void }).end() },
+            on: (ev: "exit" | "error", cb: (arg?: unknown) => void) => {
+              if (ev === "exit") setImmediate(() => cb(0));
+            },
+            kill: () => {},
+          };
+        }),
+      tmpFile: over.tmpFile ?? (async () => ({ path: "/tmp/list.txt", cleanup: async () => {} })),
     })
   );
   return { a, sent, spawns };
@@ -203,17 +227,88 @@ describe("cctv router", () => {
 
   it("GET /download отказывает на слишком длинном интервале", async () => {
     seed(db);
-    const { a } = app(db);
+    const { a, spawns } = app(db);
     await request(a)
       .get(`/api/cctv/download?cam=drive&from=${T}&to=${T + 31 * 60_000}`)
       .expect(413);
+    // Регрессия: если проверку интервала переставят после запуска ffmpeg,
+    // счётчик спавнов это поймает раньше, чем кто-то заметит по логам.
+    expect(spawns).toHaveLength(0);
   });
 
   it("GET /download на пустом интервале → 404", async () => {
     seed(db);
-    const { a } = app(db);
+    const { a, spawns } = app(db);
     await request(a)
       .get(`/api/cctv/download?cam=drive&from=${T + 10_000_000}&to=${T + 10_060_000}`)
       .expect(404);
+    expect(spawns).toHaveLength(0);
+  });
+
+  it("GET /download: отсутствующий в индексе init → 500, ffmpeg не запускается", async () => {
+    // node:sqlite держит PRAGMA foreign_keys = ON, поэтому через настоящий
+    // CctvDb сегмент с несуществующим initId не создать — сама база не даёт
+    // дойти до рассогласования. Подставляем минимальный фейковый индекс, чтобы
+    // проверить именно реакцию роутера на такое рассогласование данных.
+    const fakeDb = {
+      segmentsBetween: () => [
+        { id: 1, cam: "drive", initId: 9999, path: "drive/seg_0.m4s", startMs: T, durMs: 60_000, bytes: 1 },
+      ],
+      initPathById: () => null,
+    } as unknown as CctvDb;
+    const { a, spawns } = app(fakeDb);
+    const res = await request(a)
+      .get(`/api/cctv/download?cam=drive&from=${T}&to=${T + 60_000}`)
+      .expect(500);
+    expect(res.body.ok).toBe(false);
+    expect(spawns).toHaveLength(0);
+  });
+
+  it("GET /download: синхронный сбой spawn не роняет процесс, отдаёт 500 и убирает временный файл", async () => {
+    seed(db);
+    let cleaned = false;
+    const { a } = app(db, {
+      spawn: () => {
+        throw new Error("ffmpeg binary not found");
+      },
+      tmpFile: async () => ({
+        path: "/tmp/list.txt",
+        cleanup: async () => {
+          cleaned = true;
+        },
+      }),
+    });
+    const res = await request(a)
+      .get(`/api/cctv/download?cam=drive&from=${T}&to=${T + 120_000}`)
+      .expect(500);
+    expect(res.body.ok).toBe(false);
+    expect(cleaned).toBe(true);
+  });
+
+  it("GET /download: событие error от ffmpeg обрабатывается, не роняя процесс", async () => {
+    seed(db);
+    let cleaned = false;
+    const { a } = app(db, {
+      spawn: () => ({
+        stdout: { pipe: () => {} },
+        on: (ev, cb) => {
+          // Реальный ChildProcess эмитит "error" асинхронно (spawn ENOENT и
+          // подобные) — setImmediate воспроизводит эту асинхронность.
+          if (ev === "error") setImmediate(() => cb(new Error("ffmpeg crashed")));
+        },
+        kill: () => {},
+      }),
+      tmpFile: async () => ({
+        path: "/tmp/list.txt",
+        cleanup: async () => {
+          cleaned = true;
+        },
+      }),
+    });
+    // Само по себе отсутствие необработанного исключения (и незавершившийся
+    // процесс jest) — уже доказательство того, что "error" обработан.
+    const res = await request(a).get(`/api/cctv/download?cam=drive&from=${T}&to=${T + 120_000}`);
+    expect(res.status).toBe(500);
+    expect(cleaned).toBe(true);
   });
 });

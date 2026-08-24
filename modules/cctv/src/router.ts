@@ -24,7 +24,14 @@ export function createCctvRouter(deps: {
   db: CctvDb;
   manager: { cameras(): CameraInfo[]; storageAvailable(): boolean };
   sendFile: SendFile;
-  spawn: (cmd: string, args: string[]) => { stdout: { pipe(dest: unknown): void } | null; on(ev: "exit", cb: (code: number | null) => void): void; kill(sig?: string): void };
+  spawn: (
+    cmd: string,
+    args: string[]
+  ) => {
+    stdout: { pipe(dest: unknown): void } | null;
+    on(ev: "exit" | "error", cb: (arg?: unknown) => void): void;
+    kill(sig?: string): void;
+  };
   tmpFile: (content: string) => Promise<{ path: string; cleanup: () => Promise<void> }>;
 }): Router {
   const { cfg, db, manager, sendFile } = deps;
@@ -109,17 +116,51 @@ export function createCctvRouter(deps: {
     const segs = db.segmentsBetween(r.cam, r.fromMs, r.toMs);
     if (segs.length === 0) return res.status(404).json({ ok: false, error: "nothing recorded in this interval" });
 
+    // Init без записи в индексе — рассогласование данных, а не ошибка запроса:
+    // молча продолжать нельзя, иначе склейка отдаст 200 с файлом без заголовков
+    // потока, который просто не откроется.
     const init = db.initPathById(segs[0].initId);
-    const list = buildConcatList(segs, cfg.storageDir, init?.path);
-    const tmp = await deps.tmpFile(list);
-    const child = deps.spawn(cfg.ffmpegPath, concatArgs({ listPath: tmp.path }));
+    if (!init) return res.status(500).json({ ok: false, error: "index inconsistency: init segment is missing" });
+
+    const list = buildConcatList(segs, cfg.storageDir, init.path);
+
+    // Ставим слушатель ДО await'ов и spawn: клиент может отвалиться, пока мы
+    // ждём временный файл или запуск ffmpeg, — без этой ссылки гасить в
+    // тот момент было бы некого. `child` заполнится ниже, когда процесс
+    // появится; до этого kill() просто не на чём вызывать.
+    let child: ReturnType<typeof deps.spawn> | null = null;
+    res.on("close", () => child?.kill("SIGTERM"));
+
+    let tmp: { path: string; cleanup: () => Promise<void> };
+    try {
+      tmp = await deps.tmpFile(list);
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: `cannot prepare download: ${(e as Error).message}` });
+    }
+
+    try {
+      child = deps.spawn(cfg.ffmpegPath, concatArgs({ listPath: tmp.path }));
+    } catch (e) {
+      await tmp.cleanup();
+      return res.status(500).json({ ok: false, error: `cannot start ffmpeg: ${(e as Error).message}` });
+    }
+
+    // ffmpeg не запустился (нет бинарника, нет прав): без этого слушателя Node
+    // бросит необработанное исключение и уронит весь монолит — вместе с
+    // мониторингом инвертора и остальными модулями в этом же процессе.
+    child.on("error", (err) => {
+      void tmp.cleanup();
+      if (!res.headersSent) {
+        res.status(500).json({ ok: false, error: `ffmpeg failed: ${(err as Error)?.message ?? "unknown"}` });
+      } else {
+        res.end();
+      }
+    });
 
     res.setHeader("Content-Type", "video/mp4");
     res.setHeader("Content-Disposition", `attachment; filename="${downloadFileName(r.cam, r.fromMs)}"`);
     child.stdout?.pipe(res);
     child.on("exit", () => void tmp.cleanup());
-    // Клиент ушёл — незачем держать ffmpeg и греть Wi-Fi.
-    res.on("close", () => child.kill("SIGTERM"));
   });
 
   return router;
