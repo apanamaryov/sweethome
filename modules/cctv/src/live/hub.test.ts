@@ -31,6 +31,7 @@ class FakeTimers {
 class FakeChild implements LiveChild {
   dataCb: ((c: Buffer) => void) | null = null;
   exitCb: ((code: number | null) => void) | null = null;
+  errorCb: ((err?: unknown) => void) | null = null;
   killed = false;
   /**
    * Настоящий child_process не эмитит exit синхронно из kill() — только позже.
@@ -42,8 +43,11 @@ class FakeChild implements LiveChild {
       this.dataCb = cb;
     },
   };
-  on(_ev: "exit", cb: (code: number | null) => void): void {
-    this.exitCb = cb;
+  // "exit" и "error" — разные слушатели с разными callback'ами; сессия
+  // регистрирует оба, и второй вызов не должен затирать первый.
+  on(ev: "exit" | "error", cb: (arg?: unknown) => void): void {
+    if (ev === "exit") this.exitCb = cb;
+    else this.errorCb = cb;
   }
   kill(): void {
     this.killed = true;

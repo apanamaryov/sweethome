@@ -82,6 +82,7 @@ export function createCctvModule(rootDataDir: string, over: CctvModuleOverrides 
 
   let ffmpeg: { ok: boolean; version?: string; error?: string } = { ok: false, error: "not probed" };
   let manager: RecorderManager | null = null;
+  let started = false;
   const hub = new LiveHub({ cfg, timers, spawn: liveSpawn });
 
   const storageReady = async (): Promise<boolean> => {
@@ -131,20 +132,53 @@ export function createCctvModule(rootDataDir: string, over: CctvModuleOverrides 
           },
         };
         ws.on("message", (raw: unknown) => {
-          let msg: LiveClientMessage;
+          let parsed: unknown;
           try {
-            msg = JSON.parse(String(raw)) as LiveClientMessage;
+            parsed = JSON.parse(String(raw));
           } catch {
             return; // мусор от клиента не должен ронять соединение
           }
-          if (msg.type === "subscribe") hub.subscribe(msg.cam, sink);
-          else if (msg.type === "unsubscribe") hub.unsubscribe(msg.cam, sink);
+          // "null" и "42" — валидный JSON, но не объект: без этой проверки
+          // msg.type ниже бросил бы TypeError вне try/catch разбора.
+          if (!parsed || typeof parsed !== "object") return;
+          const msg = parsed as LiveClientMessage;
+
+          if (msg.type === "subscribe") {
+            if (!ffmpeg.ok) {
+              // Без бинарника нечего спавнить: не запускаем сессию, которая
+              // заведомо не поднимется, а честно сообщаем зрителю причину.
+              sink.sendText({ type: "error", cam: msg.cam, error: "ffmpeg is not available" });
+              return;
+            }
+            hub.subscribe(msg.cam, sink);
+          } else if (msg.type === "unsubscribe") {
+            hub.unsubscribe(msg.cam, sink);
+          }
         });
         ws.on("close", () => hub.unsubscribeAll(sink));
       },
     },
 
     async start() {
+      // Повторный start() без stop() поднял бы второй RecorderManager поверх
+      // тех же камер (дублирующая запись в один каталог) и второй набор
+      // таймеров — внутренние компоненты от такой гонки защищены, а сборка
+      // модуля до сих пор не была. Хост сегодня зовёт start()/stop() по разу,
+      // но это ровно тот класс гонок, что уже не раз оказывался реальным.
+      if (started) {
+        console.warn("[cctv] start() called again without stop() — ignoring");
+        return;
+      }
+      started = true;
+
+      // Второй start() после честного stop(): если базу закрывали мы сами —
+      // переоткрываем тот же объект (роутер и RecorderManager уже держат на
+      // него ссылку, пересобирать её незачем).
+      if (ownsDb && dbClosed) {
+        db.reopen(`${cfg.dataDir}/index.db`);
+        dbClosed = false;
+      }
+
       if (!cfg.enabled) {
         console.log("[cctv] disabled (no cameras configured)");
         return;
@@ -182,6 +216,9 @@ export function createCctvModule(rootDataDir: string, over: CctvModuleOverrides 
         db.close();
         dbClosed = true;
       }
+      // Разрешаем честный повторный start() после этого stop() — гейт выше
+      // блокирует только повторный вызов БЕЗ промежуточного stop().
+      started = false;
     },
 
     health(): ModuleHealth {

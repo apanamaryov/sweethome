@@ -25,7 +25,9 @@ const toRow = (r: SegSql): SegmentRow => ({
  * хранилище — SMB через Wi-Fi, listing по нему стоит дорого.
  */
 export class CctvDb {
-  private db: DatabaseSync;
+  // Присваивается не в конструкторе напрямую, а через open() (нужно для reopen()
+  // ниже) — компилятору это не видно статически, отсюда "!".
+  private db!: DatabaseSync;
   private stmt!: {
     insInit: StatementSync; getInit: StatementSync; getInitById: StatementSync;
     insSeg: StatementSync; getSegById: StatementSync; getSegPath: StatementSync;
@@ -36,11 +38,25 @@ export class CctvDb {
   };
 
   constructor(file: string) {
+    this.open(file);
+  }
+
+  private open(file: string): void {
     this.db = new DatabaseSync(file);
     this.db.exec("PRAGMA journal_mode = WAL");
     this.db.exec("PRAGMA synchronous = NORMAL");
     this.migrate();
     this.prepare();
+  }
+
+  /**
+   * Переоткрывает соединение поверх того же файла. Нужно только владельцу базы,
+   * закрывшему её в stop() и затем перезапускающемуся (start() после stop()) —
+   * тот же объект CctvDb остаётся в работе, поэтому роутеру и RecorderManager,
+   * уже держащим ссылку на него, не нужно ничего пересобирать.
+   */
+  reopen(file: string): void {
+    this.open(file);
   }
 
   close(): void {

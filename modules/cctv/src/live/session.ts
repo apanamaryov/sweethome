@@ -4,7 +4,11 @@ import { liveArgs } from "../recorder/ffmpeg";
 
 export interface LiveChild {
   stdout: { on(ev: "data", cb: (c: Buffer) => void): void } | null;
-  on(ev: "exit", cb: (code: number | null) => void): void;
+  // "error" — отдельно от "exit": неудачный спавн (нет бинарника, нет прав)
+  // у настоящего child_process обычно шлёт только "error", без "exit" вовсе.
+  // Оба нужно слушать явно — необработанный "error" на EventEmitter иначе
+  // превращается в брошенное исключение.
+  on(ev: "exit" | "error", cb: (arg?: unknown) => void): void;
   // Как у настоящего child_process.kill — чтобы реальный ChildProcess подходил
   // сюда без приведений типа.
   kill(sig?: NodeJS.Signals): void;
@@ -49,18 +53,30 @@ export class LiveSession {
       for (const s of this.sinks) s.send(chunk);
     });
 
-    child.on("exit", () => {
-      if (this.stopped) return;
-      this.child = null;
-      this.header = null;
-      for (const s of this.sinks) {
-        s.sendText({ type: "error", cam: this.deps.cam.id, error: "live stream stopped" });
-      }
-      // Процесс мёртв: данные из буфера пайпа могут прийти уже после exit, а у
-      // подписчика к этому моменту закрыт MediaSource — фрагмент туда слать нельзя.
-      this.sinks.clear();
-      this.deps.onExit();
+    child.on("exit", () => this.dropDeadChild("live stream stopped"));
+
+    // Неудачный спавн (нет бинарника ffmpeg, нет прав на него) обычно шлёт
+    // только "error", без последующего "exit" — без этого слушателя this.child
+    // остался бы навсегда занятым, и хаб бесконечно переиспользовал бы мёртвую
+    // сессию для всех новых зрителей, ничего им не показывая.
+    child.on("error", (err) => {
+      const message = (err as Error)?.message ?? "unknown error";
+      this.dropDeadChild(`live stream failed: ${message}`);
     });
+  }
+
+  /** Общая уборка на смерть процесса — от штатного "exit" и от неудачного спавна ("error"). */
+  private dropDeadChild(error: string): void {
+    if (this.stopped) return;
+    this.child = null;
+    this.header = null;
+    for (const s of this.sinks) {
+      s.sendText({ type: "error", cam: this.deps.cam.id, error });
+    }
+    // Процесс мёртв: данные из буфера пайпа могут прийти уже после exit, а у
+    // подписчика к этому моменту закрыт MediaSource — фрагмент туда слать нельзя.
+    this.sinks.clear();
+    this.deps.onExit();
   }
 
   attach(sink: Sink): void {
