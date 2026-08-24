@@ -12,9 +12,11 @@ single web UI, a shared authentication system and a single deploy.
 
 Modules: `modules/inverter` — monitoring and control of an ISolar/EASUN SMG II hybrid
 inverter over Modbus RTU (see `modules/inverter/CLAUDE.md` for its protocol, architecture
-and write-safety model). Heating is designed but not yet implemented — see
-`docs/heating/SPEC.md`; the implementation will land as its own module (`modules/heating`)
-in a later pass.
+and write-safety model). `modules/cctv` — local, cloud-free recording, live view and
+archive playback for two ONVIF/RTSP cameras, with all video going through an external
+`ffmpeg` (see `modules/cctv/CLAUDE.md` for the camera hardware findings and review
+lessons). Heating is designed but not yet implemented — see `docs/heating/SPEC.md`; the
+implementation will land as its own module (`modules/heating`) in a later pass.
 
 Unification design (why the repo looks the way it does): `docs/superpowers/specs/2026-08-01-sweethome-unification-design.md`.
 
@@ -23,9 +25,9 @@ Unification design (why the repo looks the way it does): `docs/superpowers/specs
 ```bash
 npm install        # installs dependencies for all workspaces at once (this is a monorepo)
 npm run dev        # server :3000 (forces INVERTER_TRANSPORT=mock) + web :3001 (Next.js HMR, proxies /api to :3000)
-npm run build      # STRICTLY in the order packages/shared → packages/inverter-shared → packages/inverter-mcp → modules/inverter → server → web
-npm run check      # jest: inverter-mcp + inverter (protocol/transport/stats/mqtt/store/router/mcp) + server (auth/host/http) + typecheck (web)
-npm test           # same as check, but with the web jest suite instead of typecheck: inverter-mcp → inverter → server → web
+npm run build      # STRICTLY in the order packages/shared → packages/inverter-shared → packages/inverter-mcp → modules/inverter → packages/cctv-shared → modules/cctv → server → web
+npm run check      # jest: inverter-mcp + inverter (protocol/transport/stats/mqtt/store/router/mcp) + cctv (recorder/index/live/router) + server (auth/host/http) + typecheck (web)
+npm test           # same as check, but with the web jest suite instead of typecheck: inverter-mcp → inverter → cctv → server → web
 ./deploy.sh        # local build → rsync to the Pi → npm ci → systemd restart (incl. enabling autostart) → health check
 ```
 
@@ -53,9 +55,9 @@ npm test           # same as check, but with the web jest suite instead of typec
   `@sweethome/shared` and `@sweethome/inverter-shared` modules
   (`packages/shared/src/{auth,module}.test.ts`, `packages/inverter-shared/src/{settings,source}.test.ts`
   — see the `roots` list in `server/jest.config.cjs`). None of this is a typecheck.
-- `npm run check` for `server`/`inverter`/`inverter-mcp` is jest, NOT a type check. Their
-  types are only checked by the build (`tsc` in `npm run build`). The `web` workspace is
-  checked separately (`tsc --noEmit`).
+- `npm run check` for `server`/`inverter`/`inverter-mcp`/`cctv` is jest, NOT a type check.
+  Their types are only checked by the build (`tsc` in `npm run build`). The `web` workspace
+  is checked separately (`tsc --noEmit`).
 - Deploying to the Pi — `PI_HOST=pi@… SSH_KEY=~/.ssh/… ./deploy.sh`; note that the script
   rebuilds everything locally, uploads the artifacts and **restarts the live systemd
   service** on the Pi (see "Deploying to the Pi" below). The actual host/key are outside
@@ -68,8 +70,9 @@ npm test           # same as check, but with the web jest suite instead of typec
 ## Architecture
 
 An npm-workspaces monorepo, strict build order: `packages/shared` → `packages/inverter-shared`
-→ `packages/inverter-mcp` → `modules/inverter` → `server` → `web`. Each package imports the
-previous ones from their **built `dist/`**, not from source, so the order is not arbitrary.
+→ `packages/inverter-mcp` → `modules/inverter` → `packages/cctv-shared` → `modules/cctv` →
+`server` → `web`. Each package imports the previous ones from their **built `dist/`**, not
+from source, so the order is not arbitrary.
 
 ### `server/` — the host
 Express (REST under `/api` + serving the `web/out` static files) and WebSocket. The host
@@ -159,10 +162,19 @@ write-safety model.
 ## Deploying to the Pi (important details)
 
 - The build is **entirely local**; the Pi only runs
-  `npm ci -w server -w modules/inverter -w packages/inverter-mcp --omit=dev` + a systemd
-  restart. The Pi compiles nothing. `rsync` uploads `packages/shared/dist`,
-  `packages/inverter-shared/dist`, `packages/inverter-mcp/dist`, `modules/inverter/dist`,
-  `server/dist`, `web/out` and the workspace manifests.
+  `npm ci -w server -w modules/inverter -w packages/inverter-mcp -w modules/cctv
+  -w packages/cctv-shared --omit=dev` + a systemd restart. The Pi compiles nothing. `rsync`
+  uploads `packages/shared/dist`, `packages/inverter-shared/dist`, `packages/inverter-mcp/dist`,
+  `modules/inverter/dist`, `packages/cctv-shared/dist`, `modules/cctv/dist`, `server/dist`,
+  `web/out` and the workspace manifests.
+- **`modules/cctv` needs two things on the Pi that nothing else in this project does**: an
+  external **`ffmpeg`** binary (`sudo apt install ffmpeg` — Node alone cannot decode what
+  these cameras send; see `modules/cctv/CLAUDE.md` for why) and a mounted **`/mnt/cctv`**, a
+  dedicated mount point for video, separate from the existing `/mnt/rancho-backup` (both are
+  prepared by hand once — spec §15). `deploy.sh` runs `command -v ffmpeg` on the Pi before
+  restarting the service and fails with a clear message if it is missing; it does not check
+  the mount itself — a missing `/mnt/cctv` shows up as "storage unavailable" in `health()`
+  and the UI rather than as a failed deploy (spec §16).
 - The Pi directory is `/home/pi/sweethome` (renamed from `/home/pi/inverter-monitor`);
   `deploy.sh` performs that one-time move itself the first time it runs against an
   unmigrated Pi (stops the old `inverter-monitor` unit, moves the directory, splits the
