@@ -103,6 +103,13 @@ export default function LivePlayer({ cam, label }: { cam: string; label: string 
     };
     video.addEventListener("error", onVideoError);
 
+    // Ошибку гасим не по приходу данных — сервер шлёт сегменты и тогда, когда браузер их
+    // не смог декодировать, — а по факту, что картинка реально пошла. Иначе плашка гаснет
+    // через один интервал сегмента, а зритель дальше смотрит на чёрный прямоугольник без
+    // объяснений — ровно то, чего спека запрещает.
+    const onPlaying = () => setErrorSafe(null);
+    video.addEventListener("playing", onPlaying);
+
     const ws = new WebSocket(wsUrl("cctv"));
     ws.binaryType = "arraybuffer";
 
@@ -118,10 +125,13 @@ export default function LivePlayer({ cam, label }: { cam: string; label: string 
         if (msg.type === "error") setErrorSafe(msg.error ?? "stream error");
         return;
       }
-      setErrorSafe(null);
       queue.push(ev.data as ArrayBuffer);
       flush();
-      void video.play().catch(() => {});
+      // Опциональная цепочка — не только на случай отказа самого play() (спека это
+      // допускает), но и потому, что не все реализации HTMLMediaElement возвращают из play()
+      // промис (jsdom в тестах, к примеру, возвращает undefined) — обработчик сообщения не
+      // должен падать из-за этого.
+      void video.play()?.catch(() => {});
     };
 
     return () => {
@@ -130,6 +140,7 @@ export default function LivePlayer({ cam, label }: { cam: string; label: string 
       ms.removeEventListener("sourceopen", openSource);
       if (sb) sb.removeEventListener("updateend", onUpdateEnd);
       video.removeEventListener("error", onVideoError);
+      video.removeEventListener("playing", onPlaying);
       try {
         ws.send(JSON.stringify({ type: "unsubscribe", cam }));
       } catch {}

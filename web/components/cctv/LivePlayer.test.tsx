@@ -68,6 +68,7 @@ class FakeMediaSource {
 describe("LivePlayer", () => {
   const origWs = global.WebSocket;
   const origMse = (global as { MediaSource?: unknown }).MediaSource;
+  const origPlay = window.HTMLMediaElement.prototype.play;
 
   beforeEach(() => {
     (global as unknown as { WebSocket: unknown }).WebSocket = FakeWebSocket;
@@ -78,11 +79,16 @@ describe("LivePlayer", () => {
     // jsdom не реализует revokeObjectURL — подставляем его, чтобы тест проверял
     // поведение компонента, а не терпимость try/catch к отсутствующему в среде API.
     (global.URL as unknown as { revokeObjectURL: unknown }).revokeObjectURL = () => {};
+    // jsdom не реализует HTMLMediaElement.play() — без стаба он логирует "not implemented"
+    // в консоль и возвращает undefined вместо промиса. В настоящих браузерах play() всегда
+    // возвращает промис — подставляем реалистичное поведение, а не терпим шум в выводе теста.
+    window.HTMLMediaElement.prototype.play = () => Promise.resolve();
   });
 
   afterEach(() => {
     (global as unknown as { WebSocket: unknown }).WebSocket = origWs;
     (global as unknown as { MediaSource: unknown }).MediaSource = origMse;
+    window.HTMLMediaElement.prototype.play = origPlay;
   });
 
   it("показывает подпись камеры", () => {
@@ -164,5 +170,31 @@ describe("LivePlayer", () => {
         ms.sourceopenCallback?.();
       });
     }).not.toThrow();
+  });
+
+  it("ошибка воспроизведения переживает следующий пришедший кадр и гаснет только когда видео реально пошло", () => {
+    const { container } = render(<LivePlayer cam="drive" label="Въезд" />);
+    act(() => {
+      FakeWebSocket.last!.onopen?.();
+    });
+    const video = container.querySelector("video")!;
+    act(() => {
+      video.dispatchEvent(new Event("error"));
+    });
+    expect(screen.getByText(/playback failed/)).toBeInTheDocument();
+
+    // Сервер продолжает слать сегменты независимо от того, смог ли браузер декодировать
+    // предыдущий, — раньше это гасило плашку через один кадр, и зритель дальше смотрел
+    // на чёрный прямоугольник без объяснений.
+    act(() => {
+      FakeWebSocket.last!.onmessage?.({ data: new ArrayBuffer(0) });
+    });
+    expect(screen.getByText(/playback failed/)).toBeInTheDocument();
+
+    // А вот когда видео реально пошло — плашка обязана исчезнуть.
+    act(() => {
+      video.dispatchEvent(new Event("playing"));
+    });
+    expect(screen.queryByText(/playback failed/)).not.toBeInTheDocument();
   });
 });
