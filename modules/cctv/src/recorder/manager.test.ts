@@ -173,4 +173,62 @@ describe("RecorderManager", () => {
     mgr.stop();
     db.close();
   });
+
+  it("stop() во время start() не оставляет живых процессов", async () => {
+    const cfg = loadCctvConfig("/data", { CCTV_CAMERAS: "drive=10.0.0.1,yard=10.0.0.2" });
+    const db = new CctvDb(":memory:");
+    const timers = new FakeTimers();
+    const children: FakeChild[] = [];
+    const scanned: string[] = [];
+
+    // Управляемый промис вместо мгновенного true — имитирует сетевой диск,
+    // который отвечает не сразу, чтобы start() застыл на первой камере ровно
+    // в той точке, где может вклиниться stop().
+    let resolveReady!: (v: boolean) => void;
+    const readyPromise = new Promise<boolean>((res) => {
+      resolveReady = res;
+    });
+
+    const mgr = new RecorderManager({
+      cfg,
+      db,
+      scanner: {
+        async scanCamera(cam) {
+          scanned.push(cam);
+          return 0;
+        },
+      },
+      retention: { async runOnce() { return { removed: 0, freedBytes: 0 }; } },
+      spawn: () => {
+        const c = new FakeChild();
+        children.push(c);
+        return c;
+      },
+      timers,
+      storageReady: () => readyPromise,
+      mkdir: async () => {},
+      newRunId: () => "run1",
+    });
+
+    const starting = mgr.start(); // не дожидаемся — start() виснет на storageReady первой камеры
+    mgr.stop();
+    resolveReady(true);
+    await starting;
+    // дать микрозадачам (mkdir/spawn второй камеры, если бы утечка была) отработать
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(children.every((c) => c.killed)).toBe(true);
+    expect(children.length).toBeLessThanOrEqual(1);
+
+    scanned.length = 0;
+    await timers.advance(RETENTION_INTERVAL_MS);
+    expect(scanned).toEqual([]);
+    expect(children.length).toBeLessThanOrEqual(1);
+
+    expect(mgr.cameras().some((c) => c.recording)).toBe(false);
+
+    db.close();
+  });
 });

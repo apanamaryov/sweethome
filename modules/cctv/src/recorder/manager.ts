@@ -35,6 +35,11 @@ export class RecorderManager {
     this.stopped = false;
 
     for (const cam of cfg.cameras) {
+      // stop() мог случиться между итерациями (пока предыдущая камера ждала
+      // storageReady/mkdir на сетевом диске) — не поднимаем то, что сразу же
+      // придётся глушить.
+      if (this.stopped) return;
+
       const proc = new RecorderProcess({
         cam,
         camDir: `${cfg.storageDir}/${cam.id}`,
@@ -51,6 +56,15 @@ export class RecorderManager {
       });
       this.procs.set(cam.id, proc);
       await proc.start();
+
+      // Остановили, пока этот процесс поднимался: stop() уже прошёл и не
+      // застал его в this.procs, значит глушим его здесь сами — иначе он
+      // останется писать бесконтрольно до конца жизни сервиса.
+      if (this.stopped) {
+        proc.stop();
+        this.procs.delete(cam.id);
+        return;
+      }
     }
 
     this.armScan();
