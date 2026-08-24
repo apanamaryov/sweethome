@@ -46,6 +46,9 @@ export class LiveSession {
       for (const s of this.sinks) {
         s.sendText({ type: "error", cam: this.deps.cam.id, error: "live stream stopped" });
       }
+      // Процесс мёртв: данные из буфера пайпа могут прийти уже после exit, а у
+      // подписчика к этому моменту закрыт MediaSource — фрагмент туда слать нельзя.
+      this.sinks.clear();
       this.deps.onExit();
     });
   }

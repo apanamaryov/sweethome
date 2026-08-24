@@ -182,6 +182,23 @@ describe("LiveHub", () => {
     hub.stop();
   });
 
+  it("фрагмент, пришедший после падения процесса, подписчикам не уходит", () => {
+    const { hub, children } = make();
+    const s = fakeSink();
+    hub.subscribe("drive", s);
+    children[0].emit("HEAD");
+    const chunksBeforeExit = s.chunks.length;
+
+    children[0].exitCb?.(1);
+    // данные из буфера пайпа могут прийти уже после exit — к этому моменту
+    // подписчик уже получил ошибку и, вероятно, закрыл MediaSource у себя
+    children[0].emit("LATE");
+
+    expect(s.texts.some((t) => t.type === "error")).toBe(true);
+    expect(s.chunks.length).toBe(chunksBeforeExit);
+    hub.stop();
+  });
+
   it("unsubscribeAll снимает зрителя со всех камер", async () => {
     const { hub, timers, children } = make();
     const s = fakeSink();
