@@ -19,21 +19,26 @@ function parseRange(q: Record<string, unknown>): { cam: string; fromMs: number; 
   return { cam, fromMs, toMs };
 }
 
-export function createCctvRouter(deps: {
+/** Дочерний процесс, каким его видит `/download` — минимум, достаточный для склейки и обрыва по SIGTERM. */
+export interface DownloadChild {
+  stdout: { pipe(dest: unknown): void } | null;
+  on(ev: "exit" | "error", cb: (arg?: unknown) => void): void;
+  // Как у настоящего child_process.kill — чтобы реальный ChildProcess подходил
+  // сюда без приведений типа.
+  kill(sig?: NodeJS.Signals): void;
+}
+
+/** Зависимости роутера — отдельный экспортируемый тип, чтобы сборка модуля проверялась типами, а не приведениями. */
+export interface CctvRouterDeps {
   cfg: CctvConfig;
   db: CctvDb;
   manager: { cameras(): CameraInfo[]; storageAvailable(): boolean };
   sendFile: SendFile;
-  spawn: (
-    cmd: string,
-    args: string[]
-  ) => {
-    stdout: { pipe(dest: unknown): void } | null;
-    on(ev: "exit" | "error", cb: (arg?: unknown) => void): void;
-    kill(sig?: string): void;
-  };
+  spawn: (cmd: string, args: string[]) => DownloadChild;
   tmpFile: (content: string) => Promise<{ path: string; cleanup: () => Promise<void> }>;
-}): Router {
+}
+
+export function createCctvRouter(deps: CctvRouterDeps): Router {
   const { cfg, db, manager, sendFile } = deps;
   const router = express.Router();
   const known = new Set(cfg.cameras.map((c) => c.id));

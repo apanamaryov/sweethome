@@ -5,7 +5,9 @@ import { liveArgs } from "../recorder/ffmpeg";
 export interface LiveChild {
   stdout: { on(ev: "data", cb: (c: Buffer) => void): void } | null;
   on(ev: "exit", cb: (code: number | null) => void): void;
-  kill(sig?: string): void;
+  // Как у настоящего child_process.kill — чтобы реальный ChildProcess подходил
+  // сюда без приведений типа.
+  kill(sig?: NodeJS.Signals): void;
 }
 
 export type LiveSpawner = (cmd: string, args: string[]) => LiveChild;

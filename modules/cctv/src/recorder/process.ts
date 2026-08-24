@@ -4,7 +4,9 @@ import { recordArgs } from "./ffmpeg";
 export interface ChildLike {
   on(ev: "exit", cb: (code: number | null) => void): void;
   stderr: { on(ev: "data", cb: (c: Buffer) => void): void } | null;
-  kill(sig?: string): void;
+  // Сигнатура — как у настоящего child_process.kill (принимает только имя сигнала,
+  // не произвольную строку): реальный ChildProcess должен подходить сюда без приведений.
+  kill(sig?: NodeJS.Signals): void;
 }
 
 export type Spawner = (cmd: string, args: string[]) => ChildLike;
