@@ -32,6 +32,11 @@ class FakeChild implements LiveChild {
   dataCb: ((c: Buffer) => void) | null = null;
   exitCb: ((code: number | null) => void) | null = null;
   killed = false;
+  /**
+   * Настоящий child_process не эмитит exit синхронно из kill() — только позже.
+   * Флаг воспроизводит именно такой порядок, а не удобный для теста синхронный.
+   */
+  asyncExit = false;
   stdout = {
     on: (_ev: "data", cb: (c: Buffer) => void) => {
       this.dataCb = cb;
@@ -42,11 +47,20 @@ class FakeChild implements LiveChild {
   }
   kill(): void {
     this.killed = true;
-    this.exitCb?.(null);
+    if (this.asyncExit) {
+      setTimeout(() => this.exitCb?.(null), 0);
+    } else {
+      this.exitCb?.(null);
+    }
   }
   emit(data: string): void {
     this.dataCb?.(Buffer.from(data));
   }
+}
+
+/** Настоящий тик event loop — чтобы дождаться setTimeout(..., 0) из asyncExit. */
+function tick(ms = 5): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function fakeSink(): Sink & { chunks: Buffer[]; texts: LiveServerMessage[] } {
@@ -216,5 +230,41 @@ describe("LiveHub", () => {
     hub.subscribe("yard", fakeSink());
     hub.stop();
     expect(children.every((c) => c.killed)).toBe(true);
+  });
+
+  it("поздний exit старого процесса не гасит новую сессию, поднятую после переподписки", async () => {
+    const { hub, timers, children } = make();
+    const s1 = fakeSink();
+    hub.subscribe("drive", s1);
+    hub.unsubscribe("drive", s1);
+    // kill() не гарантирует синхронный exit — воспроизводим честный порядок
+    children[0].asyncExit = true;
+
+    await timers.advance(15_000); // таймер простоя гасит первый процесс; exit ещё не долетел
+    expect(children[0].killed).toBe(true);
+
+    hub.subscribe("drive", fakeSink()); // переподписка ровно в это окно — новая, живая сессия
+    expect(children).toHaveLength(2);
+
+    await tick(); // теперь долетает отложенный exit первого (уже неактуального) процесса
+
+    expect(hub.activeCameras()).toEqual(["drive"]);
+    hub.subscribe("drive", fakeSink());
+    expect(children).toHaveLength(2); // третий процесс не поднялся — камера делит второй
+
+    hub.stop();
+  });
+
+  it("после hub.stop() отложенный exit не рассылает ошибку подписчику", async () => {
+    const { hub, children } = make();
+    const s = fakeSink();
+    hub.subscribe("drive", s);
+    children[0].asyncExit = true;
+    const textsBefore = s.texts.length;
+
+    hub.stop();
+    await tick(); // долетает отложенный exit уже остановленного процесса
+
+    expect(s.texts.length).toBe(textsBefore);
   });
 });

@@ -25,6 +25,13 @@ export class LiveSession {
   private child: LiveChild | null = null;
   private header: Buffer | null = null;
   private sinks = new Set<Sink>();
+  /**
+   * kill() не гарантирует синхронный exit (у настоящего child_process — почти
+   * никогда). Пока флаг не поднят, поздний exit уже остановленной сессии не
+   * должен ничего рассылать и не должен звать onExit — иначе он способен
+   * стереть из хаба чужую, уже живую сессию той же камеры.
+   */
+  private stopped = false;
 
   constructor(
     private deps: { cam: CameraConfig; ffmpegPath: string; spawn: LiveSpawner; onExit: () => void }
@@ -41,6 +48,7 @@ export class LiveSession {
     });
 
     child.on("exit", () => {
+      if (this.stopped) return;
       this.child = null;
       this.header = null;
       for (const s of this.sinks) {
@@ -68,6 +76,7 @@ export class LiveSession {
 
   stop(): void {
     const child = this.child;
+    this.stopped = true;
     this.child = null;
     this.header = null;
     this.sinks.clear();

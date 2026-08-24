@@ -27,7 +27,11 @@ export class LiveHub {
         cam,
         ffmpegPath: this.deps.cfg.ffmpegPath,
         spawn: this.deps.spawn,
-        onExit: () => this.sessions.delete(camId),
+        // Процесс умирает асинхронно: к этому моменту в мапе может лежать уже
+        // другая, живая сессия этой камеры — её удалять нельзя.
+        onExit: () => {
+          if (this.sessions.get(camId) === session) this.sessions.delete(camId);
+        },
       });
       this.sessions.set(camId, session);
       session.start();
