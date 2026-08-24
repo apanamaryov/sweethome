@@ -147,31 +147,38 @@ describe("RecorderManager", () => {
   });
 
   it("падение сканера не роняет тик и не мешает следующему", async () => {
-    const cfg = loadCctvConfig("/data", { CCTV_CAMERAS: "drive=10.0.0.1" });
-    const db = new CctvDb(":memory:");
-    const timers = new FakeTimers();
-    let calls = 0;
-    const mgr = new RecorderManager({
-      cfg,
-      db,
-      scanner: {
-        async scanCamera() {
-          calls++;
-          throw new Error("SMB упал");
+    // Сканер здесь намеренно падает, а tickScan честно пишет console.error —
+    // глушим ожидаемый вывод, чтобы зелёный прогон оставался чистым.
+    const errSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const cfg = loadCctvConfig("/data", { CCTV_CAMERAS: "drive=10.0.0.1" });
+      const db = new CctvDb(":memory:");
+      const timers = new FakeTimers();
+      let calls = 0;
+      const mgr = new RecorderManager({
+        cfg,
+        db,
+        scanner: {
+          async scanCamera() {
+            calls++;
+            throw new Error("SMB упал");
+          },
         },
-      },
-      retention: { async runOnce() { return { removed: 0, freedBytes: 0 }; } },
-      spawn: () => new FakeChild(),
-      timers,
-      storageReady: async () => true,
-      mkdir: async () => {},
-    });
-    await mgr.start();
-    await timers.advance(SCAN_INTERVAL_MS);
-    await timers.advance(SCAN_INTERVAL_MS);
-    expect(calls).toBeGreaterThanOrEqual(2);
-    mgr.stop();
-    db.close();
+        retention: { async runOnce() { return { removed: 0, freedBytes: 0 }; } },
+        spawn: () => new FakeChild(),
+        timers,
+        storageReady: async () => true,
+        mkdir: async () => {},
+      });
+      await mgr.start();
+      await timers.advance(SCAN_INTERVAL_MS);
+      await timers.advance(SCAN_INTERVAL_MS);
+      expect(calls).toBeGreaterThanOrEqual(2);
+      mgr.stop();
+      db.close();
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 
   it("stop() во время start() не оставляет живых процессов", async () => {
@@ -220,12 +227,12 @@ describe("RecorderManager", () => {
     await Promise.resolve();
 
     expect(children.every((c) => c.killed)).toBe(true);
-    expect(children.length).toBeLessThanOrEqual(1);
+    expect(children.length).toBe(0);
 
     scanned.length = 0;
     await timers.advance(RETENTION_INTERVAL_MS);
     expect(scanned).toEqual([]);
-    expect(children.length).toBeLessThanOrEqual(1);
+    expect(children.length).toBe(0);
 
     expect(mgr.cameras().some((c) => c.recording)).toBe(false);
 
