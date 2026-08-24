@@ -33,6 +33,7 @@ export class RecorderProcess {
   private child: ChildLike | null = null;
   private timer: unknown = null;
   private stopped = false;
+  private starting = false;
   private failures = 0;
   private restarts = 0;
   private startedAtMs: number | null = null;
@@ -62,49 +63,63 @@ export class RecorderProcess {
   }
 
   async start(): Promise<void> {
-    if (this.child !== null || this.stopped) return;
-    this.stopped = false;
-
-    if (!(await this.deps.storageReady())) {
-      // Не крутим ffmpeg вхолостую: он всё равно упадёт, а логи заспамит.
-      this.lastError = "storage is not available";
-      this.scheduleRestart();
-      return;
-    }
-
+    // starting — против конкурентного второго вызова: без него два неawait-нутых
+    // start() оба проходят проверку "child === null" и оба доходят до spawn().
+    if (this.child !== null || this.stopped || this.starting) return;
+    this.starting = true;
     try {
-      await this.deps.mkdir(this.deps.camDir);
-    } catch (e) {
-      this.lastError = `mkdir failed: ${(e as Error).message}`;
-      this.scheduleRestart();
-      return;
-    }
-
-    const args = recordArgs({
-      cam: this.deps.cam,
-      camDir: this.deps.camDir,
-      segmentSec: this.deps.segmentSec,
-      runId: this.deps.newRunId(),
-    });
-
-    const child = this.deps.spawn(this.deps.ffmpegPath, args);
-    this.child = child;
-    this.startedAtMs = this.deps.timers.now();
-
-    child.stderr?.on("data", (chunk) => {
-      const line = chunk.toString().trim().split("\n").pop();
-      if (line) this.lastError = line;
-    });
-
-    child.on("exit", () => {
-      const ranFor = this.deps.timers.now() - (this.startedAtMs ?? 0);
-      this.child = null;
-      this.startedAtMs = null;
+      const ready = await this.deps.storageReady();
+      // stop() мог случиться, пока мы ждали ответ хранилища (это реальный сетевой
+      // диск — секунды ожидания обычны). Перепроверяем, иначе поднимем процесс,
+      // которым уже никто не будет управлять.
       if (this.stopped) return;
-      if (ranFor >= RESET_AFTER_MS) this.failures = 0;
-      this.restarts++;
-      this.scheduleRestart();
-    });
+
+      if (!ready) {
+        // Не крутим ffmpeg вхолостую: он всё равно упадёт, а логи заспамит.
+        this.lastError = "storage is not available";
+        this.scheduleRestart();
+        return;
+      }
+
+      try {
+        await this.deps.mkdir(this.deps.camDir);
+      } catch (e) {
+        if (this.stopped) return;
+        this.lastError = `mkdir failed: ${(e as Error).message}`;
+        this.scheduleRestart();
+        return;
+      }
+      // Та же гонка: stop() во время mkdir().
+      if (this.stopped) return;
+
+      const args = recordArgs({
+        cam: this.deps.cam,
+        camDir: this.deps.camDir,
+        segmentSec: this.deps.segmentSec,
+        runId: this.deps.newRunId(),
+      });
+
+      const child = this.deps.spawn(this.deps.ffmpegPath, args);
+      this.child = child;
+      this.startedAtMs = this.deps.timers.now();
+
+      child.stderr?.on("data", (chunk) => {
+        const line = chunk.toString().trim().split("\n").pop();
+        if (line) this.lastError = line;
+      });
+
+      child.on("exit", () => {
+        const ranFor = this.deps.timers.now() - (this.startedAtMs ?? 0);
+        this.child = null;
+        this.startedAtMs = null;
+        if (this.stopped) return;
+        if (ranFor >= RESET_AFTER_MS) this.failures = 0;
+        this.restarts++;
+        this.scheduleRestart();
+      });
+    } finally {
+      this.starting = false;
+    }
   }
 
   private scheduleRestart(): void {

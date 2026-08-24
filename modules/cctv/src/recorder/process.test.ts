@@ -173,4 +173,27 @@ describe("RecorderProcess", () => {
     await proc.start();
     expect(children).toHaveLength(1);
   });
+
+  it("stop() во время ожидания хранилища не оставляет живого процесса", async () => {
+    let resolveReady: (v: boolean) => void = () => {};
+    const { proc, children } = makeProc({
+      storageReady: () => new Promise((res) => (resolveReady = res)),
+    });
+
+    const startPromise = proc.start(); // подвис на storageReady(), не дожидаемся
+    proc.stop();
+    resolveReady(true); // хранилище "ответило" уже после stop()
+    await startPromise;
+
+    expect(children).toHaveLength(0);
+    expect(proc.state().running).toBe(false);
+  });
+
+  it("два параллельных start() поднимают ровно один процесс", async () => {
+    const { proc, children } = makeProc();
+    const p1 = proc.start();
+    const p2 = proc.start(); // без await между вызовами
+    await Promise.all([p1, p2]);
+    expect(children).toHaveLength(1);
+  });
 });
