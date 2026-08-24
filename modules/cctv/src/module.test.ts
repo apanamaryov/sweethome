@@ -51,6 +51,11 @@ const noopTimers = {
   now: () => 0,
 };
 
+// Наблюдатель за движением (Step 5, events/onvif.ts) поднимается сам при
+// start(), если камеры настроены — без фейкового post() тесты дёргали бы
+// настоящий fetch по несуществующему IP камеры и виснут на сетевом таймауте.
+const noopPost = async () => "<s:Envelope/>";
+
 const fakeFs = {
   async readFile() {
     throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
@@ -100,6 +105,7 @@ function build(env: NodeJS.ProcessEnv, probeOk = true) {
     timers: noopTimers,
     fs: fakeFs,
     probe: async () => (probeOk ? { ok: true, version: "7.0.2" } : { ok: false, error: "ENOENT" }),
+    post: noopPost,
   });
   return { mod, db };
 }
@@ -235,6 +241,7 @@ describe("createCctvModule", () => {
       timers: noopTimers,
       fs: fakeFs,
       probe: async () => ({ ok: true, version: "7.0.2" }),
+      post: noopPost,
     });
     await mod.start();
 
@@ -287,6 +294,7 @@ describe("createCctvModule", () => {
       timers: noopTimers,
       fs: fakeFs,
       probe: async () => ({ ok: true, version: "7.0.2" }),
+      post: noopPost,
     });
 
     await mod.start();

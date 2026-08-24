@@ -14,6 +14,7 @@ import { probeFfmpeg } from "./recorder/ffmpeg";
 import type { Spawner, Timers } from "./recorder/process";
 import { LiveHub, type LiveSpawner, type Sink } from "./live/hub";
 import { createCctvRouter } from "./router";
+import { MotionWatcher, type SoapPost } from "./events/onvif";
 
 type ModuleFs = FsLike &
   UnlinkFs & {
@@ -29,12 +30,22 @@ export interface CctvModuleOverrides {
   timers?: Timers;
   fs?: ModuleFs;
   probe?: () => Promise<{ ok: boolean; version?: string; error?: string }>;
+  post?: SoapPost;
 }
 
 const realTimers: Timers = {
   setTimeout: (cb, ms) => setTimeout(cb, ms),
   clearTimeout: (h) => clearTimeout(h as NodeJS.Timeout),
   now: () => Date.now(),
+};
+
+/** ONVIF-запрос через встроенный в Node 24 fetch — только чтение/подписка, ничего не меняет. */
+const realPost: SoapPost = async (url, body, action) => {
+  const ct = action
+    ? `application/soap+xml; charset=utf-8; action="${action}"`
+    : "application/soap+xml; charset=utf-8";
+  const res = await fetch(url, { method: "POST", headers: { "Content-Type": ct }, body });
+  return await res.text();
 };
 
 // fs.promises.readFile без явной кодировки отдаёт Buffer, а не строку — Scanner
@@ -84,6 +95,8 @@ export function createCctvModule(rootDataDir: string, over: CctvModuleOverrides 
   let manager: RecorderManager | null = null;
   let started = false;
   const hub = new LiveHub({ cfg, timers, spawn: liveSpawn });
+  // Наблюдатели за движением — по одному на камеру, необязательны (см. events/onvif.ts).
+  const watchers: MotionWatcher[] = [];
 
   const storageReady = async (): Promise<boolean> => {
     try {
@@ -206,9 +219,25 @@ export function createCctvModule(rootDataDir: string, over: CctvModuleOverrides 
         `[cctv] ffmpeg=${ffmpeg.version} cameras=${cfg.cameras.map((c) => c.id).join(",")} ` +
           `storage=${cfg.storageDir} quota=${Math.round(cfg.quotaBytes / 1024 ** 3)}GB`
       );
+
+      // Метки движения — необязательная надстройка (см. events/onvif.ts): камеры
+      // объявляют событие, но работоспособность на практике не подтверждена.
+      // Отключается флагом; сама подписка не мешает ни записи, ни просмотру.
+      if (cfg.motionEvents) {
+        for (const cam of cfg.cameras) {
+          const w = new MotionWatcher({ cam, db, post: over.post ?? realPost, timers });
+          watchers.push(w);
+          w.start();
+        }
+      }
     },
 
     async stop() {
+      // Наблюдателей гасим первыми: у них может быть висящий запрос к камере,
+      // а закрывать базу под ним (ниже) не хочется — так error просто попадёт
+      // в state(), а не в "запись после close()".
+      for (const w of watchers) w.stop();
+      watchers.length = 0;
       hub.stop();
       manager?.stop();
       manager = null;
@@ -228,7 +257,13 @@ export function createCctvModule(rootDataDir: string, over: CctvModuleOverrides 
       const storage = manager?.storageAvailable() ?? false;
       return {
         ok: storage && cams.every((c) => c.recording),
-        details: { enabled: true, ffmpeg: ffmpeg.version, storage, cameras: cams },
+        details: {
+          enabled: true,
+          ffmpeg: ffmpeg.version,
+          storage,
+          cameras: cams,
+          motion: watchers.map((w) => w.state()),
+        },
       };
     },
   };
