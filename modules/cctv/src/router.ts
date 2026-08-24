@@ -2,6 +2,7 @@ import express, { Router } from "express";
 import type { CameraInfo, StorageInfo, TimelineResponse } from "@sweethome/cctv-shared";
 import type { CctvConfig } from "./config";
 import type { CctvDb } from "./index/db";
+import { buildConcatList, concatArgs, downloadFileName } from "./download";
 import { buildSpans, clampSpans } from "./index/spans";
 import { buildVodPlaylist } from "./playlist";
 
@@ -23,6 +24,8 @@ export function createCctvRouter(deps: {
   db: CctvDb;
   manager: { cameras(): CameraInfo[]; storageAvailable(): boolean };
   sendFile: SendFile;
+  spawn: (cmd: string, args: string[]) => { stdout: { pipe(dest: unknown): void } | null; on(ev: "exit", cb: (code: number | null) => void): void; kill(sig?: string): void };
+  tmpFile: (content: string) => Promise<{ path: string; cleanup: () => Promise<void> }>;
 }): Router {
   const { cfg, db, manager, sendFile } = deps;
   const router = express.Router();
@@ -93,6 +96,30 @@ export function createCctvRouter(deps: {
       newestMs: t.newestMs,
     };
     res.json(body);
+  });
+
+  router.get("/download", async (req, res) => {
+    const r = parseRange(req.query as Record<string, unknown>);
+    if (!r) return res.status(400).json({ ok: false, error: "cam, from and to are required (from < to)" });
+    if (!known.has(r.cam)) return res.status(404).json({ ok: false, error: `unknown camera: ${r.cam}` });
+    if (r.toMs - r.fromMs > cfg.downloadMaxMin * 60_000) {
+      return res.status(413).json({ ok: false, error: `interval exceeds ${cfg.downloadMaxMin} minutes` });
+    }
+
+    const segs = db.segmentsBetween(r.cam, r.fromMs, r.toMs);
+    if (segs.length === 0) return res.status(404).json({ ok: false, error: "nothing recorded in this interval" });
+
+    const init = db.initPathById(segs[0].initId);
+    const list = buildConcatList(segs, cfg.storageDir, init?.path);
+    const tmp = await deps.tmpFile(list);
+    const child = deps.spawn(cfg.ffmpegPath, concatArgs({ listPath: tmp.path }));
+
+    res.setHeader("Content-Type", "video/mp4");
+    res.setHeader("Content-Disposition", `attachment; filename="${downloadFileName(r.cam, r.fromMs)}"`);
+    child.stdout?.pipe(res);
+    child.on("exit", () => void tmp.cleanup());
+    // Клиент ушёл — незачем держать ffmpeg и греть Wi-Fi.
+    res.on("close", () => child.kill("SIGTERM"));
   });
 
   return router;

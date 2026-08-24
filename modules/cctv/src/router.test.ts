@@ -5,8 +5,9 @@ import { loadCctvConfig } from "./config";
 import { CctvDb } from "./index/db";
 import { createCctvRouter } from "./router";
 
-function app(db: CctvDb, over: { cameras?: CameraInfo[]; storage?: boolean } = {}) {
+function app(db: CctvDb, over: { cameras?: CameraInfo[]; storage?: boolean; spawns?: { cmd: string; args: string[] }[] } = {}) {
   const sent: string[] = [];
+  const spawns = over.spawns ?? [];
   const cfg = loadCctvConfig("/data", { CCTV_CAMERAS: "drive=10.0.0.1", CCTV_STORAGE_DIR: "/st" });
   const a = express();
   a.use(
@@ -23,9 +24,18 @@ function app(db: CctvDb, over: { cameras?: CameraInfo[]; storage?: boolean } = {
         sent.push(abs);
         res.status(200).end();
       },
+      spawn: (cmd, args) => {
+        spawns.push({ cmd, args });
+        return {
+          stdout: { pipe: (dest: unknown) => (dest as { end(): void }).end() },
+          on: (_ev: "exit", cb: (code: number | null) => void) => setImmediate(() => cb(0)),
+          kill: () => {},
+        };
+      },
+      tmpFile: async () => ({ path: "/tmp/list.txt", cleanup: async () => {} }),
     })
   );
-  return { a, sent };
+  return { a, sent, spawns };
 }
 
 const T = Date.UTC(2026, 7, 24, 10, 0, 0);
@@ -175,5 +185,35 @@ describe("cctv router", () => {
     const res = await request(a).get("/api/cctv/storage").expect(200);
     expect(res.body.usedBytes).toBe(0);
     expect(res.body.depthDays).toBeNull();
+  });
+
+  it("GET /download отдаёт файл с нужными заголовками", async () => {
+    seed(db);
+    const spawns: { cmd: string; args: string[] }[] = [];
+    const { a } = app(db, { spawns });
+    const res = await request(a)
+      .get(`/api/cctv/download?cam=drive&from=${T}&to=${T + 120_000}`)
+      .expect(200);
+    expect(res.headers["content-type"]).toContain("video/mp4");
+    expect(res.headers["content-disposition"]).toContain("attachment");
+    expect(res.headers["content-disposition"]).toMatch(/drive_\d{8}_\d{6}\.mp4/);
+    expect(spawns).toHaveLength(1);
+    expect(spawns[0].args.join(" ")).toContain("-f concat");
+  });
+
+  it("GET /download отказывает на слишком длинном интервале", async () => {
+    seed(db);
+    const { a } = app(db);
+    await request(a)
+      .get(`/api/cctv/download?cam=drive&from=${T}&to=${T + 31 * 60_000}`)
+      .expect(413);
+  });
+
+  it("GET /download на пустом интервале → 404", async () => {
+    seed(db);
+    const { a } = app(db);
+    await request(a)
+      .get(`/api/cctv/download?cam=drive&from=${T + 10_000_000}&to=${T + 10_060_000}`)
+      .expect(404);
   });
 });
