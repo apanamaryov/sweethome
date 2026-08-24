@@ -4,6 +4,11 @@ import { CctvDb } from "./db";
 export const EVICT_HIGH_RATIO = 0.98;
 export const EVICT_TARGET_RATIO = 0.95;
 
+/** Файла просто нет — штатная ситуация: его мог удалить предыдущий проход. */
+function isMissing(e: unknown): boolean {
+  return (e as NodeJS.ErrnoException)?.code === "ENOENT";
+}
+
 /** Минимум от `fs/promises` для чистки. */
 export interface UnlinkFs {
   unlink(p: string): Promise<void>;
@@ -35,6 +40,8 @@ export function planEviction(
 const BATCH = 720;
 
 export class Retention {
+  private unlinkFailures = 0;
+
   constructor(
     private db: CctvDb,
     private storageDir: string,
@@ -42,11 +49,12 @@ export class Retention {
     private quotaBytes: number
   ) {}
 
-  async runOnce(): Promise<{ removed: number; freedBytes: number }> {
+  async runOnce(): Promise<{ removed: number; freedBytes: number; unlinkFailures: number }> {
+    this.unlinkFailures = 0;
     const { bytes } = this.db.totals();
     const candidates = this.db.oldestSegments(BATCH);
     const victims = new Set(planEviction(bytes, this.quotaBytes, candidates));
-    if (victims.size === 0) return { removed: 0, freedBytes: 0 };
+    if (victims.size === 0) return { removed: 0, freedBytes: 0, unlinkFailures: 0 };
 
     let removed = 0;
     let freedBytes = 0;
@@ -65,14 +73,21 @@ export class Retention {
       this.db.deleteInit(orphan.id);
     }
 
-    return { removed, freedBytes };
+    return { removed, freedBytes, unlinkFailures: this.unlinkFailures };
   }
 
   private async tryUnlink(relPath: string): Promise<void> {
     try {
       await this.fs.unlink(`${this.storageDir}/${relPath}`);
-    } catch {
-      // файла нет или диск недоступен — не повод останавливать чистку
+    } catch (e) {
+      if (isMissing(e)) {
+        // файла нет — штатная ситуация, его мог удалить предыдущий проход
+        return;
+      }
+      // не-ENOENT ошибка: считаем неудачу и предупреждаем, но не меняем поток управления
+      this.unlinkFailures++;
+      const msg = (e as NodeJS.ErrnoException)?.message || String(e);
+      console.warn(`[cctv] retention: не удалось удалить ${relPath}: ${msg}`);
     }
   }
 }

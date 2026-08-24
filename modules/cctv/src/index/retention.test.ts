@@ -61,7 +61,7 @@ describe("Retention", () => {
   it("не трогает ничего, пока места хватает", async () => {
     fill(3, 100);
     const r = new Retention(db, "/st", fs, 10_000);
-    expect(await r.runOnce()).toEqual({ removed: 0, freedBytes: 0 });
+    expect(await r.runOnce()).toEqual({ removed: 0, freedBytes: 0, unlinkFailures: 0 });
     expect(unlinked).toEqual([]);
     expect(db.totals().count).toBe(3);
   });
@@ -96,11 +96,42 @@ describe("Retention", () => {
     const r = new Retention(db, "/st", failing, 1000);
     const res = await r.runOnce();
     expect(res.removed).toBe(1);
+    expect(res.unlinkFailures).toBe(0);
     expect(db.totals().count).toBe(9);
   });
 
   it("на пустом индексе не падает", async () => {
     const r = new Retention(db, "/st", fs, 1000);
-    expect(await r.runOnce()).toEqual({ removed: 0, freedBytes: 0 });
+    expect(await r.runOnce()).toEqual({ removed: 0, freedBytes: 0, unlinkFailures: 0 });
+  });
+
+  it("unlinkFailures считает не-ENOENT неудачи", async () => {
+    fill(10, 100); // 1000 байт при квоте 1000 → чистим до 950, нужно удалить 1 сегмент
+    const eio: UnlinkFs = {
+      async unlink(p) {
+        unlinked.push(p);
+        throw Object.assign(new Error("I/O error"), { code: "EIO" });
+      },
+    };
+    const r = new Retention(db, "/st", eio, 1000);
+    const res = await r.runOnce();
+    // Записи удалены из индекса, поток управления не прерван, но ошибка удаления файла считается
+    expect(res.removed).toBe(1);
+    expect(res.freedBytes).toBe(100);
+    expect(res.unlinkFailures).toBe(1);
+    expect(db.totals().count).toBe(9);
+  });
+
+  it("ENOENT в unlinkFailures не попадает", async () => {
+    fill(10, 100);
+    const failing: UnlinkFs = {
+      async unlink(p) {
+        unlinked.push(p);
+        throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+      },
+    };
+    const r = new Retention(db, "/st", failing, 1000);
+    const res = await r.runOnce();
+    expect(res.unlinkFailures).toBe(0);
   });
 });
