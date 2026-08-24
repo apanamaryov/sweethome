@@ -28,7 +28,7 @@ describe("recordArgs", () => {
 
   it("режет на фрагментированный MP4 нужной длины", () => {
     expect(joined).toContain("-f hls");
-    expect(joined).toContain("-hls_time 60");
+    expect(args[args.indexOf("-hls_time") + 1]).toBe("60");
     expect(joined).toContain("-hls_segment_type fmp4");
     expect(joined).toContain("-hls_list_size 0");
   });
@@ -57,7 +57,7 @@ describe("recordArgs", () => {
 
   it("учитывает нестандартную длину сегмента", () => {
     const a = recordArgs({ cam, camDir: "/d", segmentSec: 30, runId: "r" });
-    expect(a.join(" ")).toContain("-hls_time 30");
+    expect(a[a.indexOf("-hls_time") + 1]).toBe("30");
   });
 });
 
@@ -69,8 +69,8 @@ describe("liveArgs", () => {
     expect(args[args.length - 1]).toBe("pipe:1");
   });
 
-  it("нарезает фрагменты чаще, чем идут опорные кадры (иначе задержка ~3 с)", () => {
-    expect(joined).toContain("-frag_duration 500000");
+  it("нарезает фрагменты чаще, чем идят опорные кадры (иначе задержка ~3 с)", () => {
+    expect(args[args.indexOf("-frag_duration") + 1]).toBe("500000");
   });
 
   it("ставит флаги, без которых браузер не соберёт поток", () => {
@@ -86,7 +86,8 @@ describe("liveArgs", () => {
   });
 
   it("длину фрагмента можно переопределить", () => {
-    expect(liveArgs({ cam, fragMs: 1000 }).join(" ")).toContain("-frag_duration 1000000");
+    const a = liveArgs({ cam, fragMs: 1000 });
+    expect(a[a.indexOf("-frag_duration") + 1]).toBe("1000000");
   });
 });
 
