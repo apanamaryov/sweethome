@@ -23,23 +23,57 @@ class FakeWebSocket {
   }
 }
 
+/** Подставной SourceBuffer — только то, что нужно компоненту и тестам. */
+class FakeSourceBuffer {
+  updating = false;
+  constructor(public mime: string) {}
+  appendBuffer(): void {}
+  remove(): void {}
+  addEventListener(): void {}
+  removeEventListener(): void {}
+}
+
+/**
+ * Подставной MediaSource. sourceopenCallback хранит последний зарегистрированный колбэк
+ * напрямую (а не удаляет его сам при removeEventListener) — так тест "опоздавшего" события
+ * может дёрнуть его руками, как это выглядело бы при настоящей гонке, а removedEvents
+ * отдельно фиксирует, что компонент действительно позвал removeEventListener при
+ * размонтировании (React 19 не ругается предупреждением на setState после unmount — это
+ * молчаливый no-op, — поэтому единственный наблюдаемый в тесте признак того, что слушатель
+ * снят, это сам факт вызова removeEventListener, а не отсутствие консольного шума).
+ */
+class FakeMediaSource {
+  static isTypeSupported = () => true;
+  static last: FakeMediaSource | null = null;
+  static lastAddedMime: string | null = null;
+  readyState = "closed";
+  sourceopenCallback: (() => void) | null = null;
+  removedEvents: string[] = [];
+  constructor() {
+    FakeMediaSource.last = this;
+  }
+  addEventListener(ev: string, cb: () => void): void {
+    if (ev === "sourceopen") this.sourceopenCallback = cb;
+  }
+  removeEventListener(ev: string): void {
+    this.removedEvents.push(ev);
+  }
+  addSourceBuffer(mime: string): FakeSourceBuffer {
+    FakeMediaSource.lastAddedMime = mime;
+    return new FakeSourceBuffer(mime);
+  }
+  endOfStream(): void {}
+}
+
 describe("LivePlayer", () => {
   const origWs = global.WebSocket;
   const origMse = (global as { MediaSource?: unknown }).MediaSource;
 
   beforeEach(() => {
     (global as unknown as { WebSocket: unknown }).WebSocket = FakeWebSocket;
-    (global as unknown as { MediaSource: unknown }).MediaSource = class {
-      static isTypeSupported = () => true;
-      readyState = "closed";
-      addEventListener(_e: string, cb: () => void) {
-        setTimeout(cb, 0);
-      }
-      addSourceBuffer() {
-        return { appendBuffer: () => {}, addEventListener: () => {}, updating: false };
-      }
-      endOfStream() {}
-    };
+    (global as unknown as { MediaSource: unknown }).MediaSource = FakeMediaSource;
+    FakeMediaSource.last = null;
+    FakeMediaSource.lastAddedMime = null;
     (global.URL as unknown as { createObjectURL: unknown }).createObjectURL = () => "blob:fake";
     // jsdom не реализует revokeObjectURL — подставляем его, чтобы тест проверял
     // поведение компонента, а не терпимость try/catch к отсутствующему в среде API.
@@ -83,5 +117,52 @@ describe("LivePlayer", () => {
     });
     unmount();
     expect(FakeWebSocket.last!.closed).toBe(true);
+  });
+
+  it("кодек, присланный сервером, применяется вместо зашитого в коде", () => {
+    render(<LivePlayer cam="drive" label="Въезд" />);
+    act(() => {
+      FakeWebSocket.last!.onopen?.();
+      // Ответ сервера приходит раньше, чем срабатывает sourceopen, — ровно тот порядок,
+      // из-за которого зашитое значение раньше всегда побеждало настоящее.
+      FakeWebSocket.last!.onmessage?.({
+        data: JSON.stringify({ type: "ready", cam: "drive", mime: 'video/mp4; codecs="avc1.640028"' }),
+      });
+      FakeMediaSource.last!.sourceopenCallback?.();
+    });
+    expect(FakeMediaSource.lastAddedMime).toBe('video/mp4; codecs="avc1.640028"');
+  });
+
+  it("ошибка воспроизведения у <video> показывается пользователю, а не чёрным квадратом", () => {
+    const { container } = render(<LivePlayer cam="drive" label="Въезд" />);
+    act(() => {
+      FakeWebSocket.last!.onopen?.();
+    });
+    const video = container.querySelector("video")!;
+    act(() => {
+      video.dispatchEvent(new Event("error"));
+    });
+    expect(screen.getByText(/playback failed/)).toBeInTheDocument();
+  });
+
+  it("опоздавший sourceopen после размонтирования не трогает состояние компонента", () => {
+    const { unmount } = render(<LivePlayer cam="drive" label="Въезд" />);
+    act(() => {
+      FakeWebSocket.last!.onopen?.();
+    });
+    const ms = FakeMediaSource.last!;
+    unmount();
+    // Клинап должен отписаться от sourceopen — это единственный наблюдаемый в тесте след
+    // того, что слушатель снят (в React 19 setState после unmount — молчаливый no-op без
+    // предупреждения, так что проверять "нет warning" здесь бессмысленно).
+    expect(ms.removedEvents).toContain("sourceopen");
+    // "Опоздавшее" событие — как если бы браузер всё же дёрнул колбэк уже после
+    // размонтирования (например, событие было в полёте до вызова removeEventListener) —
+    // компонент не должен упасть даже в этом случае, благодаря флагу cancelled.
+    expect(() => {
+      act(() => {
+        ms.sourceopenCallback?.();
+      });
+    }).not.toThrow();
   });
 });
