@@ -309,6 +309,37 @@ describe("cctv router", () => {
     // процесс jest) — уже доказательство того, что "error" обработан.
     const res = await request(a).get(`/api/cctv/download?cam=drive&from=${T}&to=${T + 120_000}`);
     expect(res.status).toBe(500);
+    // Заголовки видео были выставлены синхронно до срабатывания "error" —
+    // без явного сброса браузер сохранил бы JSON-ошибку под именем "….mp4".
+    expect(res.headers["content-type"]).toContain("application/json");
+    expect(res.headers["content-disposition"]).toBeUndefined();
+    expect(res.body.ok).toBe(false);
     expect(cleaned).toBe(true);
+  });
+
+  it("GET /download: и error, и exit для одного сбоя убирают временный файл только один раз", async () => {
+    seed(db);
+    let cleanupCalls = 0;
+    const { a } = app(db, {
+      spawn: () => ({
+        stdout: { pipe: () => {} },
+        on: (ev, cb) => {
+          // Реальный ChildProcess может отдать оба события за один сбой —
+          // порядок здесь не важен, важно что уборка сработает только раз.
+          if (ev === "error") setImmediate(() => cb(new Error("ffmpeg crashed")));
+          if (ev === "exit") setImmediate(() => cb(1));
+        },
+        kill: () => {},
+      }),
+      tmpFile: async () => ({
+        path: "/tmp/list.txt",
+        cleanup: async () => {
+          cleanupCalls++;
+        },
+      }),
+    });
+    const res = await request(a).get(`/api/cctv/download?cam=drive&from=${T}&to=${T + 120_000}`);
+    expect(res.status).toBe(500);
+    expect(cleanupCalls).toBe(1);
   });
 });

@@ -138,10 +138,20 @@ export function createCctvRouter(deps: {
       return res.status(500).json({ ok: false, error: `cannot prepare download: ${(e as Error).message}` });
     }
 
+    // Node может отдать и "error", и "exit" за один и тот же сбой — уборка
+    // должна быть безопасна при повторном вызове, иначе второе отклонение
+    // промиса (файла уже нет) улетит необработанным и уронит процесс.
+    let cleaned = false;
+    const cleanupOnce = async () => {
+      if (cleaned) return;
+      cleaned = true;
+      await tmp.cleanup().catch(() => {});
+    };
+
     try {
       child = deps.spawn(cfg.ffmpegPath, concatArgs({ listPath: tmp.path }));
     } catch (e) {
-      await tmp.cleanup();
+      await cleanupOnce();
       return res.status(500).json({ ok: false, error: `cannot start ffmpeg: ${(e as Error).message}` });
     }
 
@@ -149,8 +159,13 @@ export function createCctvRouter(deps: {
     // бросит необработанное исключение и уронит весь монолит — вместе с
     // мониторингом инвертора и остальными модулями в этом же процессе.
     child.on("error", (err) => {
-      void tmp.cleanup();
+      void cleanupOnce();
       if (!res.headersSent) {
+        // Заголовки видео уже выставлены синхронно ниже; express сам не
+        // перезаписывает Content-Type в res.json(), и без явного сброса
+        // браузер сохранит JSON-ошибку под именем "….mp4".
+        res.removeHeader("Content-Disposition");
+        res.setHeader("Content-Type", "application/json");
         res.status(500).json({ ok: false, error: `ffmpeg failed: ${(err as Error)?.message ?? "unknown"}` });
       } else {
         res.end();
@@ -160,7 +175,7 @@ export function createCctvRouter(deps: {
     res.setHeader("Content-Type", "video/mp4");
     res.setHeader("Content-Disposition", `attachment; filename="${downloadFileName(r.cam, r.fromMs)}"`);
     child.stdout?.pipe(res);
-    child.on("exit", () => void tmp.cleanup());
+    child.on("exit", () => void cleanupOnce());
   });
 
   return router;
