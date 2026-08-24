@@ -144,4 +144,60 @@ describe("Scanner", () => {
     await sc.scanCamera("drive");
     expect(await sc.rebuildCamera("drive")).toBe(0);
   });
+
+  it("rebuildCamera выбирает init по времени его запуска", async () => {
+    const t1 = new Date(2026, 7, 24, 9, 0, 0).getTime(); // 9:00
+    const t2 = new Date(2026, 7, 24, 10, 0, 0).getTime(); // 10:00
+
+    const init1Name = `init_${t1.toString(36)}.mp4`;
+    const init2Name = `init_${t2.toString(36)}.mp4`;
+
+    const sizes: Record<string, number> = {};
+    sizes[`/st/drive/${init1Name}`] = 800;
+    sizes[`/st/drive/${init2Name}`] = 800;
+    sizes["/st/drive/seg_20260824_085000.m4s"] = 1000; // до обоих init'ов
+    sizes["/st/drive/seg_20260824_093000.m4s"] = 1000; // между init1 и init2
+    sizes["/st/drive/seg_20260824_100500.m4s"] = 1000; // после init2
+    sizes["/st/drive/seg_20260824_110000.m4s"] = 1000; // далеко после init2
+
+    const fs = fakeFs({}, sizes);
+    const sc = new Scanner(db, "/st", fs);
+    expect(await sc.rebuildCamera("drive")).toBe(4);
+
+    const rows = db.segmentsBetween("drive", 0, Date.UTC(2026, 7, 25));
+    expect(rows).toHaveLength(4);
+
+    const seg1 = rows.find((r) => r.path === "drive/seg_20260824_085000.m4s");
+    const seg2 = rows.find((r) => r.path === "drive/seg_20260824_093000.m4s");
+    const seg3 = rows.find((r) => r.path === "drive/seg_20260824_100500.m4s");
+    const seg4 = rows.find((r) => r.path === "drive/seg_20260824_110000.m4s");
+
+    const init1Id = db.initIdByPath("drive", `drive/${init1Name}`);
+    const init2Id = db.initIdByPath("drive", `drive/${init2Name}`);
+
+    // seg1 (85:00) — до всех init'ов, используется самый свежий (init2)
+    expect(seg1?.initId).toBe(init2Id);
+    // seg2 (93:00) — между init1 и init2, используется init1
+    expect(seg2?.initId).toBe(init1Id);
+    // seg3 (100:30) — после init2, используется init2
+    expect(seg3?.initId).toBe(init2Id);
+    // seg4 (110:00) — далеко после init2, используется init2
+    expect(seg4?.initId).toBe(init2Id);
+  });
+
+  it("scanCamera пробрасывает не-ENOENT ошибки", async () => {
+    const fs: FsLike = {
+      async readFile() {
+        throw Object.assign(new Error("I/O error"), { code: "EIO" });
+      },
+      async stat() {
+        throw new Error("unreachable");
+      },
+      async readdir() {
+        throw new Error("unreachable");
+      },
+    };
+    const sc = new Scanner(db, "/st", fs);
+    await expect(sc.scanCamera("drive")).rejects.toThrow("I/O error");
+  });
 });

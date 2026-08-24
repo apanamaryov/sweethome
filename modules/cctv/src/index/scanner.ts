@@ -8,12 +8,26 @@ export interface FsLike {
   readdir(p: string): Promise<string[]>;
 }
 
+/** Файла или каталога просто нет — штатная ситуация, а не поломка хранилища. */
+function isMissing(e: unknown): boolean {
+  return (e as NodeJS.ErrnoException)?.code === "ENOENT";
+}
+
 /** `seg_20260824_100000.m4s` → локальное время. Аварийный путь, когда плейлиста нет. */
 export function timeFromSegmentName(name: string): number | null {
   const m = /^seg_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})\.m4s$/.exec(name);
   if (!m) return null;
   const [, y, mo, d, h, mi, s] = m.map(Number) as unknown as number[];
   return new Date(y, mo - 1, d, h, mi, s).getTime();
+}
+
+/** Время запуска записи из имени init'а (`init_<base36 от Date.now()>.mp4`). */
+export function timeFromInitName(name: string): number | null {
+  const m = /^init_([0-9a-z]+)\.mp4$/.exec(name);
+  if (!m) return null;
+  const t = parseInt(m[1], 36);
+  // Отсекаем имена вроде init_run1.mp4 — из них времени не извлечь.
+  return Number.isFinite(t) && t > 1_000_000_000_000 ? t : null;
 }
 
 export class Scanner {
@@ -33,8 +47,9 @@ export class Scanner {
     let text: string;
     try {
       text = await this.fs.readFile(`${this.camDir(cam)}/live.m3u8`);
-    } catch {
-      return 0; // запись ещё не начиналась — это нормально
+    } catch (e) {
+      if (isMissing(e)) return 0; // запись ещё не начиналась — это нормально
+      throw e; // хранилище сломалось — пробрасываем наружу
     }
 
     const known = this.db.knownPaths(cam);
@@ -56,8 +71,9 @@ export class Scanner {
       let bytes: number;
       try {
         bytes = (await this.fs.stat(`${this.camDir(cam)}/${e.file}`)).size;
-      } catch {
-        continue; // файл ещё не дописан
+      } catch (err) {
+        if (isMissing(err)) continue; // файл ещё не дописан — ffmpeg пишет во временный
+        throw err; // хранилище сломалось
       }
 
       this.db.addSegment({ cam, initId, path: relPath, startMs: e.startMs, durMs: e.durMs, bytes });
@@ -73,22 +89,24 @@ export class Scanner {
     try {
       const st = await this.fs.stat(`${this.camDir(cam)}/${initFile}`);
       return this.db.upsertInit(cam, relPath, st.size, Date.now());
-    } catch {
-      return null;
+    } catch (e) {
+      if (isMissing(e)) return null; // init'а нет на диске — может быть удалён или ещё не создан
+      throw e; // хранилище сломалось
     }
   }
 
   /**
    * Аварийный путь: индекс потерян, а файлы на месте. Время берём из имени,
    * длительность — по умолчанию. Точность хуже, чем из плейлиста, но архив
-   * остаётся доступным.
+   * остаётся доступным. Выбираем init, чьё время запуска не позже начала сегмента.
    */
   async rebuildCamera(cam: string): Promise<number> {
     let names: string[];
     try {
       names = await this.fs.readdir(this.camDir(cam));
-    } catch {
-      return 0;
+    } catch (e) {
+      if (isMissing(e)) return 0; // каталог камеры ещё не создан
+      throw e; // хранилище сломалось
     }
 
     const inits = names.filter((n) => n.startsWith("init_") && n.endsWith(".mp4")).sort();
@@ -102,17 +120,28 @@ export class Scanner {
       const relPath = `${cam}/${name}`;
       if (known.has(relPath)) continue;
 
-      // Ближайший по времени init: имена init'ов содержат метку запуска,
-      // сортировка совпадает с хронологией.
-      const initFile = inits[inits.length - 1];
-      const initId = await this.resolveInit(cam, initFile);
+      // Выбираем новейший init, чьё время запуска не позже начала сегмента.
+      // Если всем init'ам не удалось распознать время (нестандартные имена),
+      // используем самый свежий как запасной вариант.
+      let selectedInit: string | null = null;
+      for (let i = inits.length - 1; i >= 0; i--) {
+        const initTime = timeFromInitName(inits[i]);
+        if (initTime !== null && initTime <= startMs) {
+          selectedInit = inits[i];
+          break;
+        }
+      }
+      selectedInit ??= inits[inits.length - 1];
+
+      const initId = await this.resolveInit(cam, selectedInit);
       if (initId === null) continue;
 
       let bytes: number;
       try {
         bytes = (await this.fs.stat(`${this.camDir(cam)}/${name}`)).size;
-      } catch {
-        continue;
+      } catch (err) {
+        if (isMissing(err)) continue; // файл исчез или ещё не создан полностью
+        throw err; // хранилище сломалось
       }
       this.db.addSegment({ cam, initId, path: relPath, startMs, durMs: this.segmentSec * 1000, bytes });
       added++;
