@@ -84,8 +84,9 @@ export default function LivePlayer({ cam, label }: { cam: string; label: string 
       try {
         if (ms.readyState === "open") ms.endOfStream();
       } catch {}
-      // В части сред (в т.ч. jsdom в тестах) revokeObjectURL может не существовать
-      // или отсутствовать на уже освобождённом URL — не даём этому свалить размонтирование.
+      // Клинап при размонтировании не имеет права падать ни при каких обстоятельствах —
+      // зритель уже ушёл со страницы и не сможет починить вылетевшее из хука исключение
+      // (тот же довод, по которому выше обёрнут endOfStream()).
       try {
         URL.revokeObjectURL(video.src);
       } catch {}

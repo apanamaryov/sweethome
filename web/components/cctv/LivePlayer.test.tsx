@@ -41,6 +41,9 @@ describe("LivePlayer", () => {
       endOfStream() {}
     };
     (global.URL as unknown as { createObjectURL: unknown }).createObjectURL = () => "blob:fake";
+    // jsdom не реализует revokeObjectURL — подставляем его, чтобы тест проверял
+    // поведение компонента, а не терпимость try/catch к отсутствующему в среде API.
+    (global.URL as unknown as { revokeObjectURL: unknown }).revokeObjectURL = () => {};
   });
 
   afterEach(() => {
