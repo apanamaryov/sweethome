@@ -2,7 +2,11 @@ import type { CameraConfig } from "../config";
 import { recordArgs } from "./ffmpeg";
 
 export interface ChildLike {
-  on(ev: "exit", cb: (code: number | null) => void): void;
+  // "error" — отдельно от "exit": неудачный спавн (бинарник исчез, нет прав)
+  // у настоящего child_process обычно шлёт только его, без "exit" вовсе. Оба
+  // нужно слушать явно — необработанный "error" на EventEmitter иначе роняет
+  // весь монолит, а не только запись этой камеры.
+  on(ev: "exit" | "error", cb: (arg?: unknown) => void): void;
   stderr: { on(ev: "data", cb: (c: Buffer) => void): void } | null;
   // Сигнатура — как у настоящего child_process.kill (принимает только имя сигнала,
   // не произвольную строку): реальный ChildProcess должен подходить сюда без приведений.
@@ -110,12 +114,32 @@ export class RecorderProcess {
         if (line) this.lastError = line;
       });
 
+      // Node не гарантирует, что на неудачный спавн придёт только одно из двух
+      // событий — иногда "error" сопровождается и "exit" (как и у скачивания в
+      // router.ts). Сверка с this.child по идентичности этого конкретного
+      // объекта — идемпотентность: кто из двух обработчиков сработает первым,
+      // тот и обрабатывает падение, второй увидит child уже не текущим.
       child.on("exit", () => {
+        if (this.child !== child) return;
         const ranFor = this.deps.timers.now() - (this.startedAtMs ?? 0);
         this.child = null;
         this.startedAtMs = null;
         if (this.stopped) return;
         if (ranFor >= RESET_AFTER_MS) this.failures = 0;
+        this.restarts++;
+        this.scheduleRestart();
+      });
+
+      // Запуск не удался (бинарник исчез, нет прав и т.п.): "exit" в этом
+      // случае обычно не приходит вовсе, а необработанный "error" на
+      // EventEmitter — это брошенное исключение, роняющее весь монолит вместе
+      // с мониторингом инвертора, а не только запись этой камеры.
+      child.on("error", (err) => {
+        if (this.child !== child) return;
+        this.lastError = `spawn failed: ${(err as Error)?.message ?? "unknown"}`;
+        this.child = null;
+        this.startedAtMs = null;
+        if (this.stopped) return;
         this.restarts++;
         this.scheduleRestart();
       });

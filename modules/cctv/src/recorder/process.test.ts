@@ -34,6 +34,7 @@ class FakeTimers {
 
 class FakeChild implements ChildLike {
   exitCb: ((code: number | null) => void) | null = null;
+  errorCb: ((err?: unknown) => void) | null = null;
   stderrCb: ((c: Buffer) => void) | null = null;
   killed = false;
   stderr = {
@@ -41,8 +42,11 @@ class FakeChild implements ChildLike {
       this.stderrCb = cb;
     },
   };
-  on(_ev: "exit", cb: (code: number | null) => void): void {
-    this.exitCb = cb;
+  // "exit" и "error" — разные слушатели с разными callback'ами; RecorderProcess
+  // регистрирует оба, и второй вызов не должен затирать первый.
+  on(ev: "exit" | "error", cb: (arg?: unknown) => void): void {
+    if (ev === "exit") this.exitCb = cb;
+    else this.errorCb = cb;
   }
   kill(): void {
     this.killed = true;
@@ -51,6 +55,10 @@ class FakeChild implements ChildLike {
   /** Симуляция падения процесса. */
   die(code = 1): void {
     this.exitCb?.(code);
+  }
+  /** Симуляция неудачного спавна: только "error", без "exit". */
+  spawnError(err: unknown): void {
+    this.errorCb?.(err);
   }
 }
 
@@ -102,6 +110,24 @@ describe("RecorderProcess", () => {
 
     await timers.advance(1);
     expect(children).toHaveLength(2);
+    expect(proc.state().restarts).toBe(1);
+    expect(proc.state().running).toBe(true);
+  });
+
+  it("неудачный спавн ('error' без 'exit') не роняет процесс и перезапускается по обычной паузе", async () => {
+    const { proc, timers, children } = makeProc();
+    await proc.start();
+
+    // Реальный ENOENT-спавн обычно шлёт только "error", без последующего "exit".
+    expect(() => children[0].spawnError(new Error("ENOENT"))).not.toThrow();
+    expect(proc.state().running).toBe(false);
+    expect(proc.state().lastError).toContain("spawn failed");
+
+    await timers.advance(BACKOFF_MS[0] - 1);
+    expect(children).toHaveLength(1); // ещё рано
+
+    await timers.advance(1);
+    expect(children).toHaveLength(2); // перезапустился как при обычном падении
     expect(proc.state().restarts).toBe(1);
     expect(proc.state().running).toBe(true);
   });
