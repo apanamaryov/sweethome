@@ -12,7 +12,10 @@ export default function CctvArchivePage() {
   const [cam, setCam] = useState<string>("");
   const [day, setDay] = useState<Date>(() => new Date());
   const [tl, setTl] = useState<TimelineResponse | null>(null);
-  const [seekToMs, setSeekToMs] = useState<number | null>(null);
+  // Точка, с которой играет плеер (она же начало запрашиваемого плейлиста),
+  // и текущая позиция воспроизведения — курсор на ленте ходит по ней.
+  const [startMs, setStartMs] = useState<number | null>(null);
+  const [positionMs, setPositionMs] = useState<number | null>(null);
   const [gapNotice, setGapNotice] = useState(false);
 
   const { fromMs, toMs } = useMemo(() => dayRange(day), [day]);
@@ -35,13 +38,15 @@ export default function CctvArchivePage() {
     const d = new Date(day);
     d.setDate(d.getDate() + delta);
     setDay(d);
-    setSeekToMs(null);
+    setStartMs(null);
+    setPositionMs(null);
     setGapNotice(false);
   };
 
   const selectCam = (id: string) => {
     setCam(id);
-    setSeekToMs(null);
+    setStartMs(null);
+    setPositionMs(null);
     setGapNotice(false);
   };
 
@@ -56,7 +61,10 @@ export default function CctvArchivePage() {
       return;
     }
     setGapNotice(false);
-    setSeekToMs(tsMs);
+    // Перемотка = новый плейлист с этого момента: сдвиг позиции внутри длинного
+    // плейлиста на наших записях останавливает воспроизведение намертво.
+    setStartMs(tsMs);
+    setPositionMs(tsMs);
   };
 
   return (
@@ -72,8 +80,8 @@ export default function CctvArchivePage() {
         <button onClick={() => shiftDay(-1)}>←</button>
         <span>{day.toLocaleDateString(t.langLocale)}</span>
         <button onClick={() => shiftDay(1)}>→</button>
-        {seekToMs !== null && (
-          <a href={downloadUrl(cam, seekToMs, Math.min(seekToMs + 5 * 60_000, toMs))} download>
+        {positionMs !== null && (
+          <a href={downloadUrl(cam, positionMs, Math.min(positionMs + 5 * 60_000, toMs))} download>
             {t.cctvDownload5min}
           </a>
         )}
@@ -82,11 +90,9 @@ export default function CctvArchivePage() {
       {cam && (
         <ArchivePlayer
           cam={cam}
-          fromMs={fromMs}
+          startMs={startMs ?? tl?.spans[0]?.startMs ?? fromMs}
           toMs={toMs}
-          spans={tl?.spans ?? []}
-          playlistStartMs={tl?.playlistStartMs ?? null}
-          seekToMs={seekToMs}
+          onPositionMs={setPositionMs}
         />
       )}
 
@@ -95,7 +101,7 @@ export default function CctvArchivePage() {
         marks={tl?.marks ?? []}
         fromMs={fromMs}
         toMs={toMs}
-        positionMs={seekToMs ?? fromMs}
+        positionMs={positionMs ?? fromMs}
         onSeek={seekTo}
       />
 
