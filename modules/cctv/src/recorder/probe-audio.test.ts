@@ -61,8 +61,20 @@ describe("parseAudioSamples", () => {
     expect(parseAudioSamples("Output file is empty")).toBe(0);
   });
 
-  it("ноль отсчётов — это и есть наш случай: дорожка есть, звука нет", () => {
+  it("ноль отсчётов — дорожка есть, звука нет", () => {
     expect(parseAudioSamples("n_samples: 0")).toBe(0);
+  });
+
+  it("берёт настоящий замер, а не первую нулевую строку", () => {
+    // ffmpeg печатает n_samples дважды: первый прогон фильтра всегда пустой.
+    // Из-за чтения первой строки камера со звуком числилась молчащей.
+    const real = [
+      "[Parsed_volumedetect_0 @ 0x55ab0da0a0] n_samples: 0",
+      "  Stream #0:0: Audio: pcm_s16le, 8000 Hz, mono",
+      "[Parsed_volumedetect_0 @ 0x7f60001f80] n_samples: 41984",
+      "[Parsed_volumedetect_0 @ 0x7f60001f80] mean_volume: -37.4 dB",
+    ].join("\n");
+    expect(parseAudioSamples(real)).toBe(41984);
   });
 });
 

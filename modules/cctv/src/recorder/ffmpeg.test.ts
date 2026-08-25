@@ -26,12 +26,15 @@ describe("recordArgs", () => {
     expect(joined).not.toContain("libx264");
   });
 
-  it("звук в записи — тоже по флагу, а не всегда", () => {
-    // Та же причина, что и в живом просмотре: пустая дорожка задерживает старт
-    // записи на десяток секунд, а после перезапуска это потерянное время.
+  it("звук в записи — по флагу, и он перекодируется, а не копируется", () => {
+    // Камера шлёт AAC с негодными метками времени: при копировании ffmpeg
+    // выбрасывает такие пакеты, и в записи оказывается пустая звуковая дорожка,
+    // а видео ещё и ждёт её десять секунд при каждом запуске.
     expect(joined).toContain("-an");
-    const withAudio = recordArgs({ cam, camDir: "/d", segmentSec: 60, runId: "r", withAudio: true });
-    expect(withAudio.join(" ")).not.toContain("-an");
+    const withAudio = recordArgs({ cam, camDir: "/d", segmentSec: 60, runId: "r", withAudio: true }).join(" ");
+    expect(withAudio).not.toContain("-an");
+    expect(withAudio).toContain("-c:v copy");
+    expect(withAudio).toContain("-c:a aac");
   });
 
   it("режет на фрагментированный MP4 нужной длины", () => {
@@ -89,13 +92,23 @@ describe("liveArgs", () => {
   });
 
   it("по умолчанию звук выброшен, и берётся только по явному флагу", () => {
-    // Объявленная камерой дорожка ничего не значит: наши камеры объявляют AAC и
-    // молчат в неё, а ffmpeg ждёт этот звук перед первой выдачей — 12 секунд
-    // против 2.7 (измерено на малине). Поэтому звук включается только когда
-    // проба подтвердила, что он реально идёт.
+    // Без подтверждённого звука — самый дешёвый путь: чистая копия видео.
     expect(joined).toContain("-an");
     expect(joined).toContain("-c copy");
-    expect(liveArgs({ cam, withAudio: true }).join(" ")).not.toContain("-an");
+  });
+
+  it("со звуком: видео копируется, звук перекодируется в 44.1 кГц", () => {
+    // Копировать звук этих камер нельзя — метки времени негодные, пакеты
+    // выбрасываются, а видео ждёт их 10 секунд. Перекодирование чинит и то, и
+    // другое: 2.9 с до первой картинки вместо 12 (измерено на малине).
+    const a = liveArgs({ cam, withAudio: true });
+    const j = a.join(" ");
+    expect(j).not.toContain("-an");
+    expect(j).toContain("-c:v copy");
+    expect(a[a.indexOf("-c:a") + 1]).toBe("aac");
+    expect(a[a.indexOf("-ar") + 1]).toBe("44100");
+    // И страховка от замолчавшего звука: видео не ждёт его дольше секунды.
+    expect(a[a.indexOf("-max_interleave_delta") + 1]).toBe("1000000");
   });
 
   it("длину фрагмента можно переопределить", () => {
