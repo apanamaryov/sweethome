@@ -5,6 +5,7 @@ import { useSnapshot } from "@/lib/snapshot";
 import { MetaProvider, useMeta } from "@/lib/meta";
 import { useT, useDocTitle } from "@/lib/i18n";
 import { InverterFlow, WarnChip, flowState } from "@/components/InverterFlow";
+import CctvCard from "@/components/cctv/CctvCard";
 
 function InverterCard() {
   const t = useT();
@@ -42,6 +43,7 @@ export default function HomePage() {
       <MetaProvider>
         <InverterCard />
       </MetaProvider>
+      <CctvCard />
     </main>
   );
 }

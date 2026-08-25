@@ -27,6 +27,7 @@ function SystemNav() {
   const sections = [
     { href: "/", label: t.navOverview, active: pathname === "/" },
     { href: "/inverter", label: t.navInverter, active: pathname.startsWith("/inverter") },
+    { href: "/cctv", label: t.navCctv, active: pathname.startsWith("/cctv") },
     ...(isAdmin ? [{ href: "/users", label: t.navUsers, active: pathname.startsWith("/users") }] : []),
   ];
 

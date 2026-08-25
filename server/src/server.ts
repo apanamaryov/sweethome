@@ -31,7 +31,18 @@ export function createServer(host: ModuleHost, cfg: Config): http.Server {
   // данные защищены на уровне /api.
   const ADMIN_PAGES = new Set(["/inverter/settings", "/inverter/diagnostics", "/users"]);
   app.get(
-    ["/", "/index.html", "/inverter", "/inverter/stats", "/inverter/settings", "/inverter/diagnostics", "/users", "/change-password"],
+    [
+      "/",
+      "/index.html",
+      "/inverter",
+      "/inverter/stats",
+      "/inverter/settings",
+      "/inverter/diagnostics",
+      "/users",
+      "/change-password",
+      "/cctv",
+      "/cctv/archive",
+    ],
     (req, res, next) => {
       const u = auth.verify(reqToken(req));
       if (!u) return res.redirect("/login");
@@ -54,6 +65,11 @@ export function createServer(host: ModuleHost, cfg: Config): http.Server {
   // редирект ведёт в никуда (внутри inverter/ нет index.html). Отдаём файл
   // явно, до общего static-миддлвара.
   app.get("/inverter", (_req, res) => res.sendFile(path.join(publicDir, "inverter.html")));
+
+  // /cctv — тот же случай: и страница (cctv.html), и родитель /cctv/archive
+  // (cctv/archive.html) рядом на диске. Без явной отдачи файла express.static
+  // увёл бы в такой же бессмысленный редирект на "/cctv/".
+  app.get("/cctv", (_req, res) => res.sendFile(path.join(publicDir, "cctv.html")));
 
   app.use(express.static(publicDir, { extensions: ["html"] }));
 

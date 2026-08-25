@@ -263,6 +263,24 @@ describe("server.ts (HTTP integration via supertest)", () => {
     });
   });
 
+  describe("GET /cctv, /cctv/archive (open to viewer, same nested-route case as /inverter)", () => {
+    it("viewer has access to the camera pages", async () => {
+      const cookie = await freshSessionCookie("user", "user", "viewer1");
+
+      let res = await request(server).get("/cctv").set("Cookie", cookie);
+      expect(res.status).toBe(200);
+
+      res = await request(server).get("/cctv/archive").set("Cookie", cookie);
+      expect(res.status).toBe(200);
+    });
+
+    it("redirects to /login without a session", async () => {
+      const res = await request(server).get("/cctv");
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe("/login");
+    });
+  });
+
   describe("IP-based lockout (trust proxy 1 hop, req.ip via X-Forwarded-For)", () => {
     it("locks out after 5 failed logins from the same IP, even against correct creds", async () => {
       const ip = "203.0.113.7";
