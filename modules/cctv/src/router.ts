@@ -79,7 +79,10 @@ export function createCctvRouter(deps: CctvRouterDeps): Router {
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ ok: false, error: "bad id" });
     const seg = db.segmentById(id);
     if (!seg) return res.status(404).json({ ok: false, error: "segment not found" });
-    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    // private, а не public: это видео из частного дома, за аутентификацией —
+    // общим прокси и CDN его кэшировать нельзя. Сами файлы неизменяемы, поэтому
+    // кэш браузера остаётся длинным.
+    res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
     sendFile(res, `${cfg.storageDir}/${seg.path}`);
   });
 
@@ -88,7 +91,10 @@ export function createCctvRouter(deps: CctvRouterDeps): Router {
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ ok: false, error: "bad id" });
     const init = db.initPathById(id);
     if (!init) return res.status(404).json({ ok: false, error: "init not found" });
-    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    // private, а не public: это видео из частного дома, за аутентификацией —
+    // общим прокси и CDN его кэшировать нельзя. Сами файлы неизменяемы, поэтому
+    // кэш браузера остаётся длинным.
+    res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
     sendFile(res, `${cfg.storageDir}/${init.path}`);
   });
 

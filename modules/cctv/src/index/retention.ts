@@ -39,6 +39,17 @@ export function planEviction(
 /** Сколько сегментов рассматривать за один проход. Минутные сегменты: 720 ≈ 12 часов записи. */
 const BATCH = 720;
 
+/**
+ * Init моложе этого возраста осиротевшим не считаем.
+ *
+ * Сканер вставляет строку init'а раньше, чем проверит наличие сегмента: тик
+ * чистки, попавший в это окно, удалил бы файл заголовка ТЕКУЩЕЙ записи — и
+ * после этого все сегменты этого прогона навсегда перестали бы попадать в
+ * индекс. Час — с запасом больше и окна сканера (15 с), и интервала самой
+ * чистки (10 мин).
+ */
+export const ORPHAN_INIT_MIN_AGE_MS = 3_600_000;
+
 export class Retention {
   private unlinkFailures = 0;
 
@@ -46,7 +57,9 @@ export class Retention {
     private db: CctvDb,
     private storageDir: string,
     private fs: UnlinkFs,
-    private quotaBytes: number
+    private quotaBytes: number,
+    /** Инъекция часов — чтобы возраст init'а проверялся тестом без ожидания часа. */
+    private now: () => number = () => Date.now()
   ) {}
 
   async runOnce(): Promise<{ removed: number; freedBytes: number; unlinkFailures: number }> {
@@ -68,7 +81,7 @@ export class Retention {
       freedBytes += seg.bytes;
     }
 
-    for (const orphan of this.db.orphanInits()) {
+    for (const orphan of this.db.orphanInits(this.now() - ORPHAN_INIT_MIN_AGE_MS)) {
       await this.tryUnlink(orphan.path);
       this.db.deleteInit(orphan.id);
     }

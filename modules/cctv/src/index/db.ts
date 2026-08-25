@@ -118,7 +118,9 @@ export class CctvDb {
       ),
       oldest: p("SELECT * FROM segments ORDER BY start_ms LIMIT ?"),
       delSeg: p("DELETE FROM segments WHERE id = ?"),
-      orphans: p("SELECT id, cam, path FROM inits WHERE id NOT IN (SELECT DISTINCT init_id FROM segments)"),
+      orphans: p(
+        "SELECT id, cam, path FROM inits WHERE created < ? AND id NOT IN (SELECT DISTINCT init_id FROM segments)"
+      ),
       delInit: p("DELETE FROM inits WHERE id = ?"),
       insMotion: p("INSERT INTO motion(cam, ts_ms, kind) VALUES (?, ?, ?)"),
       motion: p("SELECT ts_ms, kind FROM motion WHERE cam = ? AND ts_ms >= ? AND ts_ms < ? ORDER BY ts_ms"),
@@ -175,8 +177,16 @@ export class CctvDb {
     this.stmt.delSeg.run(id);
   }
 
-  orphanInits(): { id: number; cam: string; path: string }[] {
-    return this.stmt.orphans.all() as { id: number; cam: string; path: string }[];
+  /**
+   * Init'ы без единого сегмента, созданные РАНЬШЕ `createdBeforeMs`.
+   *
+   * Ограничение по возрасту обязательное: сканер вставляет строку init'а до
+   * того, как убедится в наличии первого сегмента, и чистка, попавшая в это
+   * окно, снесла бы заголовок текущей записи — после чего все сегменты этого
+   * прогона навсегда перестали бы попадать в индекс.
+   */
+  orphanInits(createdBeforeMs: number): { id: number; cam: string; path: string }[] {
+    return this.stmt.orphans.all(createdBeforeMs) as { id: number; cam: string; path: string }[];
   }
 
   deleteInit(id: number): void {

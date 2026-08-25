@@ -1,5 +1,12 @@
 import { CctvDb } from "./db";
-import { planEviction, Retention, EVICT_HIGH_RATIO, EVICT_TARGET_RATIO, type UnlinkFs } from "./retention";
+import {
+  planEviction,
+  Retention,
+  EVICT_HIGH_RATIO,
+  EVICT_TARGET_RATIO,
+  ORPHAN_INIT_MIN_AGE_MS,
+  type UnlinkFs,
+} from "./retention";
 
 describe("planEviction", () => {
   const cands = [{ id: 1, bytes: 100 }, { id: 2, bytes: 100 }, { id: 3, bytes: 100 }];
@@ -82,7 +89,7 @@ describe("Retention", () => {
     const r = new Retention(db, "/st", fs, 500);
     await r.runOnce();
     expect(unlinked.sort()).toEqual(["/st/drive/init_1.mp4", "/st/drive/only.m4s"]);
-    expect(db.orphanInits()).toEqual([]);
+    expect(db.orphanInits(Date.now())).toEqual([]);
   });
 
   it("запись в индексе удаляется даже если файла уже нет на диске", async () => {
@@ -98,6 +105,23 @@ describe("Retention", () => {
     expect(res.removed).toBe(1);
     expect(res.unlinkFailures).toBe(0);
     expect(db.totals().count).toBe(9);
+  });
+
+  it("не сносит init только что начавшейся записи", async () => {
+    // Гонка: сканер уже вставил строку init'а, а первый сегмент ещё не дописан.
+    // Удалить этот файл — значит навсегда потерять весь текущий прогон записи:
+    // ни один его сегмент больше не попадёт в индекс.
+    const now = 10 * ORPHAN_INIT_MIN_AGE_MS;
+    fill(10, 100); // чтобы чистка вообще запустилась (1000 байт при квоте 1000)
+    db.upsertInit("drive", "drive/init_now.mp4", 800, now - 1000); // секунду назад
+    db.upsertInit("drive", "drive/init_old.mp4", 800, now - 2 * ORPHAN_INIT_MIN_AGE_MS);
+
+    const r = new Retention(db, "/st", fs, 1000, () => now);
+    await r.runOnce();
+
+    expect(unlinked).toContain("/st/drive/init_old.mp4"); // старый осиротевший — под нож
+    expect(unlinked).not.toContain("/st/drive/init_now.mp4"); // свежий — не трогаем
+    expect(db.orphanInits(now).map((o) => o.path)).toEqual(["drive/init_now.mp4"]);
   });
 
   it("на пустом индексе не падает", async () => {

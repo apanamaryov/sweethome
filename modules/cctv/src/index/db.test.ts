@@ -90,11 +90,23 @@ describe("CctvDb", () => {
     const init = db.upsertInit("drive", "drive/init_1.mp4", 800, 1_000);
     const used = db.upsertInit("drive", "drive/init_2.mp4", 800, 2_000);
     const id = db.addSegment(seg({ initId: used, path: "a" }));
-    expect(db.orphanInits().map((r) => r.path)).toEqual(["drive/init_1.mp4"]);
+    const ANY_AGE = 10_000; // оба init'а созданы раньше этой отметки
+    expect(db.orphanInits(ANY_AGE).map((r) => r.path)).toEqual(["drive/init_1.mp4"]);
     db.deleteSegment(id);
-    expect(db.orphanInits().map((r) => r.path).sort()).toEqual(["drive/init_1.mp4", "drive/init_2.mp4"]);
+    expect(db.orphanInits(ANY_AGE).map((r) => r.path).sort()).toEqual([
+      "drive/init_1.mp4",
+      "drive/init_2.mp4",
+    ]);
     db.deleteInit(init);
-    expect(db.orphanInits().map((r) => r.path)).toEqual(["drive/init_2.mp4"]);
+    expect(db.orphanInits(ANY_AGE).map((r) => r.path)).toEqual(["drive/init_2.mp4"]);
+  });
+
+  it("свежий init осиротевшим не считается", () => {
+    // Сканер вставляет строку init'а раньше, чем проверит сегмент: попасть в это
+    // окно — значит удалить заголовок текущей записи.
+    db.upsertInit("drive", "drive/init_fresh.mp4", 800, 5_000);
+    expect(db.orphanInits(4_000)).toEqual([]);
+    expect(db.orphanInits(6_000).map((r) => r.path)).toEqual(["drive/init_fresh.mp4"]);
   });
 
   it("возвращает путь init'а по id — для отдачи файла", () => {

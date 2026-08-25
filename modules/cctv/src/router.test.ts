@@ -221,6 +221,18 @@ describe("cctv router", () => {
     expect(sent).toEqual(["/st/drive/init_run1.mp4"]);
   });
 
+  it("сегмент и init отдаются с приватным кэшем: это видео из частного дома", async () => {
+    const { initId, ids } = seed(db);
+    const { a } = app(db);
+    for (const url of [`/api/cctv/segment/${ids[0]}`, `/api/cctv/init/${initId}`]) {
+      const res = await request(a).get(url).expect(200);
+      // public разрешил бы кэшировать запись общим прокси и CDN.
+      expect(res.headers["cache-control"]).toContain("private");
+      expect(res.headers["cache-control"]).not.toContain("public");
+      expect(res.headers["cache-control"]).toContain("immutable");
+    }
+  });
+
   it("несуществующий id → 404, нечисловой → 400", async () => {
     const { a } = app(db);
     await request(a).get("/api/cctv/segment/999999").expect(404);

@@ -83,7 +83,10 @@ The index is SQLite (`node:sqlite`, same approach as the inverter's stats) at
 `server/data/cctv/index.db`, tables `inits` / `segments` / `motion` (schema: spec §7). The
 scanner (`index/scanner.ts`) tails each camera's `live.m3u8` for `EXT-X-PROGRAM-DATE-TIME` +
 `EXTINF`, which is the only reliable source of segment start time and duration — durations
-cannot be recovered from the filename. `rebuildCamera()` is the disaster-recovery path
+cannot be recovered from the filename. The scanner keeps a per-camera watermark (the start of the last indexed segment) and only
+looks at playlist entries past it — the playlist is written with `-hls_list_size 0` and
+`append_list`, so it holds the whole history, and retention removes the index row but not the
+playlist line. `rebuildCamera()` is the disaster-recovery path
 (index lost or corrupted): it walks the directory and re-derives what it can, picking the
 newest init whose run-time is not later than the segment (falls back to lexicographic order
 if that time cannot be parsed) so a stream-parameter change never gets misattributed to the
@@ -99,7 +102,11 @@ wrong init.
 - **Retention**, every `RETENTION_INTERVAL_MS` = 600 s (10 min) — enforces `CCTV_QUOTA_GB`
   by deleting the oldest segments once usage crosses 98% of quota, down to 95% (so it does
   not hammer the disk every tick). Init files are removed only once no segment references
-  them. A non-`ENOENT` delete failure is counted (`unlinkFailures`) and logged, but does not
+  them **and they are over an hour old** (`ORPHAN_INIT_MIN_AGE_MS`): the scanner writes the
+  init row before it has confirmed the first segment, so without the age guard a retention
+  tick landing in that window deletes the header of the *running* recording — after which
+  none of that run's segments can ever enter the index. A non-`ENOENT` delete failure is
+  counted (`unlinkFailures`) and logged, but does not
   abort the run — one failure must not leave the rest of the eviction batch stuck with
   deleted index rows and orphaned files on disk (or vice versa).
 
