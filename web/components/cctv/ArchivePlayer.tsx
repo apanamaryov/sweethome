@@ -54,8 +54,10 @@ export default function ArchivePlayer({
       video.removeEventListener("playing", onPlaying);
       video.removeEventListener("error", onVideoError);
       video.removeEventListener("timeupdate", onTimeUpdate);
-      video.removeAttribute("src");
-      video.load();
+      // src не трогаем: элемент всё равно уничтожается вместе с компонентом
+      // (страница пересоздаёт его на каждый новый момент), а video.load() до
+      // hls.destroy() оставлял плеер в состоянии, из которого он больше не
+      // запускался — ни сам, ни по кнопке.
     };
 
     const url = playlistUrl(cam, startMs, toMs);
@@ -88,8 +90,11 @@ export default function ArchivePlayer({
     hls.attachMedia(video);
 
     return () => {
-      cleanupVideo();
+      // Сначала отцепляем плеер, потом снимаем слушатели: обратный порядок
+      // оставлял ManagedMediaSource на iPhone в состоянии, из которого
+      // воспроизведение уже не поднималось.
       hls.destroy();
+      cleanupVideo();
     };
   }, [cam, startMs, toMs, onPositionMs]);
 
