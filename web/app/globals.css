@@ -748,7 +748,7 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
 .solar-range-grid > div { display: flex; flex-direction: column; }
 
 /* ---------- раздел видеонаблюдения (/cctv, /cctv/archive) ---------- */
-.cctv-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.cctv-tabs { margin-bottom: 12px; }
 .cctv-live video, .cctv-archive-video { width: 100%; max-width: 100%; background: #000; display: block; }
 .cctv-timeline { position: relative; height: 28px; background: var(--bg-muted, #222); border-radius: 4px; cursor: pointer; margin: .75rem 0; }
 .cctv-span { position: absolute; top: 0; bottom: 0; background: var(--accent, #4a9); opacity: .65; }
