@@ -88,6 +88,7 @@ describe("LivePlayer", () => {
   afterEach(() => {
     (global as unknown as { WebSocket: unknown }).WebSocket = origWs;
     (global as unknown as { MediaSource: unknown }).MediaSource = origMse;
+    delete (global as { ManagedMediaSource?: unknown }).ManagedMediaSource;
     window.HTMLMediaElement.prototype.play = origPlay;
   });
 
@@ -197,4 +198,32 @@ describe("LivePlayer", () => {
     });
     expect(screen.queryByText(/playback failed/)).not.toBeInTheDocument();
   });
+  // На iPhone обычного MediaSource нет вовсе: Apple даёт только ManagedMediaSource
+  // и только с iOS 17.1. Без этих двух тестов страница живого просмотра падала
+  // целиком с «Application error», потому что new MediaSource() бросал ReferenceError.
+  it("без поддержки MediaSource показывает сообщение, а не падает", () => {
+    delete (global as { MediaSource?: unknown }).MediaSource;
+    delete (global as { ManagedMediaSource?: unknown }).ManagedMediaSource;
+
+    expect(() => render(<LivePlayer cam="drive" label="Въезд" />)).not.toThrow();
+    expect(screen.getByText(/не підтримується/i)).toBeInTheDocument();
+  });
+
+  it("использует ManagedMediaSource, когда обычного MediaSource нет (iPhone)", () => {
+    delete (global as { MediaSource?: unknown }).MediaSource;
+    (global as unknown as { ManagedMediaSource: unknown }).ManagedMediaSource = FakeMediaSource;
+
+    render(<LivePlayer cam="drive" label="Въезд" />);
+    act(() => {
+      FakeWebSocket.last!.onopen?.();
+      FakeWebSocket.last!.onmessage?.({
+        data: JSON.stringify({ type: "ready", cam: "drive", mime: 'video/mp4; codecs="avc1.4d0032"' }),
+      });
+      FakeMediaSource.last!.sourceopenCallback?.();
+    });
+
+    expect(FakeMediaSource.last).not.toBeNull();
+    expect(FakeMediaSource.lastAddedMime).toBe('video/mp4; codecs="avc1.4d0032"');
+  });
+
 });
