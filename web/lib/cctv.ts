@@ -91,3 +91,26 @@ export function offsetInSpans(
   }
   return null;
 }
+
+/**
+ * «14:30» + выбранный день → момент этих суток. Ввод пользовательский, поэтому
+ * всё, что не похоже на время, отбрасывается: лучше ничего не сделать, чем
+ * увезти зрителя в случайную точку архива.
+ */
+export function timeOfDayToMs(day: Date, hhmm: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  const d = new Date(day);
+  d.setHours(h, min, 0, 0);
+  return d.getTime();
+}
+
+/** Момент → «ЧЧ:ММ» для поля ввода времени (оно требует ведущих нулей). */
+export function msToTimeOfDay(ms: number): string {
+  const d = new Date(ms);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}`;
+}
