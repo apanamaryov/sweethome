@@ -777,3 +777,9 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
   font-size: 16px;
   font-weight: 600;
 }
+
+.cctv-time-input {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  padding: 5px 8px;
+}

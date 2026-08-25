@@ -3,7 +3,16 @@
 import { useEffect, useMemo, useState } from "react";
 import ArchivePlayer from "@/components/cctv/ArchivePlayer";
 import Timeline from "@/components/cctv/Timeline";
-import { dayRange, downloadUrl, fetchCameras, fetchTimeline, type CameraInfo, type TimelineResponse } from "@/lib/cctv";
+import {
+  dayRange,
+  downloadUrl,
+  fetchCameras,
+  fetchTimeline,
+  msToTimeOfDay,
+  timeOfDayToMs,
+  type CameraInfo,
+  type TimelineResponse,
+} from "@/lib/cctv";
 import { useT } from "@/lib/i18n";
 
 export default function CctvArchivePage() {
@@ -17,6 +26,9 @@ export default function CctvArchivePage() {
   const [startMs, setStartMs] = useState<number | null>(null);
   const [positionMs, setPositionMs] = useState<number | null>(null);
   const [gapNotice, setGapNotice] = useState(false);
+  // Пока в поле времени что-то набирают, оно живёт своим значением: иначе
+  // воспроизведение переписывало бы его прямо во время ввода.
+  const [editingTime, setEditingTime] = useState<string | null>(null);
 
   const { fromMs, toMs } = useMemo(() => dayRange(day), [day]);
 
@@ -80,6 +92,24 @@ export default function CctvArchivePage() {
         <button onClick={() => shiftDay(-1)}>←</button>
         <span>{day.toLocaleDateString(t.langLocale)}</span>
         <button onClick={() => shiftDay(1)}>→</button>
+
+        {/* Прыжок к моменту без ленты: на телефоне это привычный барабан
+            выбора времени. Пока поле не трогают, оно показывает текущую позицию;
+            во время ввода не обновляется — иначе значение прыгало бы под пальцем. */}
+        <input
+          type="time"
+          className="cctv-time-input"
+          aria-label={t.cctvGoToTime}
+          value={editingTime ?? msToTimeOfDay(positionMs ?? startMs ?? fromMs)}
+          onFocus={(e) => setEditingTime(e.target.value)}
+          onBlur={() => setEditingTime(null)}
+          onChange={(e) => {
+            setEditingTime(e.target.value);
+            const ms = timeOfDayToMs(day, e.target.value);
+            if (ms !== null) seekTo(ms);
+          }}
+        />
+
         {positionMs !== null && (
           <a href={downloadUrl(cam, positionMs, Math.min(positionMs + 5 * 60_000, toMs))} download>
             {t.cctvDownload5min}

@@ -1,4 +1,4 @@
-import { dayRange, offsetInSpans, ratioAt, spanBars, timeAtRatio, playlistUrl, downloadUrl } from "./cctv";
+import { dayRange, offsetInSpans, ratioAt, spanBars, timeAtRatio, playlistUrl, downloadUrl, timeOfDayToMs, msToTimeOfDay } from "./cctv";
 
 const T = new Date(2026, 7, 24, 0, 0, 0).getTime();
 const H = 3_600_000;
@@ -129,5 +129,38 @@ describe("url helpers", () => {
 
   it("экранируют идентификатор камеры", () => {
     expect(playlistUrl("a b", 1, 2)).toContain("cam=a%20b");
+  });
+});
+
+describe("timeOfDayToMs", () => {
+  const day = new Date(2026, 7, 25, 9, 41, 12); // время внутри дня роли не играет
+
+  it("переводит время суток в момент выбранного дня", () => {
+    const got = timeOfDayToMs(day, "14:30");
+    expect(new Date(got!).getFullYear()).toBe(2026);
+    expect(new Date(got!).getMonth()).toBe(7);
+    expect(new Date(got!).getDate()).toBe(25);
+    expect(new Date(got!).getHours()).toBe(14);
+    expect(new Date(got!).getMinutes()).toBe(30);
+    expect(new Date(got!).getSeconds()).toBe(0);
+  });
+
+  it("берёт границы суток", () => {
+    expect(new Date(timeOfDayToMs(day, "00:00")!).getHours()).toBe(0);
+    expect(new Date(timeOfDayToMs(day, "23:59")!).getMinutes()).toBe(59);
+  });
+
+  it("на мусоре и пустом вводе отдаёт null, а не случайный момент", () => {
+    expect(timeOfDayToMs(day, "")).toBeNull();
+    expect(timeOfDayToMs(day, "25:00")).toBeNull();
+    expect(timeOfDayToMs(day, "12:75")).toBeNull();
+    expect(timeOfDayToMs(day, "полдень")).toBeNull();
+  });
+});
+
+describe("msToTimeOfDay", () => {
+  it("показывает время суток с ведущими нулями", () => {
+    expect(msToTimeOfDay(new Date(2026, 7, 25, 4, 5, 30).getTime())).toBe("04:05");
+    expect(msToTimeOfDay(new Date(2026, 7, 25, 23, 59, 59).getTime())).toBe("23:59");
   });
 });
