@@ -616,6 +616,26 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
   color: var(--paper-0);
 }
 
+/* Вкладки камер — кнопки, а не ссылки: правила выше на них не действуют,
+   поэтому тот же вид описан отдельно. Выбранная камера подсвечена — подписи
+   под картинкой нет, и это единственный признак, какая камера на экране. */
+.cctv-tabs button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  padding: 6px 14px;
+  border: 1px solid var(--hairline);
+  background: var(--paper-0);
+  color: var(--ink-soft);
+  font-variant: small-caps;
+  letter-spacing: 0.08em;
+  font-size: 15px;
+}
+.cctv-tabs button.active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper-0);
+}
+
 /* --- Статистика --- */
 /* Своя вертикальная колонка контента (у дашборда за отступы отвечает .grid,
    у страницы статистики — этот gutter, в ритм с .nav-tabs). */
@@ -836,7 +856,6 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
   justify-content: center;
   gap: 8px;
 }
-.cctv-expanded figcaption { color: #fff; }
 .cctv-expanded video,
 .cctv-expanded .cctv-archive-video {
   max-width: 100%;

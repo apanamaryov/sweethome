@@ -204,8 +204,9 @@ export default function LivePlayer({
   }, [cam, t, onAudioAvailable]);
 
   return (
-    <figure className={`cctv-live${expanded ? " cctv-expanded" : ""}`}>
-      <figcaption>{label}</figcaption>
+    // Подписи под картинкой нет намеренно: какая камера выбрана, видно по
+    // подсвеченной кнопке в строке выше. Имя остаётся для читалок с экрана.
+    <figure className={`cctv-live${expanded ? " cctv-expanded" : ""}`} aria-label={label}>
       {/* Клик увеличивает картинку — тот же жест, что и в архиве. */}
       <video ref={videoRef} muted={muted} playsInline autoPlay onClick={toggleSize} />
       {error && <p className="cctv-error">{error}</p>}
