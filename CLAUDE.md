@@ -126,16 +126,23 @@ write-safety model.
   `web/lib/api.ts::wsUrl(moduleId)`, which picks between dev (`ws://localhost:3000/ws/<id>`)
   and production.
 - **Routes**: `/` — the home overview (compact per-module status cards linking into each
-  module's section); `/inverter/*` — the inverter module's pages; `/users` — user/token
-  management (admin only). `app/login/` and `app/change-password/` are open. The shared
-  app shell — top navigation, session, logout, toasts — lives in `app/(app)/layout.tsx` +
-  `web/lib/session.tsx` (`GET /api/me`); it grows a nav entry per module (currently just
-  "Overview" and "Inverter", plus "Users" for admins).
+  module's section); `/inverter/*` — the inverter module's pages; `/cctv` — live view
+  (one camera at a time, tabs to switch) and `/cctv/archive` — the archive with its
+  timeline, time field and player; `/users` — user/token management (admin only).
+  `app/login/` and `app/change-password/` are open. The shared app shell — top navigation,
+  session, logout, toasts — lives in `app/(app)/layout.tsx` + `web/lib/session.tsx`
+  (`GET /api/me`); it grows a nav entry per module ("Overview", "Inverter", "CCTV", plus
+  "Users" for admins).
+- **Video playback lives in `web/components/cctv/`** and does not use the browser's own
+  player controls: what the device forced on those two components is written up in
+  `modules/cctv/CLAUDE.md` ("Browser side"). Read it before touching them — the
+  non-obvious parts are load-bearing, not stylistic.
 - **Role-gated pages** — currently `/inverter/settings`, `/inverter/diagnostics` and
   `/users` — are enforced both on the server (`ADMIN_PAGES` in `src/server.ts`: redirects
   a `viewer` to `/`) and client-side (`ADMIN_PATH_PREFIXES` in
-  `app/(app)/layout.tsx`, a defense-in-depth guard for SPA navigation). A `viewer` only
-  ever reaches `/`, `/inverter` and `/inverter/stats`.
+  `app/(app)/layout.tsx`, a defense-in-depth guard for SPA navigation). A `viewer` reaches
+  `/`, `/inverter`, `/inverter/stats` and both camera pages — watching and rewinding is
+  deliberately not an admin privilege (spec §13).
 - **i18n** (`web/lib/i18n/`): a typed UA/RU/EN dictionary shared by the whole app. The
   initial language is hard-coded to `uk` to match the SSG prerender (otherwise hydration
   mismatches); the real choice is picked up from `localStorage` after mount.

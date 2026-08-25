@@ -8,9 +8,12 @@ entirely inside the home network, with no vendor cloud involved.
 - **24/7 recording** of every configured camera into one-minute fragments, with
   no re-encoding — a Pi 3B stays essentially idle while doing it.
 - **Live view** in the browser at roughly one second of delay, built on
-  `MediaSource` rather than HLS (which would cost ten seconds or more).
-- **Seekable archive**: one playlist per requested range, so the browser plays a
-  whole day as a single continuous video and file boundaries are not felt.
+  `MediaSource` rather than HLS (which would cost ten seconds or more). Cameras
+  are shown one at a time — iOS plays only one video at once, so a second frame
+  would just stay black; it also leaves one live process on the Pi instead of N.
+- **Seekable archive**: jump by clicking the timeline, by the ±10s / ±1min
+  buttons, or by typing a time. Every jump reloads the playlist from that
+  moment (see Caveats for why), and playback resumes on its own.
 - **Gaps stay gaps.** A Wi-Fi drop or a router reboot shows up as an empty
   stretch on the timeline, never as time silently skipped.
 - **Self-healing.** Every recorder process is supervised and restarted with a
@@ -75,9 +78,11 @@ stops until the config is updated.
 
 ## 🖥️ Web interface
 
-- `/cctv` — live view of every camera.
-- `/cctv/archive` — day picker, timeline with recorded stretches and motion
-  marks, seeking, clip download.
+- `/cctv` — live view, one camera at a time with tabs to switch.
+- `/cctv/archive` — camera and day pickers, a time field to jump straight to a
+  moment, the player with its own controls (±1min / ±10s / play, and a clock
+  showing the real time of the frame), a timeline with recorded stretches and
+  motion marks, and clip download.
 - A status card on the home overview: cameras recording, space used, archive
   depth.
 
@@ -108,6 +113,10 @@ header, memory has headroom, and byte-concatenated fragments open in a real
 player. Roughly 15 GB per day for two cameras at night, so a 500 GB budget holds
 about a month.
 
+In a real browser (iPhone, Safari): live view plays, cameras switch, the archive
+plays and keeps playing after a jump, the timeline and the time field both move
+playback, and the clock shows the recording's own time.
+
 ## ⚠️ Caveats
 
 - **Motion marks are unconfirmed.** The cameras advertise the event type and the
@@ -119,6 +128,18 @@ about a month.
   has. It plays correctly; only the scrubber length is off.
 - **Seeking is accurate to about three seconds** — the cameras' keyframe
   interval, not something this module can improve.
+- **One camera on screen at a time.** iOS refuses to play a second video at
+  once, so the live page switches cameras with tabs rather than showing a grid.
+- **Seeking is a reload, not a scrub.** Moving the position inside a long
+  playlist stops playback on these recordings for good — it cannot be resumed,
+  not even with the play button. Every jump therefore loads a fresh playlist
+  starting at the wanted moment, and the player is rebuilt from scratch. That is
+  also why the `<video>` element carries no native controls: its slider seeks
+  the broken way. The recordings themselves are fine — the same content plays
+  end to end when served as one file.
+- **Live view needs iOS 17.1 or newer on an iPhone.** Apple ships no plain
+  `MediaSource` there, only `ManagedMediaSource`; on anything older the page
+  says so instead of failing.
 
 ## 🔧 Known gaps
 
@@ -130,17 +151,18 @@ break recording or playback:
    response. Noise in the journal only; no leak between requests. One-line fix:
    a single pipeline over an async generator.
 2. **A viewer whose socket is already backed up never gets the stream header.**
-   The backpressure threshold is applied to the header too, so subscribing to a
-   second camera while the first is stalled yields a picture that cannot decode.
-   The header is ~1 KB and should bypass the threshold.
+   The backpressure threshold is applied to the header too, so a stalled socket
+   yields a picture that cannot decode. The header is ~1 KB and should bypass
+   the threshold. Less likely now that only one camera streams at a time, but
+   still there.
 3. **Recordings made during a backward clock step are lost from the index** and
    then leak on disk, since retention only ever deletes what the index knows.
    NTP normally steps forward, so this is unlikely here.
 4. **A user cancelling a download is logged as an anomaly.** Cosmetic.
 
-Also unverified, because it needs a browser: live-view latency in practice,
-archive scrubbing, and clip download. And the live view does not reconnect on
-its own after a WebSocket drop — a Wi-Fi blip means reloading the page.
+The live view still does not reconnect on its own after a WebSocket drop — a
+Wi-Fi blip means reloading the page. Clip download has not been exercised from
+the UI yet, though the concatenation it relies on is verified.
 
 ## 🗂️ Structure
 
