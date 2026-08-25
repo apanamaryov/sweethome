@@ -92,9 +92,12 @@ describe("LivePlayer", () => {
     window.HTMLMediaElement.prototype.play = origPlay;
   });
 
-  it("показывает подпись камеры", () => {
+  it("подписи под картинкой нет, но читалке камера названа", () => {
+    // Какая камера на экране, видно по подсвеченной кнопке в строке выше —
+    // дублировать это подписью незачем. Для читалок имя остаётся у figure.
     render(<LivePlayer cam="drive" label="Въезд" />);
-    expect(screen.getByText("Въезд")).toBeInTheDocument();
+    expect(screen.queryByText("Въезд")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Въезд").tagName).toBe("FIGURE");
   });
 
   it("подключается к своему адресу и подписывается на камеру", () => {

@@ -70,4 +70,18 @@ describe("страница живого просмотра", () => {
     });
     await waitFor(() => expect(screen.queryByLabelText(/звук/i)).not.toBeInTheDocument());
   });
+
+  it("подсвечивает выбранную камеру — подписи под картинкой больше нет", async () => {
+    render(<CctvPage />);
+    const drive = await screen.findByRole("button", { name: "drive" });
+    expect(drive).toHaveClass("active");
+    expect(screen.getByRole("button", { name: "terrace" })).not.toHaveClass("active");
+
+    act(() => {
+      screen.getByRole("button", { name: "terrace" }).click();
+    });
+    expect(screen.getByRole("button", { name: "terrace" })).toHaveClass("active");
+    expect(screen.getByRole("button", { name: "drive" })).not.toHaveClass("active");
+  });
+
 });
