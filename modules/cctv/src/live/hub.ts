@@ -4,8 +4,11 @@ import { LiveSession, type LiveChild, type LiveSpawner, type Sink } from "./sess
 
 export type { LiveChild, LiveSpawner, Sink } from "./session";
 
-/** Кодек этих камер измерен разведкой: H.264 Main, level 5.0. */
-export const LIVE_MIME = 'video/mp4; codecs="avc1.4d0032"';
+/**
+ * Кодеки больше не константа: их объявляет сама сессия, когда получит заголовок
+ * потока (см. live/session.ts) — у камер разный состав дорожек.
+ */
+export { liveMime } from "../audio";
 
 export class LiveHub {
   private sessions = new Map<string, LiveSession>();
@@ -36,8 +39,8 @@ export class LiveHub {
       this.sessions.set(camId, session);
       session.start();
     }
+    // "ready" отправит сессия: до первого фрагмента неизвестно, есть ли звук.
     session.attach(sink);
-    sink.sendText({ type: "ready", cam: camId, mime: LIVE_MIME });
   }
 
   unsubscribe(camId: string, sink: Sink): void {

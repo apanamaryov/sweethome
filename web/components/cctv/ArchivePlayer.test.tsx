@@ -191,4 +191,21 @@ describe("ArchivePlayer", () => {
     play.mockRestore();
   });
 
+
+  it("архив тоже стартует заглушённым, а звук включается кнопкой", () => {
+    render(
+      <ArchivePlayer cam="drive" startMs={0} toMs={1000} locale="ru-RU" hasAudio />
+    );
+    const video = document.querySelector("video")! as HTMLVideoElement;
+    expect(video.muted).toBe(true);
+
+    act(() => { screen.getByLabelText(/звук/i).click(); });
+    expect((document.querySelector("video") as HTMLVideoElement).muted).toBe(false);
+  });
+
+  it("без звука у камеры кнопки громкости нет", () => {
+    render(<ArchivePlayer cam="terrace" startMs={0} toMs={1000} locale="ru-RU" />);
+    expect(screen.queryByLabelText(/звук/i)).not.toBeInTheDocument();
+  });
+
 });

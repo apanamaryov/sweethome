@@ -20,6 +20,9 @@ entirely inside the home network, with no vendor cloud involved.
   growing backoff; a killed process is back within seconds.
 - **Quota-based retention.** The archive is trimmed by its own byte budget, not
   by free disk space — other things live on that disk.
+- **Sound**, where a camera has a microphone: recorded round the clock together
+  with the picture, and audible both live and in the archive. Muted by default —
+  an open tab should not start shouting.
 - **Clip download** — pick a moment, get an MP4 you can send to someone.
 - **Optional motion marks** on the timeline, if the cameras emit ONVIF motion
   events (see Caveats).
@@ -87,6 +90,11 @@ stops until the config is updated.
 - A status card on the home overview: cameras recording, space used, archive
   depth.
 
+Both players start muted and show a sound button only for cameras that actually
+have an audio track — a button that does nothing is worse than no button. Which
+codecs a stream carries is read from the stream itself, never assumed: declaring
+a codec that is not there stops the browser from opening the source at all.
+
 The frame is 1920×2160 — two lenses stacked — so at full column width a desktop
 screen cannot show even one of them. Both players cap the picture to the window
 and enlarge it over the page on click (Esc or another click returns it). Not the
@@ -152,6 +160,10 @@ playback, and the clock shows the recording's own time.
   has. It plays correctly; only the scrubber length is off.
 - **Seeking is accurate to about three seconds** — the cameras' keyframe
   interval, not something this module can improve.
+- **Not every camera has sound.** One of ours serves video only; it records and
+  plays silently, and gets no sound button. Where sound exists it is AAC 8 kHz
+  mono — telephone quality: voices and a barking dog carry, music does not. It
+  adds about 2% to the size of the archive.
 - **One camera on screen at a time.** iOS refuses to play a second video at
   once, so the live page switches cameras with tabs rather than showing a grid.
 - **Seeking is a reload, not a scrub.** Moving the position inside a long

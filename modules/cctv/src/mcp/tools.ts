@@ -22,7 +22,9 @@ export const CCTV_INSTRUCTIONS =
   "Cameras: local round-the-clock recording of the yard, read-only — there is nothing to control " +
   "and nothing can be deleted through these tools. Each frame is 1920x2160: two lenses stacked in " +
   "one picture, not two cameras. cctv_snapshot returns an actual image (live, or from the archive " +
-  "at a given moment); check cctv_get_timeline first if you need a moment that was recorded.";
+  "at a given moment); check cctv_get_timeline first if you need a moment that was recorded. " +
+  "Some cameras also record sound (see cctv_get_cameras) — the tools here return frames only, but " +
+  "a person watching the pages can listen to it.";
 
 /** Сколько отрезков и меток отдавать максимум — сутки записи это тысячи сегментов. */
 const MAX_LISTED = 200;
@@ -84,6 +86,7 @@ export function registerCctvTools(server: McpServer, deps: CctvMcpDeps): void {
                 (c) =>
                   `${c.id} (${c.name}): ${c.recording ? "recording" : "NOT recording"}` +
                   `${c.lastSegmentMs ? `, last segment ${localIso(c.lastSegmentMs)}` : ", nothing recorded yet"}` +
+                  `${c.hasAudio ? ", records sound" : ", no sound"}` +
                   `${c.restarts ? `, ${c.restarts} restart(s)` : ""}${c.lastError ? `, last error: ${c.lastError}` : ""}`
               )
               .join("\n")

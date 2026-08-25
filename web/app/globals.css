@@ -824,3 +824,14 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
 }
 .cctv-expanded .cctv-player-bar { margin-top: 0; }
 .cctv-expanded .cctv-clock { color: #fff; }
+
+/* Кнопка звука: и под живой картинкой, и в баре архива. По умолчанию звук
+   выключен — открытая вкладка не должна начинать орать. */
+.cctv-sound {
+  min-width: 44px;
+  padding: 6px 10px;
+  font-size: 16px;
+  line-height: 1;
+}
+.cctv-live .cctv-sound { align-self: center; margin-top: 6px; }
+.cctv-expanded .cctv-sound { margin-top: 0; }

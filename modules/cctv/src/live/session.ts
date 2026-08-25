@@ -1,6 +1,7 @@
 import type { LiveServerMessage } from "@sweethome/cctv-shared";
 import type { CameraConfig } from "../config";
 import { liveArgs } from "../recorder/ffmpeg";
+import { headerHasAudio, liveMime } from "../audio";
 
 export interface LiveChild {
   stdout: { on(ev: "data", cb: (c: Buffer) => void): void } | null;
@@ -35,6 +36,8 @@ export interface Sink {
 export class LiveSession {
   private child: LiveChild | null = null;
   private header: Buffer | null = null;
+  /** Кодеки объявляем по факту: они известны только после первого фрагмента. */
+  private mime: string | null = null;
   private sinks = new Set<Sink>();
   /** Последняя строка из stderr — причина, которую видно зрителю, когда поток умер. */
   private lastStderr: string | undefined;
@@ -56,7 +59,14 @@ export class LiveSession {
     this.child = child;
 
     child.stdout?.on("data", (chunk: Buffer) => {
-      if (this.header === null) this.header = chunk;
+      if (this.header === null) {
+        this.header = chunk;
+        // Первый фрагмент — заголовок потока: только теперь видно, есть ли звук.
+        // Поэтому "ready" уходит здесь, а не при подписке: раньше кодеки
+        // пришлось бы угадывать, а ошибка в них не даёт открыть MediaSource.
+        this.mime = liveMime(headerHasAudio(chunk));
+        for (const s of this.sinks) s.sendText({ type: "ready", cam: this.deps.cam.id, mime: this.mime });
+      }
       for (const s of this.sinks) s.send(chunk);
     });
 
@@ -83,6 +93,7 @@ export class LiveSession {
     if (this.stopped) return;
     this.child = null;
     this.header = null;
+    this.mime = null;
     // Чёрный прямоугольник без объяснений — это заявка в поддержку, а не UI:
     // если ffmpeg что-то сказал перед смертью, зритель должен это увидеть.
     const reason = this.lastStderr ? `${error}: ${this.lastStderr}` : error;
@@ -98,7 +109,11 @@ export class LiveSession {
 
   attach(sink: Sink): void {
     this.sinks.add(sink);
-    if (this.header !== null) sink.send(this.header);
+    // Сессия уже идёт — новому зрителю сразу и кодеки, и заголовок, в этом порядке.
+    if (this.header !== null && this.mime !== null) {
+      sink.sendText({ type: "ready", cam: this.deps.cam.id, mime: this.mime });
+      sink.send(this.header);
+    }
   }
 
   detach(sink: Sink): void {
@@ -114,6 +129,7 @@ export class LiveSession {
     this.stopped = true;
     this.child = null;
     this.header = null;
+    this.mime = null;
     this.lastStderr = undefined;
     this.sinks.clear();
     child?.kill("SIGTERM");

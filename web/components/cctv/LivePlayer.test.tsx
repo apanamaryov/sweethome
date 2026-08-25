@@ -244,4 +244,35 @@ describe("LivePlayer", () => {
     expect(wrap.className).not.toContain("cctv-expanded");
   });
 
+
+  it("кнопка звука появляется только у камеры со звуком, и стартует заглушённой", () => {
+    // Открытая вкладка не должна начинать орать, поэтому по умолчанию тихо.
+    // А у камеры без микрофона кнопки нет вовсе — она была бы обманкой.
+    render(<LivePlayer cam="drive" label="Въезд" />);
+    act(() => {
+      FakeWebSocket.last!.onopen?.();
+      FakeWebSocket.last!.onmessage?.({
+        data: JSON.stringify({ type: "ready", cam: "drive", mime: 'video/mp4; codecs="avc1.4d0032,mp4a.40.2"' }),
+      });
+    });
+
+    const video = document.querySelector("video")! as HTMLVideoElement;
+    expect(video.muted).toBe(true);
+
+    const button = screen.getByLabelText(/звук/i);
+    act(() => { button.click(); });
+    expect((document.querySelector("video") as HTMLVideoElement).muted).toBe(false);
+  });
+
+  it("у камеры без звуковой дорожки кнопки звука нет", () => {
+    render(<LivePlayer cam="terrace" label="Тераса" />);
+    act(() => {
+      FakeWebSocket.last!.onopen?.();
+      FakeWebSocket.last!.onmessage?.({
+        data: JSON.stringify({ type: "ready", cam: "terrace", mime: 'video/mp4; codecs="avc1.4d0032"' }),
+      });
+    });
+    expect(screen.queryByLabelText(/звук/i)).not.toBeInTheDocument();
+  });
+
 });

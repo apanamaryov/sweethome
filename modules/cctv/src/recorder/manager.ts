@@ -1,4 +1,5 @@
 import type { CameraInfo } from "@sweethome/cctv-shared";
+import { headerHasAudio } from "../audio";
 import type { CctvConfig } from "../config";
 import type { CctvDb } from "../index/db";
 import { RecorderProcess, type Spawner, type Timers } from "./process";
@@ -14,6 +15,11 @@ export class RecorderManager {
   private retentionTimer: unknown = null;
   private stopped = false;
   private storageOk = true;
+  /**
+   * Есть ли у камеры звук — по заголовку последнего прогона записи.
+   * Ключ — путь к заголовку: сменился прогон, перечитываем.
+   */
+  private audio = new Map<string, { path: string; hasAudio: boolean }>();
 
   constructor(
     private deps: {
@@ -25,6 +31,8 @@ export class RecorderManager {
       timers: Timers;
       storageReady: () => Promise<boolean>;
       mkdir: (p: string) => Promise<void>;
+      /** Чтение заголовка записи — только чтобы узнать, есть ли звуковая дорожка. */
+      readFile?: (absPath: string) => Promise<string>;
       newRunId?: () => string;
     }
   ) {}
@@ -82,12 +90,31 @@ export class RecorderManager {
     for (const cam of this.deps.cfg.cameras) {
       try {
         await this.deps.scanner.scanCamera(cam.id);
+        await this.refreshAudio(cam.id);
       } catch (e) {
         // Диск мог отвалиться — тик всё равно должен встать в очередь заново.
         console.error(`[cctv] scan ${cam.id} failed:`, (e as Error).message);
       }
     }
     this.armScan();
+  }
+
+  /**
+   * Состав дорожек читаем из заголовка записи, а не из настроек: камеры разные,
+   * и у одной из наших звука нет вовсе. Файл маленький (меньше килобайта) и
+   * перечитывается только при смене прогона записи.
+   */
+  private async refreshAudio(camId: string): Promise<void> {
+    const read = this.deps.readFile;
+    if (!read) return;
+    const path = this.deps.db.latestInitPath(camId);
+    if (!path || this.audio.get(camId)?.path === path) return;
+    try {
+      const header = await read(`${this.deps.cfg.storageDir}/${path}`);
+      this.audio.set(camId, { path, hasAudio: headerHasAudio(header) });
+    } catch {
+      // Заголовок мог не доехать до диска — не повод шуметь: попробуем в следующий тик.
+    }
   }
 
   private armRetention(): void {
@@ -128,6 +155,7 @@ export class RecorderManager {
         recording: st?.running ?? false,
         lastSegmentMs: this.deps.db.lastSegmentStart(cam.id),
         restarts: st?.restarts ?? 0,
+        hasAudio: this.audio.get(cam.id)?.hasAudio ?? false,
         ...(st?.lastError ? { lastError: st.lastError } : {}),
       };
     });

@@ -13,8 +13,8 @@ const mocked = api as jest.Mocked<typeof api>;
 describe("CctvCard", () => {
   it("показывает, что запись идёт, и глубину архива", async () => {
     mocked.fetchCameras.mockResolvedValue([
-      { id: "drive", name: "drive", recording: true, lastSegmentMs: 1, restarts: 0 },
-      { id: "yard", name: "yard", recording: true, lastSegmentMs: 1, restarts: 0 },
+      { id: "drive", name: "drive", recording: true, lastSegmentMs: 1, restarts: 0, hasAudio: false },
+      { id: "yard", name: "yard", recording: true, lastSegmentMs: 1, restarts: 0, hasAudio: false },
     ]);
     mocked.fetchStorage.mockResolvedValue({
       available: true, usedBytes: 250 * 1024 ** 3, quotaBytes: 500 * 1024 ** 3,
@@ -32,7 +32,7 @@ describe("CctvCard", () => {
 
   it("предупреждает, когда камера не пишет", async () => {
     mocked.fetchCameras.mockResolvedValue([
-      { id: "drive", name: "drive", recording: false, lastSegmentMs: null, restarts: 3, lastError: "нет связи" },
+      { id: "drive", name: "drive", recording: false, lastSegmentMs: null, restarts: 3, lastError: "нет связи", hasAudio: false },
     ]);
     mocked.fetchStorage.mockResolvedValue({
       available: true, usedBytes: 0, quotaBytes: 500 * 1024 ** 3, depthDays: null, oldestMs: null, newestMs: null,
