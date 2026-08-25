@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { wsUrl } from "@/lib/api";
 import { useT } from "@/lib/i18n";
+import { useExpandable } from "./useExpandable";
 
 /** Кодек по умолчанию — запасной вариант, если сервер не успел прислать свой mime. */
 const DEFAULT_MIME = 'video/mp4; codecs="avc1.4d0032"';
@@ -29,6 +30,7 @@ export default function LivePlayer({ cam, label }: { cam: string; label: string 
   const t = useT();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { expanded, toggle: toggleSize } = useExpandable();
 
   useEffect(() => {
     const video = videoRef.current;
@@ -181,9 +183,10 @@ export default function LivePlayer({ cam, label }: { cam: string; label: string 
   }, [cam, t]);
 
   return (
-    <figure className="cctv-live">
+    <figure className={`cctv-live${expanded ? " cctv-expanded" : ""}`}>
       <figcaption>{label}</figcaption>
-      <video ref={videoRef} muted playsInline autoPlay />
+      {/* Клик увеличивает картинку — тот же жест, что и в архиве. */}
+      <video ref={videoRef} muted playsInline autoPlay onClick={toggleSize} />
       {error && <p className="cctv-error">{error}</p>}
     </figure>
   );

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import ArchivePlayer from "@/components/cctv/ArchivePlayer";
 import Timeline from "@/components/cctv/Timeline";
+import { useExpandable } from "@/components/cctv/useExpandable";
 import {
   dayRange,
   downloadUrl,
@@ -29,6 +30,9 @@ export default function CctvArchivePage() {
   // Пока в поле времени что-то набирают, оно живёт своим значением: иначе
   // воспроизведение переписывало бы его прямо во время ввода.
   const [editingTime, setEditingTime] = useState<string | null>(null);
+  // Увеличенная картинка живёт здесь, а не в плеере: каждая перемотка
+  // пересоздаёт плеер, и своё состояние он терял бы на каждом переходе.
+  const { expanded, toggle: toggleSize } = useExpandable();
 
   const { fromMs, toMs } = useMemo(() => dayRange(day), [day]);
 
@@ -133,6 +137,8 @@ export default function CctvArchivePage() {
               locale={t.langLocale}
               onPositionMs={setPositionMs}
               onSeekRequest={seekTo}
+              expanded={expanded}
+              onToggleSize={toggleSize}
             />
           );
         })()}

@@ -83,6 +83,12 @@ stops until the config is updated.
   moment, the player with its own controls (±1min / ±10s / play, and a clock
   showing the real time of the frame), a timeline with recorded stretches and
   motion marks, and clip download.
+
+The frame is 1920×2160 — two lenses stacked — so at full column width a desktop
+screen cannot show even one of them. Both players cap the picture to the window
+and enlarge it over the page on click (Esc or another click returns it). Not the
+browser's own fullscreen: that would replace our controls with native ones,
+whose slider seeks the way that stops playback for good.
 - A status card on the home overview: cameras recording, space used, archive
   depth.
 
