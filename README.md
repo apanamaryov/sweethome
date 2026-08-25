@@ -12,6 +12,16 @@ behind a single web UI, shared authentication and a single deploy.
   cameras, with no vendor cloud. See [modules/cctv/README.md](modules/cctv/README.md).
 - **heating** — designed, not yet implemented. See [docs/heating/SPEC.md](docs/heating/SPEC.md).
 
+## For LLM agents (MCP)
+
+One endpoint — `POST/GET/DELETE /mcp` (Streamable HTTP, same auth as the API) —
+serves the whole home: every module contributes its own tools to it, so an agent
+connects once and sees all of them. The inverter brings readings, statistics and
+(behind a scoped token) control; the cameras bring recording state, storage,
+what was recorded when, and actual frames — live or from the archive. Details:
+[modules/inverter/README.md](modules/inverter/README.md#-mcp-llm-agents) and
+[modules/cctv/README.md](modules/cctv/README.md).
+
 ## Stack
 
 Node ≥ 24, TypeScript, npm workspaces, Express + WebSocket, Next.js (static

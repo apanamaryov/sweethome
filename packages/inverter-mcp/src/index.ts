@@ -1,10 +1,10 @@
-export { parseTime, parseDay, localDay } from "./time";
+export { parseTime, parseDay, localDay } from "@sweethome/home-mcp";
 export { downsample } from "./downsample";
 export { summarizeSnapshot, formatWatts } from "./format";
 export * from "./gateway/types";
 export { createHttpGateway } from "./gateway/http";
 export type { HttpGatewayOptions } from "./gateway/http";
-export { buildMcpServer, canWrite } from "./server";
+export { buildMcpServer, canWrite, registerInverter, INVERTER_INSTRUCTIONS } from "./server";
 export type { McpContext } from "./server";
 export { registerResources } from "./resources";
 export { registerPrompts } from "./prompts";

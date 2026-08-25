@@ -1,4 +1,4 @@
-import { parseTime, parseDay, localDay } from "./time";
+import { parseTime, parseDay, localDay, localIso } from "./time";
 
 const NOW = Date.UTC(2026, 6, 27, 12, 0, 0); // 2026-07-27T12:00:00Z
 
@@ -40,5 +40,17 @@ describe("parseDay", () => {
 
   it("rejects garbage", () => {
     expect(() => parseDay("07/27/2026", NOW)).toThrow(/YYYY-MM-DD/);
+  });
+});
+
+describe("localIso", () => {
+  it("отдаёт местное время со сдвигом, а не UTC", () => {
+    // Агент читает ответ вместе с человеком: «вчера в 21:40» должно совпасть с
+    // тем, что видно в интерфейсе, поэтому час берётся местный, а сдвиг пишется явно.
+    const ms = new Date(2026, 7, 25, 9, 7, 5).getTime();
+    const iso = localIso(ms);
+    expect(iso).toMatch(/^2026-08-25T09:07:05[+-]\d{2}:\d{2}$/);
+    // Разбор обратно даёт ту же точку во времени — значение однозначно.
+    expect(Date.parse(iso)).toBe(ms);
   });
 });

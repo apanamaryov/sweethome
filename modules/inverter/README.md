@@ -75,7 +75,7 @@ masks), settings — 300–343.
 | `inverter` | `modules/inverter/src/inverter.ts` | Timer-driven polling, command queue (single port, 120 ms pacing), auto-reconnect, baseline, write lock |
 | `router` | `modules/inverter/src/router.ts` | The module's REST endpoints, mounted by the host under `/api/inverter` |
 | `mqtt` | `modules/inverter/src/mqtt.ts` | MQTT publishing with Home Assistant auto-discovery |
-| `inverter-mcp` | `packages/inverter-mcp/src` | MCP server for LLM agents: tools/resources/prompts behind an `InverterGateway`, stdio binary and the core used by `/mcp` |
+| `inverter-mcp` | `packages/inverter-mcp/src` | Inverter tools/resources/prompts behind an `InverterGateway`, plus the stdio binary; `registerInverter()` is what the home's `/mcp` calls |
 | `web` | `web/` | Mobile UI on Next.js; the static export is served by the same Express host, this module's pages live under `/inverter/*` |
 
 Protocol correctness is pinned by reference frames captured from a live inverter
@@ -135,7 +135,7 @@ success or failure on other models are welcome.
 ## 🚀 Quick start (development)
 
 This module lives inside the `sweethome` monorepo (npm workspaces, build order
-`packages/shared → packages/inverter-shared → packages/inverter-mcp → modules/inverter →
+`packages/shared → packages/home-mcp → packages/inverter-shared → packages/inverter-mcp → modules/inverter →
 server → web` — see the root [CLAUDE.md](../../CLAUDE.md)). Development and builds happen
 on a regular machine (not on the Pi); Node ≥ 24.
 
@@ -215,7 +215,7 @@ PI_HOST=pi@<pi-address> SSH_KEY=~/.ssh/<key> ./deploy.sh
 
 What the script does:
 
-1. `npm run build` (`packages/shared → packages/inverter-shared → packages/inverter-mcp →
+1. `npm run build` (`packages/shared → packages/home-mcp → packages/inverter-shared → packages/inverter-mcp →
    modules/inverter → server → web`) and `npm run check`.
 2. `rsync` uploads the built artifacts to the Pi — `packages/shared/dist`,
    `packages/inverter-shared/dist`, `packages/inverter-mcp/dist`, `modules/inverter/dist`,
@@ -444,7 +444,12 @@ commands — `inverter/<node>/set/<param>`, discovery — `homeassistant/<compon
 
 The service ships an **MCP server** so agents (Claude Code, Claude Desktop, any MCP client)
 can read the inverter, dig through history and — with an explicitly scoped token — change
-settings. Two ways to connect, the same tools behind both.
+settings. Two ways to connect, and they differ in more than transport.
+
+> **`/mcp` belongs to the whole home, not to this module.** The host mounts one endpoint and
+> every module contributes its tools to it, so an agent connected over the network sees the
+> inverter *and* the cameras (`cctv_*`) in one session. The stdio binary below is
+> inverter-only — it talks to the service over HTTP through the inverter's own gateway.
 
 **1. Over the network** — the service exposes `POST/GET/DELETE /mcp` (Streamable HTTP),
 authorized by the same Bearer token as `/api`:
@@ -453,7 +458,7 @@ authorized by the same Bearer token as `/api`:
 http://<pi-address>:3000/mcp     header: Authorization: Bearer inv_…
 ```
 
-**2. Locally over stdio** — for clients that prefer spawning a process:
+**2. Locally over stdio** — for clients that prefer spawning a process (inverter tools only):
 
 ```json
 {
@@ -496,8 +501,8 @@ its source (`token:<name>`, `ui:<user>` or `mqtt`) — visible on the **Statisti
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `MCP_ENABLED` | `true` | Serve `/mcp` |
-| `MCP_MAX_SESSIONS` | `8` | Concurrent MCP sessions (Pi 3B) |
+| `MCP_ENABLED` | `true` | Serve `/mcp` (host-level: the whole endpoint, every module) |
+| `MCP_MAX_SESSIONS` | `8` | Concurrent MCP sessions (Pi 3B); host-level |
 | `INVERTER_MCP_URL` | `http://localhost:3000` | stdio: service address |
 | `INVERTER_MCP_TOKEN` | — | stdio: token, required |
 | `INVERTER_MCP_TIMEOUT_MS` | `10000` | stdio: request timeout |

@@ -1,15 +1,15 @@
-import type { Application, RequestHandler } from "express";
 import { WebSocket } from "ws";
+import type { McpCapable } from "@sweethome/home-mcp";
 import type { HomeModule, ModuleHealth } from "@sweethome/shared/module";
 import type { Snapshot } from "@sweethome/inverter-shared";
 import { Inverter } from "./inverter";
 import { createStats } from "./stats/recorder";
 import { HaMqtt } from "./mqtt";
-import { mountMcp } from "./mcp/http";
+import { createInverterMcpProvider } from "./mcp/provider";
 import { loadInverterConfig } from "./config";
 import { createInverterRouter } from "./router";
 
-export function createInverterModule(rootDataDir: string): HomeModule {
+export function createInverterModule(rootDataDir: string): HomeModule & McpCapable {
   const cfg = loadInverterConfig(rootDataDir);
   const inverter = new Inverter(cfg);
   const stats = createStats(cfg);
@@ -33,9 +33,7 @@ export function createInverterModule(rootDataDir: string): HomeModule {
         ws.send(JSON.stringify({ type: "snapshot", data: inverter.getSnapshot() }));
       },
     },
-    attachHttp(app: Application, ctx: { authenticate: RequestHandler }) {
-      mountMcp(app, { inverter, cfg, stats, authenticate: ctx.authenticate });
-    },
+    mcp: createInverterMcpProvider({ inverter, cfg, stats }),
     async start() {
       mqtt.start();
       await inverter.start();

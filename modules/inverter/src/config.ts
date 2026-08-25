@@ -28,11 +28,6 @@ export interface InverterConfig {
     solarThresholdW: number; // порог PV (Вт) для окна солнечного дня
     solarDwellMin: number; //  устойчивость окна, мин
   };
-  /** MCP-эндпоинт для агентов (/mcp). */
-  mcp: {
-    enabled: boolean;
-    maxSessions: number; // Pi 3B: держим потолок низким
-  };
   /** MQTT / Home Assistant integration. */
   mqtt: {
     url: string | null; // e.g. mqtt://user:pass@broker-host:1883 ; null disables MQTT
@@ -67,10 +62,6 @@ export function loadInverterConfig(rootDataDir: string): InverterConfig {
       minuteDays: envInt("STATS_MINUTE_DAYS", 730),
       solarThresholdW: envInt("STATS_SOLAR_THRESHOLD_W", 200),
       solarDwellMin: envInt("STATS_SOLAR_DWELL_MIN", 15),
-    },
-    mcp: {
-      enabled: envBool("MCP_ENABLED", true),
-      maxSessions: envInt("MCP_MAX_SESSIONS", 8),
     },
     mqtt: {
       url: process.env.MQTT_URL || null,

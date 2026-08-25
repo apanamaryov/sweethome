@@ -8,13 +8,15 @@ import { createServer } from "../server";
 import { ModuleHost } from "../host";
 import { Auth } from "../auth/service";
 import { createInverterModule } from "@sweethome/inverter";
+import { createCctvModule } from "@sweethome/cctv";
 
 /**
  * /mcp — Streamable HTTP поверх того же гейта авторизации, что и /api. Здесь
- * проверяется именно обвязка: авторизация, сессии, лимит и выключатель; сами
- * инструменты покрыты тестами воркспейса mcp/. STATS_ENABLED=false воспроизводит
- * прежний `stats = null`, который раньше передавался в createServer(...) явно —
- * теперь stats создаётся внутри createInverterModule по конфигу.
+ * проверяется именно обвязка: авторизация, сессии, лимит, выключатель и то, что
+ * эндпоинт один на весь дом; сами инструменты покрыты тестами своих воркспейсов.
+ * STATS_ENABLED=false воспроизводит прежний `stats = null`, который раньше
+ * передавался в createServer(...) явно — теперь stats создаётся внутри
+ * createInverterModule по конфигу.
  */
 
 const INIT = {
@@ -47,6 +49,8 @@ describe("/mcp endpoint", () => {
     process.env.DATA_DIR = tmp;
     delete process.env.MCP_ENABLED;
     delete process.env.MCP_MAX_SESSIONS;
+    delete process.env.CCTV_CAMERAS;
+    delete process.env.CCTV_STORAGE_DIR;
 
     const cfg = loadConfig();
     const host = new ModuleHost([createInverterModule(cfg.dataDir)]);
@@ -82,7 +86,7 @@ describe("/mcp endpoint", () => {
     expect(res.status).toBe(401);
   });
 
-  it("initializes a session and reports the server identity", async () => {
+  it("initializes a session and reports the home, not one of its modules", async () => {
     const res = await request(server)
       .post("/mcp")
       .set("Authorization", `Bearer ${token}`)
@@ -91,7 +95,8 @@ describe("/mcp endpoint", () => {
 
     expect(res.status).toBe(200);
     expect(res.headers["mcp-session-id"]).toBeDefined();
-    expect(res.text).toContain("inverter-monitor");
+    // Эндпоинт общий: инвертор, камеры и всё, что появится дальше, живут в одном сервере.
+    expect(res.text).toContain("sweethome");
   });
 
   it("lists tools within an initialized session", async () => {
@@ -145,6 +150,28 @@ describe("/mcp endpoint", () => {
       .send({ jsonrpc: "2.0", id: 2, method: "tools/list" });
 
     expect(list.text).not.toContain("get_series"); // STATS_ENABLED=false → createInverterModule builds stats = null
+  });
+
+  it("отдаёт инструменты всех модулей дома в одной сессии", async () => {
+    // Ради этого точка входа и переехала из модуля инвертора в хост: агент
+    // подключается один раз и видит и инвертор, и камеры.
+    process.env.CCTV_CAMERAS = "drive=10.0.0.9";
+    process.env.CCTV_STORAGE_DIR = path.join(tmp, "video");
+    const cfg = loadConfig();
+    const host = new ModuleHost([createInverterModule(cfg.dataDir), createCctvModule(cfg.dataDir)]);
+    const srv = createServer(host, cfg);
+
+    const sid = await openSession(srv, token);
+    const list = await request(srv)
+      .post("/mcp")
+      .set("Authorization", `Bearer ${token}`)
+      .set("Accept", ACCEPT)
+      .set("Mcp-Session-Id", sid)
+      .send({ jsonrpc: "2.0", id: 2, method: "tools/list" });
+
+    expect(list.text).toContain("get_snapshot"); // инвертор
+    expect(list.text).toContain("cctv_get_cameras"); // камеры
+    expect(list.text).toContain("cctv_snapshot");
   });
 
   it("answers 404 for an unknown session id", async () => {

@@ -109,7 +109,6 @@ function baseConfig(mqttOverrides: Partial<InverterConfig["mqtt"]> = {}): Invert
     autoRelock: true,
     dataDir: "data",
     stats: { enabled: true, rawDays: 30, minuteDays: 730, solarThresholdW: 200, solarDwellMin: 15 },
-    mcp: { enabled: false, maxSessions: 8 },
     mqtt: {
       url: "mqtt://broker:1883",
       username: null,

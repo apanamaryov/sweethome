@@ -164,6 +164,31 @@ Safari's built-in HLS player is not used even where it exists: it plays only the
 fragment of our playlists. `hls.js` assembles fragments itself and handles them, and on iPhone
 it runs on ManagedMediaSource too.
 
+## MCP — what agents get, and the two traps in it
+
+`mcp/tools.ts` registers four read-only tools (`cctv_get_cameras`, `cctv_get_storage`,
+`cctv_get_timeline`, `cctv_snapshot`) and the `cctv://cameras` resource into the home's shared
+server; `mcp/provider.ts` is the thin `ModuleMcpProvider` wrapper the host picks up. Session
+rights are deliberately ignored: everything here reads, and watching is allowed to `viewer`
+exactly as it is on the pages (spec §13).
+
+**`cctv_snapshot` is the reason ffmpeg is here at all.** The camera has no snapshot endpoint —
+`GetSnapshotUri` times out (see ONVIF above) — so a frame costs a decode. Live grabs open a
+second RTSP connection (the recorder keeps its own); archive grabs feed `init + segment`
+into ffmpeg's **stdin**, byte-wise, exactly like `/download` does, and seek *after* `-i`
+because input seeking does not work on a pipe. Two things about that pipe are load-bearing
+and easy to "fix" back into bugs: ffmpeg closes stdin the moment it has its frame, so the
+`EPIPE` that follows is normal and must not reject a result that already arrived; and a frame
+already collected outweighs a non-zero exit code for the same reason.
+
+**Frames are scaled down before they leave.** The full 1920×2160 picture is hundreds of
+kilobytes, and base64 adds a third on top — every call would bloat the agent's context. The
+default width is 640, the cap 1920 (`snapshot.ts`), and `grabFrame` kills the process rather
+than buffering past `MAX_FRAME_BYTES`. Measured on the Pi against a real camera: a 640×720
+frame (both lenses, fully legible) is ~90 KB at `-q:v 8`, ~120 KB at 6, ~150 KB at 4; a live
+grab takes about 3.5 s end to end, an archive grab is faster. That is where the defaults come
+from — re-measure before changing them.
+
 ## Lessons from review — easy to reintroduce if you write similar code
 
 1. **Recheck the stop flag after every `await` in an async loop.** Deciding "should I still

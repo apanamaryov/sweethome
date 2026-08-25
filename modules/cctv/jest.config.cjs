@@ -9,6 +9,7 @@ module.exports = {
   testMatch: ["**/*.test.ts"],
   moduleNameMapper: {
     "^@sweethome/cctv-shared$": "<rootDir>/packages/cctv-shared/src/index.ts",
+    "^@sweethome/home-mcp$": "<rootDir>/packages/home-mcp/src/index.ts",
     "^@sweethome/shared$": "<rootDir>/packages/shared/src/index.ts",
     "^@sweethome/shared/module$": "<rootDir>/packages/shared/src/module.ts",
   },

@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { completable } from "@modelcontextprotocol/sdk/server/completable.js";
 import type { McpContext } from "./server";
-import { parseDay } from "./time";
+import { parseDay } from "@sweethome/home-mcp";
 
 const CONTROL_TYPES = [
   "outputSourcePriority",
