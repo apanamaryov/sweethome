@@ -73,6 +73,8 @@ function make(env: NodeJS.ProcessEnv = { CCTV_CAMERAS: "drive=10.0.0.1,yard=10.0
       return c;
     },
     timers,
+    // Настоящая проба спрашивает камеру по сети — здесь просто задаём ответ.
+    probeAudio: async () => false,
     storageReady: async () => true,
     mkdir: async () => {},
     newRunId: () => "run1",
@@ -167,6 +169,7 @@ describe("RecorderManager", () => {
         retention: { async runOnce() { return { removed: 0, freedBytes: 0 }; } },
         spawn: () => new FakeChild(),
         timers,
+        probeAudio: async () => false,
         storageReady: async () => true,
         mkdir: async () => {},
       });
@@ -212,6 +215,7 @@ describe("RecorderManager", () => {
         return c;
       },
       timers,
+      probeAudio: async () => false,
       storageReady: () => readyPromise,
       mkdir: async () => {},
       newRunId: () => "run1",

@@ -116,11 +116,13 @@ function fakeWs() {
 function build(env: NodeJS.ProcessEnv, probeOk = true) {
   const db = new CctvDb(":memory:");
   const liveChildren: FakeLiveChild[] = [];
+  const liveArgs: string[][] = [];
   const mod = createCctvModule("/data", {
     cfg: loadCctvConfig("/data", env),
     db,
     spawn: () => new FakeChild(),
-    liveSpawn: () => {
+    liveSpawn: (_cmd, args) => {
+      liveArgs.push(args);
       const c = new FakeLiveChild();
       liveChildren.push(c);
       return c;
@@ -129,8 +131,10 @@ function build(env: NodeJS.ProcessEnv, probeOk = true) {
     fs: fakeFs,
     probe: async () => (probeOk ? { ok: true, version: "7.0.2" } : { ok: false, error: "ENOENT" }),
     post: noopPost,
+    // Настоящая проба спрашивает камеру по сети; здесь просто задаём ответ.
+    audioProbe: async (cam) => cam.id === "drive",
   });
-  return { mod, db, liveChildren };
+  return { mod, db, liveChildren, liveArgs };
 }
 
 describe("createCctvModule", () => {
@@ -231,6 +235,7 @@ describe("createCctvModule", () => {
       cfg: loadCctvConfig("/data", { CCTV_CAMERAS: "drive=10.0.0.1" }),
       db,
       spawn: () => new FakeChild(),
+      audioProbe: async () => false,
       liveSpawn: () => {
         liveSpawnCalls++;
         return new FakeLiveChild();
@@ -260,6 +265,7 @@ describe("createCctvModule", () => {
       cfg: loadCctvConfig("/data", { CCTV_CAMERAS: "drive=10.0.0.1" }),
       db,
       spawn: () => new FakeChild(),
+      audioProbe: async () => false,
       liveSpawn: () => {
         const c = new FakeLiveChild();
         children.push(c);
@@ -314,6 +320,7 @@ describe("createCctvModule", () => {
       cfg: loadCctvConfig("/data", { CCTV_CAMERAS: "drive=10.0.0.1" }),
       db,
       spawn: () => new FakeChild(),
+      audioProbe: async () => false,
       liveSpawn: () => {
         const c = new FakeLiveChild();
         children.push(c);
@@ -358,6 +365,7 @@ describe("createCctvModule", () => {
       cfg: loadCctvConfig("/data", { CCTV_CAMERAS: "drive=10.0.0.1" }),
       db,
       spawn: () => new FakeChild(),
+      audioProbe: async () => false,
       liveSpawn: () => {
         const c = new FakeLiveChild();
         children.push(c);
@@ -401,6 +409,7 @@ describe("createCctvModule", () => {
         return new FakeChild();
       },
       liveSpawn: () => new FakeLiveChild(),
+      audioProbe: async () => false,
       timers: noopTimers,
       fs: fakeFs,
       probe: async () => ({ ok: true, version: "7.0.2" }),
@@ -442,6 +451,30 @@ describe("createCctvModule", () => {
     expect(readyB.mime).toBe('video/mp4; codecs="avc1.4d0032"');
     await noAudio.mod.stop();
     noAudio.db.close();
+  });
+
+
+  it("живой поток не тянет звук у камеры, которая его не шлёт", async () => {
+    // Дело не в экономии: камера объявляет дорожку AAC и молчит в неё, а ffmpeg
+    // ждёт этот звук перед первой выдачей — 12 секунд против 2.7 (измерено на
+    // малине). Поэтому звук берётся только там, где проба его подтвердила.
+    const silent = build({ CCTV_CAMERAS: "terrace=10.0.0.2" });
+    await silent.mod.start();
+    const s = fakeWs();
+    silent.mod.ws!.onConnection(s.ws as never);
+    s.message({ type: "subscribe", cam: "terrace" });
+    expect(silent.liveArgs[0]).toContain("-an");
+    await silent.mod.stop();
+    silent.db.close();
+
+    const loud = build({ CCTV_CAMERAS: "drive=10.0.0.1" });
+    await loud.mod.start();
+    const l = fakeWs();
+    loud.mod.ws!.onConnection(l.ws as never);
+    l.message({ type: "subscribe", cam: "drive" });
+    expect(loud.liveArgs[0]).not.toContain("-an");
+    await loud.mod.stop();
+    loud.db.close();
   });
 
 });

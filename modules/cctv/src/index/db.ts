@@ -30,7 +30,6 @@ export class CctvDb {
   private db!: DatabaseSync;
   private stmt!: {
     insInit: StatementSync; getInit: StatementSync; getInitById: StatementSync;
-    lastInit: StatementSync;
     insSeg: StatementSync; getSegById: StatementSync; getSegPath: StatementSync;
     between: StatementSync; lastStart: StatementSync; totals: StatementSync;
     oldest: StatementSync; delSeg: StatementSync; orphans: StatementSync;
@@ -103,7 +102,6 @@ export class CctvDb {
       insInit: p("INSERT OR IGNORE INTO inits(cam, path, bytes, created) VALUES (?, ?, ?, ?)"),
       getInit: p("SELECT id FROM inits WHERE cam = ? AND path = ?"),
       getInitById: p("SELECT cam, path FROM inits WHERE id = ?"),
-      lastInit: p("SELECT path FROM inits WHERE cam = ? ORDER BY created DESC, id DESC LIMIT 1"),
       insSeg: p(
         "INSERT OR IGNORE INTO segments(cam, init_id, path, start_ms, dur_ms, bytes) VALUES (?, ?, ?, ?, ?, ?)"
       ),
@@ -143,12 +141,6 @@ export class CctvDb {
   initPathById(id: number): { cam: string; path: string } | null {
     const r = this.stmt.getInitById.get(id) as { cam: string; path: string } | undefined;
     return r ?? null;
-  }
-
-  /** Заголовок последнего прогона записи — по нему видно состав дорожек. */
-  latestInitPath(cam: string): string | null {
-    const r = this.stmt.lastInit.get(cam) as { path: string } | undefined;
-    return r ? r.path : null;
   }
 
   addSegment(row: Omit<SegmentRow, "id">): number {

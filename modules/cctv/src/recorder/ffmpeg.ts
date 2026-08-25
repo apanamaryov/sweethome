@@ -18,6 +18,8 @@ export function recordArgs(opts: {
   camDir: string;
   segmentSec: number;
   runId: string;
+  /** Брать ли звук. Пустая дорожка дорого стоит — см. `audioProbeArgs`. */
+  withAudio?: boolean;
 }): string[] {
   const { cam, camDir, segmentSec, runId } = opts;
   return [
@@ -25,6 +27,7 @@ export function recordArgs(opts: {
     "-rtsp_transport", "tcp",
     "-use_wallclock_as_timestamps", "1",
     "-i", rtspUrl(cam),
+    ...(opts.withAudio ? [] : ["-an"]),
     "-c", "copy",
     "-f", "hls",
     "-hls_time", String(segmentSec),
@@ -42,23 +45,50 @@ export function recordArgs(opts: {
  * Команда живого просмотра: фрагменты идут в stdout по 0.5 с, чтобы задержка не
  * равнялась интервалу опорных кадров (~2.9 с у этих камер).
  *
- * Звук копируется вместе с видео (у кого он есть — две камеры из трёх). Что
- * именно оказалось в потоке, определяется по заголовку в live/session.ts, а не
- * настройкой: объявить браузеру несуществующий кодек хуже, чем промолчать.
+ * Звук берётся только если камера его действительно шлёт (`withAudio`). Это не
+ * оптимизация: наши камеры объявляют дорожку AAC и не присылают по ней ни
+ * одного пакета, а ffmpeg ждёт этот звук перед первой выдачей — измерено на
+ * малине, 12 секунд против 2.7 без него.
  */
-export function liveArgs(opts: { cam: CameraConfig; fragMs?: number }): string[] {
+export function liveArgs(opts: { cam: CameraConfig; fragMs?: number; withAudio?: boolean }): string[] {
   const fragUs = (opts.fragMs ?? 500) * 1000;
   return [
     "-nostdin", "-hide_banner", "-loglevel", "error",
     "-rtsp_transport", "tcp",
     "-use_wallclock_as_timestamps", "1",
     "-i", rtspUrl(opts.cam),
+    ...(opts.withAudio ? [] : ["-an"]),
     "-c", "copy",
     "-f", "mp4",
     "-movflags", "+frag_keyframe+empty_moov+default_base_moof",
     "-frag_duration", String(fragUs),
     "pipe:1",
   ];
+}
+
+/**
+ * Проба звука: слушаем камеру несколько секунд и считаем реальные отсчёты.
+ *
+ * Наличие дорожки в потоке ничего не значит — наши камеры объявляют AAC 8 кГц и
+ * не присылают ни одного пакета. Ориентироваться на объявление нельзя дважды:
+ * зритель не услышит ничего, а пустая дорожка ещё и задерживает выдачу видео.
+ */
+export function audioProbeArgs(cam: CameraConfig, seconds = 4): string[] {
+  return [
+    "-nostdin", "-hide_banner", "-v", "info",
+    "-rtsp_transport", "tcp",
+    "-i", rtspUrl(cam),
+    "-t", String(seconds),
+    "-map", "0:a?",
+    "-af", "volumedetect",
+    "-f", "null", "-",
+  ];
+}
+
+/** Сколько звуковых отсчётов насчитал volumedetect. Ноль — звука нет. */
+export function parseAudioSamples(stderr: string): number {
+  const m = /n_samples:\s*(\d+)/.exec(stderr);
+  return m ? Number(m[1]) : 0;
 }
 
 export type ExecLike = (cmd: string, args: string[]) => Promise<{ code: number; stdout: string }>;

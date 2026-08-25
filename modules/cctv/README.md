@@ -20,9 +20,10 @@ entirely inside the home network, with no vendor cloud involved.
   growing backoff; a killed process is back within seconds.
 - **Quota-based retention.** The archive is trimmed by its own byte budget, not
   by free disk space — other things live on that disk.
-- **Sound**, where a camera has a microphone: recorded round the clock together
-  with the picture, and audible both live and in the archive. Muted by default —
-  an open tab should not start shouting.
+- **Sound**, where a camera actually sends it: recorded together with the
+  picture and audible both live and in the archive, muted by default. Whether a
+  camera sends any is decided by listening to it at startup, not by what it
+  claims — see Caveats.
 - **Clip download** — pick a moment, get an MP4 you can send to someone.
 - **Optional motion marks** on the timeline, if the cameras emit ONVIF motion
   events (see Caveats).
@@ -161,10 +162,13 @@ playback, and the clock shows the recording's own time.
   has. It plays correctly; only the scrubber length is off.
 - **Seeking is accurate to about three seconds** — the cameras' keyframe
   interval, not something this module can improve.
-- **Not every camera has sound.** One of ours serves video only; it records and
-  plays silently, and gets no sound button. Where sound exists it is AAC 8 kHz
-  mono — telephone quality: voices and a barking dog carry, music does not. It
-  adds about 2% to the size of the archive.
+- **Our cameras advertise sound and send none.** They declare an AAC 8 kHz track
+  and never put a packet in it, so there is nothing to hear until the microphone
+  is enabled on the camera itself. The module checks by listening for a few
+  seconds at startup rather than trusting the declaration — because an empty
+  declared track is not free: ffmpeg waits for audio that never comes, and the
+  picture took 12 seconds to appear instead of 2.7. Enable a microphone and
+  restart the service, and sound turns itself on.
 - **One camera on screen at a time.** iOS refuses to play a second video at
   once, so the live page switches cameras with tabs rather than showing a grid.
 - **Seeking is a reload, not a scrub.** Moving the position inside a long

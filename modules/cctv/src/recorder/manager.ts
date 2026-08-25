@@ -1,8 +1,9 @@
 import type { CameraInfo } from "@sweethome/cctv-shared";
-import { headerHasAudio } from "../audio";
 import type { CctvConfig } from "../config";
 import type { CctvDb } from "../index/db";
 import { RecorderProcess, type Spawner, type Timers } from "./process";
+import { probeAudio } from "./probe-audio";
+import type { CameraConfig } from "../config";
 
 /** Индекс отстаёт от диска не больше чем на этот интервал. */
 export const SCAN_INTERVAL_MS = 15_000;
@@ -16,10 +17,11 @@ export class RecorderManager {
   private stopped = false;
   private storageOk = true;
   /**
-   * Есть ли у камеры звук — по заголовку последнего прогона записи.
-   * Ключ — путь к заголовку: сменился прогон, перечитываем.
+   * Шлёт ли камера звук. Спрашивается один раз при старте настоящей пробой:
+   * объявленная в потоке дорожка ничего не значит — наши камеры объявляют AAC
+   * и молчат в неё.
    */
-  private audio = new Map<string, { path: string; hasAudio: boolean }>();
+  private audio = new Map<string, boolean>();
 
   constructor(
     private deps: {
@@ -31,9 +33,9 @@ export class RecorderManager {
       timers: Timers;
       storageReady: () => Promise<boolean>;
       mkdir: (p: string) => Promise<void>;
-      /** Чтение заголовка записи — только чтобы узнать, есть ли звуковая дорожка. */
-      readFile?: (absPath: string) => Promise<string>;
       newRunId?: () => string;
+      /** Проба звука; подменяется в тестах, чтобы не спрашивать настоящую камеру. */
+      probeAudio?: (cam: CameraConfig) => Promise<boolean>;
     }
   ) {}
 
@@ -41,6 +43,22 @@ export class RecorderManager {
     const { cfg } = this.deps;
     if (!cfg.enabled) return;
     this.stopped = false;
+
+    // Спрашиваем камеры про звук до запуска записи: пустая дорожка задерживает
+    // первую выдачу ffmpeg примерно на десять секунд — и в записи, и в живом
+    // просмотре. Пробы идут разом и не мешают друг другу.
+    await Promise.all(
+      cfg.cameras.map(async (cam) => {
+        const probe =
+          this.deps.probeAudio ??
+          ((c: CameraConfig) =>
+            probeAudio({ cam: c, ffmpegPath: cfg.ffmpegPath, spawn: this.deps.spawn, timers: this.deps.timers }));
+        const has = await probe(cam);
+        this.audio.set(cam.id, has);
+        console.log(`[cctv] ${cam.id}: звук ${has ? "есть" : "не передаётся камерой"}`);
+      })
+    );
+    if (this.stopped) return;
 
     for (const cam of cfg.cameras) {
       // stop() мог случиться между итерациями (пока предыдущая камера ждала
@@ -61,6 +79,7 @@ export class RecorderManager {
         },
         mkdir: this.deps.mkdir,
         newRunId: this.deps.newRunId ?? (() => `${Date.now().toString(36)}`),
+        withAudio: () => this.hasAudio(cam.id),
       });
       this.procs.set(cam.id, proc);
       await proc.start();
@@ -90,7 +109,6 @@ export class RecorderManager {
     for (const cam of this.deps.cfg.cameras) {
       try {
         await this.deps.scanner.scanCamera(cam.id);
-        await this.refreshAudio(cam.id);
       } catch (e) {
         // Диск мог отвалиться — тик всё равно должен встать в очередь заново.
         console.error(`[cctv] scan ${cam.id} failed:`, (e as Error).message);
@@ -99,23 +117,6 @@ export class RecorderManager {
     this.armScan();
   }
 
-  /**
-   * Состав дорожек читаем из заголовка записи, а не из настроек: камеры разные,
-   * и у одной из наших звука нет вовсе. Файл маленький (меньше килобайта) и
-   * перечитывается только при смене прогона записи.
-   */
-  private async refreshAudio(camId: string): Promise<void> {
-    const read = this.deps.readFile;
-    if (!read) return;
-    const path = this.deps.db.latestInitPath(camId);
-    if (!path || this.audio.get(camId)?.path === path) return;
-    try {
-      const header = await read(`${this.deps.cfg.storageDir}/${path}`);
-      this.audio.set(camId, { path, hasAudio: headerHasAudio(header) });
-    } catch {
-      // Заголовок мог не доехать до диска — не повод шуметь: попробуем в следующий тик.
-    }
-  }
 
   private armRetention(): void {
     if (this.stopped) return;
@@ -155,10 +156,15 @@ export class RecorderManager {
         recording: st?.running ?? false,
         lastSegmentMs: this.deps.db.lastSegmentStart(cam.id),
         restarts: st?.restarts ?? 0,
-        hasAudio: this.audio.get(cam.id)?.hasAudio ?? false,
+        hasAudio: this.hasAudio(cam.id),
         ...(st?.lastError ? { lastError: st.lastError } : {}),
       };
     });
+  }
+
+  /** Шлёт ли камера звук — ответ пробы, снятой при старте. */
+  hasAudio(camId: string): boolean {
+    return this.audio.get(camId) ?? false;
   }
 
   storageAvailable(): boolean {
