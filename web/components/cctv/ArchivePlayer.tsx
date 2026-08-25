@@ -54,11 +54,21 @@ export default function ArchivePlayer({
 
     const url = playlistUrl(cam, fromMs, toMs);
 
-    if (video.canPlayType("application/vnd.apple.mpegurl")) {
-      video.src = url; // Safari умеет HLS сам — второй плеер не создаём
+    // hls.js идёт первым даже там, где браузер умеет HLS сам. Встроенный плеер
+    // Safari на наших плейлистах воспроизводит только первый фрагмент и не
+    // перематывается (проверено на устройстве и повторено ffmpeg на Pi):
+    // записи при этом целы — тот же контент играет целиком, если подать его
+    // одним файлом. hls.js собирает фрагменты сам и такие плейлисты тянет.
+    if (!Hls.isSupported()) {
+      // Остаётся встроенный плеер: на iPhone до iOS 17.1 другого варианта нет.
+      video.src = url;
       return cleanupVideo;
     }
-    if (!Hls.isSupported()) return cleanupVideo;
+
+    // На iPhone hls.js работает через ManagedMediaSource, а тот открывается только
+    // при отключённом удалённом воспроизведении — то же требование Apple, что и
+    // в живом просмотре.
+    video.disableRemotePlayback = true;
 
     const hls = new Hls({ enableWorker: false });
     hlsRef.current = hls;
