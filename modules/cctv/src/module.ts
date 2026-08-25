@@ -5,7 +5,7 @@ import { WebSocket } from "ws";
 import type { McpCapable } from "@sweethome/home-mcp";
 import type { HomeModule, ModuleHealth } from "@sweethome/shared/module";
 import type { LiveClientMessage } from "@sweethome/cctv-shared";
-import { loadCctvConfig, type CctvConfig } from "./config";
+import { loadCctvConfig, type CameraConfig, type CctvConfig } from "./config";
 import { CctvDb } from "./index/db";
 import { Scanner, type FsLike } from "./index/scanner";
 import { Retention, type UnlinkFs } from "./index/retention";
@@ -35,6 +35,8 @@ export interface CctvModuleOverrides {
   post?: SoapPost;
   /** Спавнер для разовых кадров (MCP): у него нужны stdin и stdout, а не только stderr. */
   frameSpawn?: FrameSpawner;
+  /** Проба звука у камеры — в тестах подменяется, чтобы не ходить в сеть. */
+  audioProbe?: (cam: CameraConfig) => Promise<boolean>;
 }
 
 /**
@@ -110,7 +112,14 @@ export function createCctvModule(rootDataDir: string, over: CctvModuleOverrides 
   let ffmpeg: { ok: boolean; version?: string; error?: string } = { ok: false, error: "not probed" };
   let manager: RecorderManager | null = null;
   let started = false;
-  const hub = new LiveHub({ cfg, timers, spawn: liveSpawn });
+  // Про звук знает RecorderManager (он снимает пробу при старте), а хаб живёт
+  // раньше него — читаем через замыкание, как и состояние записи.
+  const hub = new LiveHub({
+    cfg,
+    timers,
+    spawn: liveSpawn,
+    hasAudio: (camId) => manager?.hasAudio(camId) ?? false,
+  });
   // Наблюдатели за движением — по одному на камеру, необязательны (см. events/onvif.ts).
   const watchers: MotionWatcher[] = [];
 
@@ -250,7 +259,7 @@ export function createCctvModule(rootDataDir: string, over: CctvModuleOverrides 
         timers,
         storageReady,
         mkdir: (p) => fs.mkdir(p, { recursive: true }).then(() => undefined),
-        readFile: (p) => fs.readFile(p),
+        ...(over.audioProbe ? { probeAudio: over.audioProbe } : {}),
       });
       await manager.start();
 

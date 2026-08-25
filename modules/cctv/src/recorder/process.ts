@@ -56,6 +56,8 @@ export class RecorderProcess {
       storageReady: () => Promise<boolean>;
       mkdir: (p: string) => Promise<void>;
       newRunId: () => string;
+      /** Шлёт ли камера звук на самом деле (см. probe-audio.ts). */
+      withAudio?: () => boolean;
     }
   ) {}
 
@@ -103,6 +105,7 @@ export class RecorderProcess {
         camDir: this.deps.camDir,
         segmentSec: this.deps.segmentSec,
         runId: this.deps.newRunId(),
+        withAudio: this.deps.withAudio?.() ?? false,
       });
 
       const child = this.deps.spawn(this.deps.ffmpegPath, args);

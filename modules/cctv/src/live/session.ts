@@ -54,12 +54,22 @@ export class LiveSession {
   private stopped = false;
 
   constructor(
-    private deps: { cam: CameraConfig; ffmpegPath: string; spawn: LiveSpawner; onExit: () => void }
+    private deps: {
+      cam: CameraConfig;
+      ffmpegPath: string;
+      spawn: LiveSpawner;
+      onExit: () => void;
+      /** Брать ли звук: у камеры, которая его не шлёт, дорожка только вредит. */
+      withAudio?: boolean;
+    }
   ) {}
 
   start(): void {
     if (this.child) return;
-    const child = this.deps.spawn(this.deps.ffmpegPath, liveArgs({ cam: this.deps.cam }));
+    const child = this.deps.spawn(
+      this.deps.ffmpegPath,
+      liveArgs({ cam: this.deps.cam, withAudio: this.deps.withAudio })
+    );
     this.child = child;
 
     child.stdout?.on("data", (chunk: Buffer) => {

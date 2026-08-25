@@ -129,7 +129,26 @@ keyframe interval. That value is the one place the design spec explicitly leaves
 on-stand measurement (spec §8) — if it has since been re-tuned on the Pi, `ffmpeg.test.ts`
 pins the current value; trust the test over this document.
 
-## Sound — read from the stream, never assumed
+## Sound — the cameras advertise it and never send it
+
+Measured on the live devices: the RTSP stream declares an AAC 8 kHz mono track, and over 15
+seconds it carried 215 video packets and **zero audio packets**. `volumedetect` on a recorded
+segment reports `n_samples: 0`. The microphone is off (or simply never streamed), so there is
+nothing to hear — and the recordings have carried an empty audio track since day one.
+
+**An empty declared track is expensive, not free.** ffmpeg waits for audio to interleave before
+it emits anything: first output after **12 s** with the track, **2.7 s** with `-an`. That is the
+"live view takes forever to open" bug, and it applied to recording too — every recorder restart
+lost about ten seconds. Both `recordArgs` and `liveArgs` therefore take an explicit
+`withAudio`, and default to `-an`.
+
+**So the question "does this camera have sound" is answered by listening, not by reading the
+header.** `recorder/probe-audio.ts` runs a few seconds of `volumedetect` per camera at
+`RecorderManager.start()` and counts real samples; the result drives `-an`, the live MIME and
+`CameraInfo.hasAudio`. A camera whose microphone gets enabled later is picked up at the next
+service start — the probe is not repeated at runtime.
+
+## Codecs — read from the stream, never assumed
 
 Two of the three cameras serve AAC 8 kHz mono next to the video; the third serves video only.
 Recording never dropped it (`recordArgs` is a plain `-c copy`), so the archive has had sound

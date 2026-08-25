@@ -14,7 +14,15 @@ export class LiveHub {
   private sessions = new Map<string, LiveSession>();
   private idleTimers = new Map<string, unknown>();
 
-  constructor(private deps: { cfg: CctvConfig; timers: Timers; spawn: LiveSpawner }) {}
+  constructor(
+    private deps: {
+      cfg: CctvConfig;
+      timers: Timers;
+      spawn: LiveSpawner;
+      /** Шлёт ли камера звук: пустая дорожка задерживает картинку на секунды. */
+      hasAudio?: (camId: string) => boolean;
+    }
+  ) {}
 
   subscribe(camId: string, sink: Sink): void {
     const cam = this.deps.cfg.cameras.find((c) => c.id === camId);
@@ -30,6 +38,7 @@ export class LiveHub {
         cam,
         ffmpegPath: this.deps.cfg.ffmpegPath,
         spawn: this.deps.spawn,
+        withAudio: this.deps.hasAudio?.(camId) ?? false,
         // Процесс умирает асинхронно: к этому моменту в мапе может лежать уже
         // другая, живая сессия этой камеры — её удалять нельзя.
         onExit: () => {
