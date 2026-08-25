@@ -100,7 +100,9 @@ export default function CctvArchivePage() {
               cam={cam}
               startMs={playFrom}
               toMs={toMs}
+              locale={t.langLocale}
               onPositionMs={setPositionMs}
+              onSeekRequest={seekTo}
             />
           );
         })()}

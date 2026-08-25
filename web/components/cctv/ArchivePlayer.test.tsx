@@ -38,7 +38,7 @@ const FakeHls = Hls as unknown as FakeHlsStatic;
 describe("ArchivePlayer", () => {
   it("фатальная ошибка hls.js показывается пользователю, а не чёрным прямоугольником, и гаснет когда видео реально пошло", () => {
     render(
-      <ArchivePlayer cam="drive" startMs={0} toMs={1000} />
+      <ArchivePlayer cam="drive" startMs={0} toMs={1000} locale="ru-RU" />
     );
 
     act(() => {
@@ -61,12 +61,12 @@ describe("ArchivePlayer", () => {
     // поэтому перемотка — это новый источник, начинающийся с нужной точки.
     const midnight = new Date(2026, 7, 24, 0, 0, 0).getTime();
     const { rerender } = render(
-      <ArchivePlayer cam="drive" startMs={midnight} toMs={midnight + 86_400_000} />
+      <ArchivePlayer cam="drive" startMs={midnight} toMs={midnight + 86_400_000} locale="ru-RU" />
     );
     expect(FakeHls.lastUrl).toContain(`from=${midnight}`);
 
     const seek = midnight + 3_600_000;
-    rerender(<ArchivePlayer cam="drive" startMs={seek} toMs={midnight + 86_400_000} />);
+    rerender(<ArchivePlayer cam="drive" startMs={seek} toMs={midnight + 86_400_000} locale="ru-RU" />);
     expect(FakeHls.lastUrl).toContain(`from=${seek}`);
   });
 
@@ -79,6 +79,7 @@ describe("ArchivePlayer", () => {
         cam="drive"
         startMs={start}
         toMs={midnight + 86_400_000}
+        locale="ru-RU"
         onPositionMs={(ms) => seen.push(ms)}
       />
     );
@@ -93,7 +94,7 @@ describe("ArchivePlayer", () => {
 
   it("ошибка воспроизведения у <video> показывается пользователю, а не чёрным прямоугольником", () => {
     render(
-      <ArchivePlayer cam="drive" startMs={0} toMs={1000} />
+      <ArchivePlayer cam="drive" startMs={0} toMs={1000} locale="ru-RU" />
     );
 
     const video = document.querySelector("video")!;
@@ -102,4 +103,43 @@ describe("ArchivePlayer", () => {
     });
     expect(screen.getByText(/playback failed/)).toBeInTheDocument();
   });
+  it("кнопки перемотки просят новый момент в реальном времени, а не двигают позицию плеера", () => {
+    // Ползунок самого плеера убран намеренно: перемотка внутри плейлиста
+    // на этих записях останавливает воспроизведение насовсем.
+    const start = new Date(2026, 7, 25, 4, 0, 0).getTime();
+    const asked: number[] = [];
+    render(
+      <ArchivePlayer
+        cam="drive"
+        startMs={start}
+        toMs={start + 3_600_000}
+        locale="ru-RU"
+        onSeekRequest={(ms) => asked.push(ms)}
+      />
+    );
+
+    expect(document.querySelector("video")!.hasAttribute("controls")).toBe(false);
+
+    act(() => {
+      screen.getByLabelText("+10 s").click();
+    });
+    expect(asked).toEqual([start + 10_000]);
+  });
+
+  it("показывает реальное время кадра, а не ноль от начала плейлиста", () => {
+    const start = new Date(2026, 7, 25, 4, 0, 0).getTime();
+    render(
+      <ArchivePlayer cam="drive" startMs={start} toMs={start + 3_600_000} locale="ru-RU" />
+    );
+
+    const video = document.querySelector("video")!;
+    Object.defineProperty(video, "currentTime", { value: 90, configurable: true });
+    act(() => {
+      video.dispatchEvent(new Event("timeupdate"));
+    });
+
+    // 04:00:00 + 90 секунд
+    expect(screen.getByText(/4:01:30|04:01:30/)).toBeInTheDocument();
+  });
+
 });
