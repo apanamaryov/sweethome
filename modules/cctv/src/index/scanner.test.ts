@@ -14,6 +14,24 @@ const PLAYLIST = [
   "",
 ].join("\n");
 
+/** Та же поддельная ФС, но со счётчиком `stat` — для тестов про повторные проходы. */
+function countingFs(
+  files: Record<string, string>,
+  sizes: Record<string, number> = {}
+): FsLike & { stats: string[] } {
+  const base = fakeFs(files, sizes);
+  const stats: string[] = [];
+  return {
+    stats,
+    readFile: (p) => base.readFile(p),
+    readdir: (p) => base.readdir(p),
+    stat: (p) => {
+      stats.push(p);
+      return base.stat(p);
+    },
+  };
+}
+
 function fakeFs(files: Record<string, string>, sizes: Record<string, number> = {}): FsLike {
   return {
     async readFile(p) {
@@ -73,6 +91,88 @@ describe("Scanner", () => {
     const sc = new Scanner(db, "/st", fs);
     expect(await sc.scanCamera("drive")).toBe(2);
     expect(await sc.scanCamera("drive")).toBe(0);
+    expect(db.totals().count).toBe(2);
+  });
+
+  it("повторный проход не трогает диск по уже известным сегментам", async () => {
+    const fs = countingFs({ "/st/drive/live.m3u8": PLAYLIST }, {
+      "/st/drive/init_run1.mp4": 800,
+      "/st/drive/seg_20260824_100000.m4s": 10,
+      "/st/drive/seg_20260824_100100.m4s": 10,
+    });
+    const sc = new Scanner(db, "/st", fs);
+    await sc.scanCamera("drive");
+    fs.stats.length = 0;
+
+    expect(await sc.scanCamera("drive")).toBe(0);
+    expect(fs.stats).toEqual([]);
+  });
+
+  it("вытесненные чисткой сегменты не обходятся заново", async () => {
+    // Плейлист ffmpeg пишется с append_list и хранит всю историю; чистка удаляет
+    // строку сегмента из индекса, но не из плейлиста. Без отметки «докуда
+    // разобрано» сканер бесконечно ходил бы stat'ом по уже вытесненному — по
+    // сетевому диску, каждые 15 секунд, и число обращений росло бы без предела.
+    const fs = countingFs({ "/st/drive/live.m3u8": PLAYLIST }, {
+      "/st/drive/init_run1.mp4": 800,
+      "/st/drive/seg_20260824_100000.m4s": 10,
+      "/st/drive/seg_20260824_100100.m4s": 10,
+    });
+    const sc = new Scanner(db, "/st", fs);
+    expect(await sc.scanCamera("drive")).toBe(2);
+
+    for (const row of db.oldestSegments(10)) db.deleteSegment(row.id); // как после квоты
+    fs.stats.length = 0;
+
+    expect(await sc.scanCamera("drive")).toBe(0);
+    expect(fs.stats).toEqual([]);
+    expect(db.totals().count).toBe(0); // и не воскресили удалённое
+  });
+
+  it("новый init в хвосте плейлиста привязывается, хотя ранние записи пропущены", async () => {
+    const files: Record<string, string> = { "/st/drive/live.m3u8": PLAYLIST };
+    const sizes: Record<string, number> = {
+      "/st/drive/init_run1.mp4": 800,
+      "/st/drive/init_run2.mp4": 810,
+      "/st/drive/seg_20260824_100000.m4s": 10,
+      "/st/drive/seg_20260824_100100.m4s": 10,
+      "/st/drive/seg_20260824_100200.m4s": 10,
+    };
+    const sc = new Scanner(db, "/st", fakeFs(files, sizes));
+    await sc.scanCamera("drive");
+
+    // Перезапуск записи: у хвоста свой init, а ранние строки плейлиста будут
+    // пропущены по отметке — привязка нового init'а от этого страдать не должна.
+    files["/st/drive/live.m3u8"] =
+      PLAYLIST +
+      [
+        "#EXT-X-DISCONTINUITY",
+        '#EXT-X-MAP:URI="init_run2.mp4"',
+        "#EXT-X-PROGRAM-DATE-TIME:2026-08-24T10:02:00.000+0000",
+        "#EXTINF:60.000000,",
+        "seg_20260824_100200.m4s",
+        "",
+      ].join("\n");
+
+    expect(await sc.scanCamera("drive")).toBe(1);
+    const rows = db.segmentsBetween("drive", 0, Date.UTC(2026, 7, 25));
+    const tail = rows.find((r) => r.path === "drive/seg_20260824_100200.m4s");
+    expect(tail?.initId).toBe(db.initIdByPath("drive", "drive/init_run2.mp4"));
+    expect(tail?.initId).not.toBe(db.initIdByPath("drive", "drive/init_run1.mp4"));
+  });
+
+  it("сегмент, файла которого ещё не было, доиндексируется следующим проходом", async () => {
+    const sizes: Record<string, number> = {
+      "/st/drive/init_run1.mp4": 800,
+      "/st/drive/seg_20260824_100000.m4s": 10,
+      // второго файла пока нет — ffmpeg дописывает его во временный
+    };
+    const sc = new Scanner(db, "/st", fakeFs({ "/st/drive/live.m3u8": PLAYLIST }, sizes));
+    expect(await sc.scanCamera("drive")).toBe(1);
+
+    sizes["/st/drive/seg_20260824_100100.m4s"] = 10;
+    // Отметка не должна была перепрыгнуть через пропущенный сегмент.
+    expect(await sc.scanCamera("drive")).toBe(1);
     expect(db.totals().count).toBe(2);
   });
 

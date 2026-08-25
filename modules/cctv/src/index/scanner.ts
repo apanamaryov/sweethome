@@ -31,6 +31,20 @@ export function timeFromInitName(name: string): number | null {
 }
 
 export class Scanner {
+  /**
+   * Начало последнего проиндексированного сегмента, по камере (спека §7: читаем
+   * только прирост).
+   *
+   * ffmpeg пишет плейлист с `-hls_list_size 0` и `append_list`, то есть копит в
+   * нём все сегменты за всю историю и переживает перезапуски. Без этой отметки
+   * каждый тик (раз в 15 с) перебирал бы весь архив; хуже — чистка удаляет
+   * строку сегмента из индекса, но не из плейлиста, поэтому после первого
+   * срабатывания квоты каждый вытесненный сегмент переставал бы быть «известным»
+   * и получал бы `stat` по сетевому диску заново, и число таких обращений росло
+   * бы на 2880 в сутки без предела. Первой от этого страдает запись.
+   */
+  private lastIndexedMs = new Map<string, number>();
+
   constructor(
     private db: CctvDb,
     private storageDir: string,
@@ -52,18 +66,37 @@ export class Scanner {
       throw e; // хранилище сломалось — пробрасываем наружу
     }
 
-    const known = this.db.knownPaths(cam);
+    // Первое обращение после старта процесса — отметку восстанавливаем из базы.
+    let mark = this.lastIndexedMs.get(cam) ?? this.db.lastSegmentStart(cam) ?? -Infinity;
+
+    // Множество известных путей читается лениво: на тике без новых сегментов
+    // (а таких большинство) оно не нужно вовсе, а в базе их десятки тысяч.
+    let known: Set<string> | null = null;
     const initIds = new Map<string, number>();
     let added = 0;
+    // Отметку двигаем только по непрерывному успешному префиксу. Сегмент, который
+    // сейчас не удалось проиндексировать (ffmpeg ещё дописывает файл), — это
+    // всегда хвост плейлиста; но если пропуск всё же окажется в середине,
+    // перескочить через него нельзя, иначе он не попадёт в индекс никогда.
+    let advancing = true;
 
     for (const e of parseHlsPlaylist(text, this.segmentSec)) {
+      if (e.startMs <= mark) continue; // уже разбирали в прошлый раз
+
       const relPath = `${cam}/${e.file}`;
-      if (known.has(relPath)) continue;
+      known ??= this.db.knownPaths(cam);
+      if (known.has(relPath)) {
+        if (advancing) mark = e.startMs;
+        continue;
+      }
 
       let initId = initIds.get(e.initFile);
       if (initId === undefined) {
         const resolved = await this.resolveInit(cam, e.initFile);
-        if (resolved === null) continue; // init'а нет на диске — воспроизвести нечем
+        if (resolved === null) {
+          advancing = false; // init'а нет на диске — воспроизвести нечем, вернёмся сюда позже
+          continue;
+        }
         initId = resolved;
         initIds.set(e.initFile, initId);
       }
@@ -72,13 +105,19 @@ export class Scanner {
       try {
         bytes = (await this.fs.stat(`${this.camDir(cam)}/${e.file}`)).size;
       } catch (err) {
-        if (isMissing(err)) continue; // файл ещё не дописан — ffmpeg пишет во временный
+        if (isMissing(err)) {
+          advancing = false; // файл ещё не дописан — ffmpeg пишет во временный
+          continue;
+        }
         throw err; // хранилище сломалось
       }
 
       this.db.addSegment({ cam, initId, path: relPath, startMs: e.startMs, durMs: e.durMs, bytes });
       added++;
+      if (advancing) mark = e.startMs;
     }
+
+    this.lastIndexedMs.set(cam, mark);
     return added;
   }
 
@@ -146,6 +185,9 @@ export class Scanner {
       this.db.addSegment({ cam, initId, path: relPath, startMs, durMs: this.segmentSec * 1000, bytes });
       added++;
     }
+    // Восстановление добавляет сегменты в обход плейлиста, поэтому сохранённая
+    // отметка после него неактуальна — пересчитаем её из базы на следующем скане.
+    this.lastIndexedMs.delete(cam);
     return added;
   }
 }
