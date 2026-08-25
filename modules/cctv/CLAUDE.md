@@ -30,15 +30,20 @@ a keyframe and shows grey garbage instead of a picture — verified with `gstrea
 `rtph264depay`. **`ffmpeg` parses this correctly**; recording and frame extraction both come
 out clean. Consequence: the entire receive/parse path for camera video in this module goes
 through ffmpeg only — recording (`recorder/`), live view (`live/`) and archive concat
-(`download.ts`) all spawn ffmpeg rather than talking RTP/RTSP directly. Moving to `gstreamer`
+(the download route in `router.ts`, using `concatArgs` from `download.ts`) all spawn
+ffmpeg rather than talking RTP/RTSP directly. Moving to `gstreamer`
 or a hand-rolled RTP parser would need its own investigation; do not assume it is a drop-in
 swap.
 
 ### ONVIF — read-only, and that is final
 
-Port `8899`; services `device`/`media`/`imaging`/`events`/`ptz`. Reads (`GetCapabilities`,
-`GetProfiles`, `GetVideoEncoderConfiguration`, `GetEventProperties`) work without auth and are
-what `events/onvif.ts` (the motion watcher) relies on.
+Port `8899`; services `device`/`media`/`imaging`/`events`/`ptz`. Recon probed the read side of
+this surface — `GetCapabilities`, `GetProfiles`, `GetVideoEncoderConfiguration`,
+`GetEventProperties` — and all of it answers without auth, but **the module itself calls none
+of these**. `events/onvif.ts` (the motion watcher) only ever calls
+`CreatePullPointSubscription` and `PullMessages`; the `tns1:VideoSource/MotionAlarm` topic it
+watches for is hard-coded from what `GetEventProperties` showed during recon, not re-queried
+at runtime.
 
 **Writing configuration does not work at all.** `SetVideoEncoderConfiguration` returns
 `ter:InvalidArgVal / ter:ConfigModify` even when asked to save the settings that are already
@@ -120,9 +125,10 @@ pins the current value; trust the test over this document.
    an unhandled `"error"` on a `ChildProcess` (bad path to the ffmpeg binary, no permission —
    anything that fails before an `"exit"` would ever fire) is an uncaught exception that can
    take down the whole process, inverter monitoring included, not just this module. Every
-   `spawn()` call in this module (`recorder/process.ts`, `live/session.ts`, the concat spawn
-   in `download.ts`) has an `"error"` handler that cleans up and reports failure instead of
-   leaving the caller hanging or the process dead in the water.
+   `spawn()` call in this module (`recorder/process.ts`, `live/session.ts`, the download
+   route's concat spawn in `router.ts`, using `concatArgs` from `download.ts`) has an
+   `"error"` handler that cleans up and reports failure instead of leaving the caller
+   hanging or the process dead in the water.
 3. **Playback errors must reach the user, not fade into the next frame.** A black rectangle
    with no explanation is a support ticket, not a UI. Both the live and the archive players
    surface stream/HLS failures as a visible status banner (with the reason where one is

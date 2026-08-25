@@ -45,6 +45,15 @@ npm test           # same as check, but with the web jest suite instead of typec
   (`src/inverter.test.ts`), config (`src/config.test.ts`) and the MCP local gateway
   (`src/mcp/local-gateway.test.ts`). **After changing anything under
   `modules/inverter/src/protocol/*`, always run `npm test -w @sweethome/inverter`.**
+- **`npm test -w @sweethome/cctv` runs jest** (15 suites): the index (`index/db.test.ts`,
+  `scanner.test.ts`, `retention.test.ts`, `playlist-parse.test.ts`, `spans.test.ts`),
+  playlist generation (`playlist.test.ts`), the recorder (`recorder/ffmpeg.test.ts`,
+  `process.test.ts`, `manager.test.ts`), live view (`live/hub.test.ts`), ONVIF motion
+  events (`events/onvif.test.ts`), the archive download route (`download.test.ts` for the
+  pure concat helpers, `router.test.ts` for the route itself, which owns the actual ffmpeg
+  spawn), config (`config.test.ts`) and the assembled module (`module.test.ts`). No real
+  cameras or disk needed — see `modules/cctv/CLAUDE.md` for the hardware findings behind
+  the fixtures.
 - **`npm test -w @sweethome/server` runs jest**: password hashes/roles/auth flows and
   tokens (`src/auth/hash.test.ts`, `db.test.ts`, `service.test.ts`, `tokens.test.ts`), the
   module host (`src/host.test.ts`), config (`src/config.test.ts`), authorization through
