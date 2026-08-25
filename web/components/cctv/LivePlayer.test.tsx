@@ -245,34 +245,41 @@ describe("LivePlayer", () => {
   });
 
 
-  it("кнопка звука появляется только у камеры со звуком, и стартует заглушённой", () => {
-    // Открытая вкладка не должна начинать орать, поэтому по умолчанию тихо.
-    // А у камеры без микрофона кнопки нет вовсе — она была бы обманкой.
-    render(<LivePlayer cam="drive" label="Въезд" />);
+  it("заглушён по умолчанию и слушается пропа", () => {
+    // Кнопкой звука владеет страница (она в строке камер), плеер только
+    // отражает её состояние — иначе кнопка и картинка разъезжаются.
+    const { rerender } = render(<LivePlayer cam="drive" label="Въезд" />);
+    expect((document.querySelector("video") as HTMLVideoElement).muted).toBe(true);
+
+    rerender(<LivePlayer cam="drive" label="Въезд" muted={false} />);
+    expect((document.querySelector("video") as HTMLVideoElement).muted).toBe(false);
+  });
+
+  it("сообщает наверх, есть ли в потоке звук", () => {
+    // Кнопку показывает страница, и решает она по этому сообщению: сервер
+    // объявляет дорожки по факту потока, а не по настройкам.
+    const seen: boolean[] = [];
+    render(<LivePlayer cam="drive" label="Въезд" onAudioAvailable={(h) => seen.push(h)} />);
     act(() => {
       FakeWebSocket.last!.onopen?.();
       FakeWebSocket.last!.onmessage?.({
         data: JSON.stringify({ type: "ready", cam: "drive", mime: 'video/mp4; codecs="avc1.4d0032,mp4a.40.2"' }),
       });
     });
-
-    const video = document.querySelector("video")! as HTMLVideoElement;
-    expect(video.muted).toBe(true);
-
-    const button = screen.getByLabelText(/звук/i);
-    act(() => { button.click(); });
-    expect((document.querySelector("video") as HTMLVideoElement).muted).toBe(false);
+    expect(seen).toEqual([true]);
   });
 
-  it("у камеры без звуковой дорожки кнопки звука нет", () => {
-    render(<LivePlayer cam="terrace" label="Тераса" />);
+  it("у камеры без звуковой дорожки наверх уходит «звука нет»", () => {
+    const seen: boolean[] = [];
+    render(<LivePlayer cam="terrace" label="Тераса" onAudioAvailable={(h) => seen.push(h)} />);
     act(() => {
       FakeWebSocket.last!.onopen?.();
       FakeWebSocket.last!.onmessage?.({
         data: JSON.stringify({ type: "ready", cam: "terrace", mime: 'video/mp4; codecs="avc1.4d0032"' }),
       });
     });
-    expect(screen.queryByLabelText(/звук/i)).not.toBeInTheDocument();
+    expect(seen).toEqual([false]);
   });
+
 
 });

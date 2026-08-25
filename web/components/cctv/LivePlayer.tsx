@@ -30,14 +30,22 @@ const NO_STREAM_MS = 15_000;
  * Готового плеера здесь нет намеренно — HLS дал бы задержку в десяток секунд,
  * а так она около секунды (спека §8).
  */
-export default function LivePlayer({ cam, label }: { cam: string; label: string }) {
+export default function LivePlayer({
+  cam,
+  label,
+  muted = true,
+  onAudioAvailable,
+}: {
+  cam: string;
+  label: string;
+  /** Звуком владеет страница: кнопка живёт в строке камер, рядом с архивом. */
+  muted?: boolean;
+  /** Сообщаем странице, что в потоке реально есть звуковая дорожка. */
+  onAudioAvailable?: (has: boolean) => void;
+}) {
   const t = useT();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Звук по умолчанию выключен: открытая вкладка не должна начинать орать,
-  // да и автозапуск браузеры разрешают только беззвучный.
-  const [muted, setMuted] = useState(true);
-  const [hasAudio, setHasAudio] = useState(false);
   const { expanded, toggle: toggleSize } = useExpandable();
 
   useEffect(() => {
@@ -52,7 +60,7 @@ export default function LivePlayer({ cam, label }: { cam: string; label: string 
       if (!cancelled) setError(msg);
     };
     const setHasAudioSafe = (v: boolean) => {
-      if (!cancelled) setHasAudio(v);
+      if (!cancelled) onAudioAvailable?.(v);
     };
 
     const MediaSourceImpl = pickMediaSource();
@@ -193,22 +201,13 @@ export default function LivePlayer({ cam, label }: { cam: string; label: string 
         URL.revokeObjectURL(video.src);
       } catch {}
     };
-  }, [cam, t]);
+  }, [cam, t, onAudioAvailable]);
 
   return (
     <figure className={`cctv-live${expanded ? " cctv-expanded" : ""}`}>
       <figcaption>{label}</figcaption>
       {/* Клик увеличивает картинку — тот же жест, что и в архиве. */}
       <video ref={videoRef} muted={muted} playsInline autoPlay onClick={toggleSize} />
-      {hasAudio && (
-        <button
-          className="cctv-sound"
-          aria-label={muted ? t.cctvUnmute : t.cctvMute}
-          onClick={() => setMuted((m) => !m)}
-        >
-          {muted ? "🔇" : "🔊"}
-        </button>
-      )}
       {error && <p className="cctv-error">{error}</p>}
     </figure>
   );

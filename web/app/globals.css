@@ -748,7 +748,29 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
 .solar-range-grid > div { display: flex; flex-direction: column; }
 
 /* ---------- раздел видеонаблюдения (/cctv, /cctv/archive) ---------- */
-.cctv-tabs { margin-bottom: 12px; }
+/* Строка управления: выбор камеры слева, звук и архив справа. */
+.cctv-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.cctv-tabs { margin-bottom: 0; }
+.cctv-bar-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.cctv-icon-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 34px;
+  padding: 4px 10px;
+  font-size: 18px;
+  line-height: 1;
+  text-decoration: none;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 6px;
+}
 /* Кадр у камер 1920×2160 — две линзы одна над другой. Если растянуть его по
    ширине колонки, на десктопе он оказывается выше экрана и не влезает даже
    одной линзой, поэтому ограничиваем по высоте окна: width/height auto —
@@ -833,5 +855,5 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
   font-size: 16px;
   line-height: 1;
 }
-.cctv-live .cctv-sound { align-self: center; margin-top: 6px; }
+.cctv-bar .cctv-sound { min-height: 34px; }
 .cctv-expanded .cctv-sound { margin-top: 0; }

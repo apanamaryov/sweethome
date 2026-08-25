@@ -81,7 +81,8 @@ stops until the config is updated.
 
 ## 🖥️ Web interface
 
-- `/cctv` — live view, one camera at a time with tabs to switch.
+- `/cctv` — live view, one camera at a time. One control row holds everything:
+  camera tabs on the left, sound and a link into the archive on the right.
 - `/cctv/archive` — camera and day pickers, a time field to jump straight to a
   moment, the player with its own controls (±1min / ±10s / play, and a clock
   showing the real time of the frame), a timeline with recorded stretches and
@@ -90,8 +91,8 @@ stops until the config is updated.
 - A status card on the home overview: cameras recording, space used, archive
   depth.
 
-Both players start muted and show a sound button only for cameras that actually
-have an audio track — a button that does nothing is worse than no button. Which
+Both players start muted and show a sound button only where the stream actually
+carries an audio track — a button that does nothing is worse than no button. Which
 codecs a stream carries is read from the stream itself, never assumed: declaring
 a codec that is not there stops the browser from opening the source at all.
 
