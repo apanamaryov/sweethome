@@ -9,6 +9,7 @@ import "@sweethome/shared/module"; // augments express-serve-static-core with re
 import { normalizeUsername } from "./auth/db";
 import { validatePassword } from "./auth/hash";
 import { ModuleHost } from "./host";
+import { mountMcp } from "./mcp/http";
 
 export function createServer(host: ModuleHost, cfg: Config): http.Server {
   const app = express();
@@ -294,6 +295,14 @@ export function createServer(host: ModuleHost, cfg: Config): http.Server {
 
   for (const m of host.modules) app.use(`/api/${m.id}`, m.apiRouter);
   for (const m of host.modules) m.attachHttp?.(app, { authenticate });
+
+  // Один /mcp на весь дом: инструменты приносят сами модули.
+  mountMcp(app, {
+    modules: host.modules,
+    authenticate,
+    enabled: cfg.mcp.enabled,
+    maxSessions: cfg.mcp.maxSessions,
+  });
 
   const server = http.createServer(app);
 

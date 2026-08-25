@@ -219,7 +219,6 @@ function baseConfig(overrides: Partial<InverterConfig> = {}): InverterConfig {
     autoRelock: true,
     dataDir: tmp,
     stats: { enabled: false, rawDays: 30, minuteDays: 730, solarThresholdW: 200, solarDwellMin: 15 },
-    mcp: { enabled: false, maxSessions: 8 },
     mqtt: {
       url: null,
       username: null,

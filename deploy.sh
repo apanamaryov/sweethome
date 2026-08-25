@@ -40,6 +40,7 @@ echo "==> rsync на $PI_HOST:$PI_DIR"
 rsync -az --relative --delete -e "$RSYNC_SSH" \
   package.json package-lock.json \
   packages/shared/package.json packages/shared/dist \
+  packages/home-mcp/package.json packages/home-mcp/dist \
   packages/inverter-shared/package.json packages/inverter-shared/dist \
   packages/inverter-mcp/package.json packages/inverter-mcp/dist \
   modules/inverter/package.json modules/inverter/dist \
@@ -58,7 +59,7 @@ if ! command -v ffmpeg >/dev/null; then
   exit 1
 fi
 rm -rf shared mcp   # каталоги старой раскладки, если остались
-npm ci -w server -w modules/inverter -w packages/inverter-mcp -w modules/cctv -w packages/cctv-shared --omit=dev
+npm ci -w server -w modules/inverter -w packages/inverter-mcp -w modules/cctv -w packages/cctv-shared -w packages/home-mcp --omit=dev
 sudo cp server/systemd/sweethome.service /etc/systemd/system/sweethome.service
 sudo systemctl daemon-reload
 sudo systemctl enable sweethome >/dev/null 2>&1 || true

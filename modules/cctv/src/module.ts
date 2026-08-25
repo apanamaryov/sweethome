@@ -2,6 +2,7 @@ import { spawn as nodeSpawn } from "child_process";
 import { createReadStream, mkdirSync } from "fs";
 import { promises as nodeFs } from "fs";
 import { WebSocket } from "ws";
+import type { McpCapable } from "@sweethome/home-mcp";
 import type { HomeModule, ModuleHealth } from "@sweethome/shared/module";
 import type { LiveClientMessage } from "@sweethome/cctv-shared";
 import { loadCctvConfig, type CctvConfig } from "./config";
@@ -14,6 +15,8 @@ import type { Spawner, Timers } from "./recorder/process";
 import { LiveHub, type LiveSpawner, type Sink } from "./live/hub";
 import { createCctvRouter } from "./router";
 import { MotionWatcher, type SoapPost } from "./events/onvif";
+import { createCctvMcpProvider } from "./mcp/provider";
+import type { FrameSpawner } from "./mcp/snapshot";
 
 type ModuleFs = FsLike &
   UnlinkFs & {
@@ -30,6 +33,8 @@ export interface CctvModuleOverrides {
   fs?: ModuleFs;
   probe?: () => Promise<{ ok: boolean; version?: string; error?: string }>;
   post?: SoapPost;
+  /** Спавнер для разовых кадров (MCP): у него нужны stdin и stdout, а не только stderr. */
+  frameSpawn?: FrameSpawner;
 }
 
 /**
@@ -84,7 +89,7 @@ async function realExec(cmd: string, args: string[]): Promise<{ code: number; st
   });
 }
 
-export function createCctvModule(rootDataDir: string, over: CctvModuleOverrides = {}): HomeModule {
+export function createCctvModule(rootDataDir: string, over: CctvModuleOverrides = {}): HomeModule & McpCapable {
   const cfg = over.cfg ?? loadCctvConfig(rootDataDir);
   const fs = over.fs ?? realFs;
   const timers = over.timers ?? realTimers;
@@ -118,27 +123,40 @@ export function createCctvModule(rootDataDir: string, over: CctvModuleOverrides 
     }
   };
 
-  // Собирается только в start(), но роутеру он нужен уже сейчас — читаем его
-  // через замыкание, а не через постоянно живой геттер: снаружи это обычная
-  // переменная, а не отдельная сущность, которую нужно было бы поддерживать.
+  // Состояние записи живёт в RecorderManager, а он появляется только в start(),
+  // но роутеру и инструментам MCP оно нужно уже сейчас. Читаем через замыкание,
+  // а не через постоянно живой геттер: снаружи это обычная переменная, а не
+  // отдельная сущность, которую пришлось бы поддерживать.
+  const managerView = {
+    cameras: () =>
+      manager?.cameras() ??
+      cfg.cameras.map((c) => ({ id: c.id, name: c.name, recording: false, lastSegmentMs: null, restarts: 0 })),
+    storageAvailable: () => manager?.storageAvailable() ?? false,
+  };
+
+  // Чтение с диска потоком — не через overrides.fs: там нет потокового чтения
+  // (это внутренняя деталь маршрутов и кадров, а не контракт модуля).
+  const openRead = (abs: string) => createReadStream(abs);
+
   const router = createCctvRouter({
     cfg,
     db,
-    manager: {
-      cameras: () =>
-        manager?.cameras() ??
-        cfg.cameras.map((c) => ({ id: c.id, name: c.name, recording: false, lastSegmentMs: null, restarts: 0 })),
-      storageAvailable: () => manager?.storageAvailable() ?? false,
-    },
+    manager: managerView,
     sendFile: (res, abs) => res.sendFile(abs),
-    // Чтение с диска для /download — не через overrides.fs: там нет потокового
-    // чтения (это внутренняя деталь одного маршрута, а не контракт модуля).
-    openRead: (abs) => createReadStream(abs),
+    openRead,
   });
 
   return {
     id: "cctv",
     apiRouter: router,
+    mcp: createCctvMcpProvider({
+      cfg,
+      db,
+      cameras: managerView.cameras,
+      storageAvailable: managerView.storageAvailable,
+      spawn: over.frameSpawn ?? ((cmd, args) => nodeSpawn(cmd, args)),
+      openRead,
+    }),
     ws: {
       onConnection(ws: WebSocket) {
         const sink: Sink = {

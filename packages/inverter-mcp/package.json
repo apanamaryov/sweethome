@@ -15,6 +15,7 @@
   },
   "engines": { "node": ">=24" },
   "dependencies": {
+    "@sweethome/home-mcp": "1.0.0",
     "@sweethome/inverter-shared": "1.0.0",
     "@sweethome/shared": "1.0.0",
     "@modelcontextprotocol/sdk": "^1.29.0",

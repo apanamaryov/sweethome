@@ -25,8 +25,8 @@ Unification design (why the repo looks the way it does): `docs/superpowers/specs
 ```bash
 npm install        # installs dependencies for all workspaces at once (this is a monorepo)
 npm run dev        # server :3000 (forces INVERTER_TRANSPORT=mock) + web :3001 (Next.js HMR, proxies /api to :3000)
-npm run build      # STRICTLY in the order packages/shared → packages/inverter-shared → packages/inverter-mcp → modules/inverter → packages/cctv-shared → modules/cctv → server → web
-npm run check      # jest: inverter-mcp + inverter (protocol/transport/stats/mqtt/store/router/mcp) + cctv (recorder/index/live/router) + server (auth/host/http) + typecheck (web)
+npm run build      # STRICTLY in the order packages/shared → packages/home-mcp → packages/inverter-shared → packages/inverter-mcp → modules/inverter → packages/cctv-shared → modules/cctv → server → web
+npm run check      # jest: home-mcp + inverter-mcp + inverter (protocol/transport/stats/mqtt/store/router/mcp) + cctv (recorder/index/live/router/mcp) + server (auth/host/http/mcp) + typecheck (web)
 npm test           # same as check, but with the web jest suite instead of typecheck: inverter-mcp → inverter → cctv → server → web
 ./deploy.sh        # local build → rsync to the Pi → npm ci → systemd restart (incl. enabling autostart) → health check
 ```
@@ -45,14 +45,15 @@ npm test           # same as check, but with the web jest suite instead of typec
   (`src/inverter.test.ts`), config (`src/config.test.ts`) and the MCP local gateway
   (`src/mcp/local-gateway.test.ts`). **After changing anything under
   `modules/inverter/src/protocol/*`, always run `npm test -w @sweethome/inverter`.**
-- **`npm test -w @sweethome/cctv` runs jest** (15 suites): the index (`index/db.test.ts`,
+- **`npm test -w @sweethome/cctv` runs jest** (17 suites): the index (`index/db.test.ts`,
   `scanner.test.ts`, `retention.test.ts`, `playlist-parse.test.ts`, `spans.test.ts`),
   playlist generation (`playlist.test.ts`), the recorder (`recorder/ffmpeg.test.ts`,
   `process.test.ts`, `manager.test.ts`), live view (`live/hub.test.ts`), ONVIF motion
   events (`events/onvif.test.ts`), the archive download route (`download.test.ts` for the
   file-name helper, `router.test.ts` for the route itself, which streams the segments),
-  config (`config.test.ts`) and the assembled module (`module.test.ts`). No real
-  cameras or disk needed — see `modules/cctv/CLAUDE.md` for the hardware findings behind
+  config (`config.test.ts`), the MCP tools (`mcp/tools.test.ts` — through a real MCP client
+  over `InMemoryTransport` — and `mcp/snapshot.test.ts` for frame grabbing) and the
+  assembled module (`module.test.ts`). No real cameras or disk needed — see `modules/cctv/CLAUDE.md` for the hardware findings behind
   the fixtures.
 - **`npm test -w @sweethome/server` runs jest**: password hashes/roles/auth flows and
   tokens (`src/auth/hash.test.ts`, `db.test.ts`, `service.test.ts`, `tokens.test.ts`), the
@@ -78,7 +79,7 @@ npm test           # same as check, but with the web jest suite instead of typec
 
 ## Architecture
 
-An npm-workspaces monorepo, strict build order: `packages/shared` → `packages/inverter-shared`
+An npm-workspaces monorepo, strict build order: `packages/shared` → `packages/home-mcp` → `packages/inverter-shared`
 → `packages/inverter-mcp` → `modules/inverter` → `packages/cctv-shared` → `modules/cctv` →
 `server` → `web`. Each package imports the previous ones from their **built `dist/`**, not
 from source, so the order is not arbitrary.
@@ -92,8 +93,13 @@ owns cross-cutting concerns and knows nothing about any module's internals:
   isolation, and aggregates `GET /api/health` into `{ ok, modules: { <id>: ModuleHealth } }`.
 - **Mounting** (`src/server.ts`): for each module, its `apiRouter` goes under `/api/<id>`,
   an optional WebSocket goes under `/ws/<id>` (gated by the same cookie/Bearer check as
-  `/api`), and an optional `attachHttp` hook wires routes outside the `/api/<id>` prefix
-  (the inverter module uses it to mount `/mcp`).
+  `/api`), and an optional `attachHttp` hook wires routes outside the `/api/<id>` prefix.
+- **`src/mcp/http.ts`** — the single `/mcp` endpoint (Streamable HTTP) for LLM agents,
+  behind the same authorization as `/api`. It belongs to the host, not to a module: the
+  address is one, and the tools come from whichever modules carry an `mcp` provider
+  (`isMcpCapable` / `buildHomeMcpServer` from `@sweethome/home-mcp`). A server is built per
+  session because the tool set depends on the presented token's rights. `MCP_ENABLED` /
+  `MCP_MAX_SESSIONS` are host config now (they used to live in the inverter's).
 - **Legacy redirects**: the old top-level `/stats`, `/settings`, `/diagnostics` page URLs
   301 to `/inverter/stats`, `/inverter/settings`, `/inverter/diagnostics` (old bookmarks
   and any external links keep working).
@@ -116,8 +122,12 @@ write-safety model.
   adds the inverter's own contract: types (`Snapshot`, …), the control whitelist
   (`api.ts`), the register map (`registers.ts`), the pure `diffSettings` (`settings.ts`),
   the derived power source (`source.ts`).
-- **`inverter-mcp`** (`@sweethome/inverter-mcp`) — the MCP server for agents; see
-  `modules/inverter/CLAUDE.md`.
+- **`home-mcp`** (`@sweethome/home-mcp`) — the MCP layer shared by every module: the
+  `ModuleMcpProvider` contract a module implements to hand over its tools, `buildHomeMcpServer`
+  (one server per session, instructions composed from the modules), and the time helpers
+  (`parseTime`/`parseDay`/`localDay`/`localIso`) tools use to read and print times.
+- **`inverter-mcp`** (`@sweethome/inverter-mcp`) — the inverter's own tools/resources/prompts
+  plus its stdio binary; see `modules/inverter/CLAUDE.md`.
 
 ### `web/` — Next.js (App Router)
 - **Production = static export** (`output: "export"` in `next.config.ts`) into `web/out/`,
@@ -173,16 +183,18 @@ write-safety model.
   Bearer token.
 - Tests — `hash.test.ts`, `db.test.ts`, `service.test.ts`, `tokens.test.ts` (jest, part of
   `npm test -w @sweethome/server`); the HTTP flows — `src/server.http.test.ts`; the module
-  host — `src/host.test.ts`.
+  host — `src/host.test.ts`; the `/mcp` endpoint — `src/mcp/http.test.ts` (authorization,
+  sessions, the session cap, the switch, and that one session serves every module's tools).
 
 ## Deploying to the Pi (important details)
 
 - The build is **entirely local**; the Pi only runs
   `npm ci -w server -w modules/inverter -w packages/inverter-mcp -w modules/cctv
-  -w packages/cctv-shared --omit=dev` + a systemd restart. The Pi compiles nothing. `rsync`
-  uploads `packages/shared/dist`, `packages/inverter-shared/dist`, `packages/inverter-mcp/dist`,
-  `modules/inverter/dist`, `packages/cctv-shared/dist`, `modules/cctv/dist`, `server/dist`,
-  `web/out` and the workspace manifests.
+  -w packages/cctv-shared -w packages/home-mcp --omit=dev` + a systemd restart. The Pi
+  compiles nothing. `rsync` uploads `packages/shared/dist`, `packages/home-mcp/dist`,
+  `packages/inverter-shared/dist`, `packages/inverter-mcp/dist`, `modules/inverter/dist`,
+  `packages/cctv-shared/dist`, `modules/cctv/dist`, `server/dist`, `web/out` and the
+  workspace manifests.
 - **`modules/cctv` needs two things on the Pi that nothing else in this project does**: an
   external **`ffmpeg`** binary (`sudo apt install ffmpeg` — Node alone cannot decode what
   these cameras send; see `modules/cctv/CLAUDE.md` for why) and a mounted **`/mnt/cctv`**, a

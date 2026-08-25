@@ -20,6 +20,8 @@
     "@sweethome/inverter": "1.0.0",
     "@sweethome/inverter-shared": "1.0.0",
     "@sweethome/cctv": "1.0.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@sweethome/home-mcp": "1.0.0",
     "@sweethome/shared": "1.0.0",
     "express": "^4.19.2",
     "ws": "^8.18.0"

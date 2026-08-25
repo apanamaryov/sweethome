@@ -84,15 +84,33 @@ stops until the config is updated.
   showing the real time of the frame), a timeline with recorded stretches and
   motion marks, and clip download.
 
+- A status card on the home overview: cameras recording, space used, archive
+  depth.
+
 The frame is 1920×2160 — two lenses stacked — so at full column width a desktop
 screen cannot show even one of them. Both players cap the picture to the window
 and enlarge it over the page on click (Esc or another click returns it). Not the
 browser's own fullscreen: that would replace our controls with native ones,
 whose slider seeks the way that stops playback for good.
-- A status card on the home overview: cameras recording, space used, archive
-  depth.
 
 Both pages are open to `admin` and `viewer` alike.
+
+## 🤖 For LLM agents (MCP)
+
+The module contributes read-only tools to the home's shared `/mcp` endpoint — an agent
+connected there sees them next to the inverter's:
+
+| Tool | What it answers |
+|---|---|
+| `cctv_get_cameras` | which cameras exist, whether each is recording, when it last wrote, restarts and errors |
+| `cctv_get_storage` | how much of the quota is used, how far back the archive reaches |
+| `cctv_get_timeline` | stretches recorded over a period, the gaps between them, motion marks |
+| `cctv_snapshot` | an actual picture: live, or the recorded frame at a given moment |
+
+Plus the `cctv://cameras` resource. Frames are scaled down before sending (640 px wide by
+default, 1920 max) — the full 1920×2160 picture would bloat every answer, and it holds both
+lenses, so an agent looking at it sees two views stacked, not one. Nothing here writes or
+deletes, and there is nothing to control on these cameras anyway.
 
 ## 🌐 API
 
@@ -179,6 +197,7 @@ src/
   recorder/            ffmpeg arguments, supervised process, manager
   live/                on-demand live sessions and their subscribers
   events/onvif.ts      optional motion-event subscription
+  mcp/                 tools for LLM agents and single-frame grabbing
   playlist.ts          playlist generation from the index
   router.ts            REST API
   module.ts            assembly into the host's module contract

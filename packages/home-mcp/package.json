@@ -1,35 +1,27 @@
 {
-  "name": "@sweethome/inverter",
+  "name": "@sweethome/home-mcp",
   "version": "1.0.0",
   "private": true,
+  "description": "MCP server of the whole home: module contract and session assembly",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc",
+    "clean": "rm -rf dist",
     "check": "jest",
     "test": "jest",
     "test:coverage": "jest --coverage"
   },
+  "engines": { "node": ">=24" },
   "dependencies": {
     "@sweethome/shared": "1.0.0",
-    "@sweethome/home-mcp": "1.0.0",
-    "@sweethome/inverter-shared": "1.0.0",
-    "@sweethome/inverter-mcp": "1.0.0",
-    "express": "^4.19.2",
-    "mqtt": "^5.10.1",
-    "ws": "^8.18.0"
-  },
-  "optionalDependencies": {
-    "serialport": "^12.0.0"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/express": "^4.17.21",
     "@types/jest": "^29.5.14",
     "@types/node": "^24.0.0",
-    "@types/supertest": "^6.0.3",
-    "@types/ws": "^8.5.10",
     "jest": "^29.7.0",
-    "supertest": "^7.2.2",
     "ts-jest": "^29.4.12",
     "typescript": "^5.4.5"
   },

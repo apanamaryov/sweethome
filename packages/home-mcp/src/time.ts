@@ -46,3 +46,23 @@ export function parseDay(input: string, now: number): string {
 
   throw new Error(`Cannot parse day "${s}": use YYYY-MM-DD, "today", "yesterday" or "-3d"`);
 }
+
+/**
+ * Местное время с явным сдвигом (2026-08-25T09:07:05+03:00).
+ *
+ * Не UTC: агент читает ответ вместе с человеком, а дом живёт в своей зоне —
+ * «вчера в 21:40» должно совпадать с тем, что видно в интерфейсе. Сдвиг
+ * указывается явно, чтобы значение оставалось однозначным.
+ */
+export function localIso(ms: number): string {
+  const d = new Date(ms);
+  const p = (x: number) => String(x).padStart(2, "0");
+  const offMin = -d.getTimezoneOffset();
+  const sign = offMin >= 0 ? "+" : "-";
+  const abs = Math.abs(offMin);
+  return (
+    `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` +
+    `T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}` +
+    `${sign}${p(Math.floor(abs / 60))}:${p(abs % 60)}`
+  );
+}

@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { McpContext } from "../server";
-import { parseDay, parseTime } from "../time";
+import { parseDay, parseTime } from "@sweethome/home-mcp";
 import { downsample } from "../downsample";
 import { guard } from "./read";
 import { NOOP_LOGGER, type Logger } from "../logging";

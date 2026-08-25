@@ -63,6 +63,12 @@ sustained PV output) is computed separately — retrospectively from the per-min
 Publishing to MQTT with Home Assistant auto-discovery (off by default, `MQTT_URL` empty).
 
 ### MCP
+**The `/mcp` endpoint is the host's, not this module's** (it used to be mounted here). The host
+serves one endpoint for the whole home and asks each module for its tools; this module hands
+them over through `src/mcp/provider.ts` (a `ModuleMcpProvider` from `@sweethome/home-mcp`),
+which builds a `LocalGateway` per session from that session's role and scopes. `MCP_ENABLED`
+and `MCP_MAX_SESSIONS` moved to the host's config along with the endpoint.
+
 `@sweethome/inverter-mcp` is the transport-agnostic core of tools/resources/prompts: all communication
 with the service goes through the `InverterGateway` interface (`packages/inverter-mcp/src/gateway/types.ts`).
 There are two implementations: `HttpGateway` (`gateway/http.ts` — REST + WS behind a Bearer
@@ -79,6 +85,8 @@ summary, CSV link), `tools/control.ts` (writes).
 - **Subscriptions** (`resources.ts`): the SDK's `McpServer` does not handle `subscribe`/
   `unsubscribe` itself — they are registered manually on the low-level `server.server`, and
   notifications are throttled to one per 5 s.
+- `registerInverter(server, ctx)` is the seam: the stdio binary's `buildMcpServer` and the
+  host's shared server both go through it, so tools cannot drift between the two transports.
 - **The workspace tsconfig** uses `module/moduleResolution: node16` + `isolatedModules`
   (otherwise the SDK's subpath exports do not resolve and ts-jest complains); the emit stays
   CommonJS: `modules/inverter` pulls the package in with a plain `require`.
