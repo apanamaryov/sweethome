@@ -162,13 +162,15 @@ playback, and the clock shows the recording's own time.
   has. It plays correctly; only the scrubber length is off.
 - **Seeking is accurate to about three seconds** — the cameras' keyframe
   interval, not something this module can improve.
-- **Our cameras advertise sound and send none.** They declare an AAC 8 kHz track
-  and never put a packet in it, so there is nothing to hear until the microphone
-  is enabled on the camera itself. The module checks by listening for a few
-  seconds at startup rather than trusting the declaration — because an empty
-  declared track is not free: ffmpeg waits for audio that never comes, and the
-  picture took 12 seconds to appear instead of 2.7. Enable a microphone and
-  restart the service, and sound turns itself on.
+- **Sound depends on a switch in the vendor app** (`RTSP audio`), and not every
+  camera has that switch — one of ours has no sound at all. The module works out
+  which is which by listening to each camera for a few seconds at startup, so
+  turning the switch on and restarting the service is all it takes.
+- **Audio is re-encoded, video never is.** These cameras send audio with
+  timestamps ffmpeg cannot use: copied, every packet is dropped and the archive
+  gets a silent track, while the picture waits ten seconds for the audio that
+  never arrives. Decoding and re-encoding the 8 kHz mono track costs almost
+  nothing and fixes both.
 - **One camera on screen at a time.** iOS refuses to play a second video at
   once, so the live page switches cameras with tabs rather than showing a grid.
 - **Seeking is a reload, not a scrub.** Moving the position inside a long

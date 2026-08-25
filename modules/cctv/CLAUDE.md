@@ -129,24 +129,34 @@ keyframe interval. That value is the one place the design spec explicitly leaves
 on-stand measurement (spec §8) — if it has since been re-tuned on the Pi, `ffmpeg.test.ts`
 pins the current value; trust the test over this document.
 
-## Sound — the cameras advertise it and never send it
+## Sound — the cameras send it, but not in a form that can be copied
 
-Measured on the live devices: the RTSP stream declares an AAC 8 kHz mono track, and over 15
-seconds it carried 215 video packets and **zero audio packets**. `volumedetect` on a recorded
-segment reports `n_samples: 0`. The microphone is off (or simply never streamed), so there is
-nothing to hear — and the recordings have carried an empty audio track since day one.
+`RTSP audio` is a per-camera switch in the V380 app (two of ours have it, one has no such
+option). With it on, the camera really does send audio: 161 RTP packets in twenty seconds,
+AAC-LC 8 kHz mono, `mean_volume: -29.9 dB` — real sound, not silence.
 
-**An empty declared track is expensive, not free.** ffmpeg waits for audio to interleave before
-it emits anything: first output after **12 s** with the track, **2.7 s** with `-an`. That is the
-"live view takes forever to open" bug, and it applied to recording too — every recorder restart
-lost about ten seconds. Both `recordArgs` and `liveArgs` therefore take an explicit
-`withAudio`, and default to `-an`.
+**But `-c copy` throws every one of those packets away.** ffmpeg reads them and muxes none:
+the camera's audio timestamps are unusable. The output ends up with a declared-but-empty audio
+track, which is why "turn the sound on" produced silence.
 
-**So the question "does this camera have sound" is answered by listening, not by reading the
-header.** `recorder/probe-audio.ts` runs a few seconds of `volumedetect` per camera at
-`RecorderManager.start()` and counts real samples; the result drives `-an`, the live MIME and
-`CameraInfo.hasAudio`. A camera whose microphone gets enabled later is picked up at the next
-service start — the probe is not repeated at runtime.
+**And an audio track nobody fills costs ten seconds of video.** The mp4 muxer waits for the
+lagging stream up to `max_interleave_delta` (10 s by default) before giving up and flushing
+video. Measured on the Pi: first output after **12 s** with audio against **2.7 s** with `-an`.
+That was the "live view takes forever to open" report, and recording paid it on every restart.
+
+**Re-encoding the audio fixes both** — decoding regenerates the timestamps. `-c:v copy -c:a aac
+-ar 44100 -ac 1 -b:a 32k` gives first output in **2.9 s** and 527 audio packets where copying
+gave zero. Video is still copied; only the 8 kHz mono track is decoded and re-encoded, which
+costs almost nothing. 44.1 kHz rather than the native 8 kHz because every browser accepts it.
+`-max_interleave_delta 1000000` caps the wait at a second in case a camera's audio dies
+mid-stream. Things that do *not* help, measured: `-analyzeduration`/`-probesize`, `-fflags
+nobuffer`, `-max_interleave_delta 0` (that means *unlimited*, not zero wait).
+
+**Whether a camera has sound is decided by listening.** `recorder/probe-audio.ts` runs a few
+seconds of `volumedetect` per camera at `RecorderManager.start()` — decoding, so it sees what
+copying cannot. Watch the parsing: ffmpeg prints `n_samples` twice and the first line is always
+`0`; reading that first line made every camera look silent. A camera whose microphone is
+switched on later is picked up at the next service start.
 
 ## Codecs — read from the stream, never assumed
 
