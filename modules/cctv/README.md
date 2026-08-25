@@ -52,6 +52,11 @@ of them are the kind you only learn by measuring.
 **Dual-lens cameras** deliver both lenses glued into a single frame (1920×2160
 here). The module stores and shows that frame as-is; it does not split it.
 
+**A camera with no RTSP is not necessarily a lost cause.** One of ours arrived
+with only the vendor's own ports open and no way to enable RTSP in the app; a
+`ceshi.ini` file on a microSD card unlocked it (details in [CLAUDE.md](CLAUDE.md)).
+The same trick did not give it sound, and nothing else did either — see Caveats.
+
 ## 📦 Requirements on the Pi
 
 Two things this module needs that nothing else in the project does:
@@ -164,9 +169,10 @@ playback, and the clock shows the recording's own time.
 - **Seeking is accurate to about three seconds** — the cameras' keyframe
   interval, not something this module can improve.
 - **Sound depends on a switch in the vendor app** (`RTSP audio`), and not every
-  camera has that switch — one of ours has no sound at all. The module works out
-  which is which by listening to each camera for a few seconds at startup, so
-  turning the switch on and restarting the service is all it takes.
+  camera has that switch — one of ours has a microphone it will not put on the
+  network, and no amount of coaxing changed that. The module works out which
+  camera is which by listening to each one for a few seconds at startup, so where
+  the switch exists, turning it on and restarting the service is all it takes.
 - **Audio is re-encoded, video never is.** These cameras send audio with
   timestamps ffmpeg cannot use: copied, every packet is dropped and the archive
   gets a silent track, while the picture waits ten seconds for the audio that

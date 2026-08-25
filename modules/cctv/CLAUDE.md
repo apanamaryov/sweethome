@@ -22,6 +22,32 @@ general RTSP/ONVIF knowledge without re-measuring.
 | Bitrate | 680–870 kbit/s video + ~16 kbit/s AAC 8 kHz audio; camera-side cap is 2048 kbit/s |
 | Economy stream | `live/ch00_1`, 640×720 ~730 kbit/s — not worth using after the H.264 switch (out of scope, spec §19) |
 
+### Not every camera of this family is the same
+
+The third camera (added 2026-08-25) is a different model — `HsAkQQWG`, firmware
+`Hw_HsAkQQWG_WIFI_COMM_20221220` — from the same ODM (Shenzhen Bilian, like the other two) but
+with a different feature set. Two things about it are worth knowing before spending an evening
+on the next one.
+
+**It shipped with no RTSP at all.** Only the vendor's own ports 8800/9800 were open; no 554,
+no 8899, no answer to an ONVIF discovery probe. The V380 app had no ONVIF or RTSP option to
+turn on. What unlocked it was the community trick: a FAT32 microSD card with a file named
+`ceshi.ini` in the root containing `[CONST_PARAM]` and `rtsp=1` / `rtsp_enable=1` /
+`rtsp_ctrl=1` / `onvif=1`, then boot the camera with the card in. After that the camera came up
+with 554 and 8899 open, an `Onvif setting` switch in the app, and a stream identical to the
+others (H.264, 1920×2160). Nothing was lost in the process — settings and Wi-Fi survived.
+
+**Its audio cannot be reached, and this was settled by measurement.** The camera *has* a
+microphone: ONVIF reports an audio source and an AAC encoder configuration, exactly like the
+cameras that do produce sound. But its RTSP session description advertises video only, on both
+`ch00_0` and `ch00_1`, over TCP and UDP alike. Everything reasonable was tried and failed:
+`ceshi.ini` with every known spelling of the audio keys (`audio`, `rtspaudio`, `rtsp_audio`,
+`mic`, `aenc`, …) across two attempts, camera reboots, and `AddAudioSourceConfiguration` /
+`AddAudioEncoderConfiguration` over ONVIF — accepted with a normal response and silently
+ignored, like every other ONVIF write on these cameras. The two cameras that do have sound
+have an `RTSP audio` switch in the app; this model has no such switch and no way to grow one.
+Treat its silence as a hardware fact, not a bug to fix.
+
 ### The packaging trap — why the module only ever uses ffmpeg
 
 The camera glues `SPS + PPS + IDR` into a single NAL unit and fragments it under a NAL

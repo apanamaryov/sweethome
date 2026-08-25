@@ -217,6 +217,37 @@ write-safety model.
 - **`deploy.sh` enables autostart itself** (`systemctl enable`) as part of every deploy —
   this is not a separate manual step.
 
+## The Pi's power supply — a live constraint, not a footnote
+
+This Pi 3B browns out under load. It is not a hypothetical: on 2026-08-25 it went down hard
+twice in an hour — once on its own, once in the middle of a deploy — and came back reporting
+`throttled=0x50005` with `Undervoltage detected` in the kernel log several times a minute.
+
+What the measurements showed:
+
+- With the cctv service running: **2–3 under-voltage events per minute**. With it stopped:
+  **zero**. So it is this workload that tips the board over.
+- CPU is not the whole story — the events continued after the load dropped from ~30% of a core
+  per camera to ~5%. The radio is the other half: recordings travel over Wi-Fi to the router's
+  SSD, about **4 Mbit/s in both directions, around the clock**, and a Wi-Fi transmit burst
+  draws current in spikes.
+- The link itself is fine (−56 dBm, no errors), and Ethernet is not an option here — the Pi
+  sits in the basement wired to the inverter, the router is three floors up.
+- Swapping to a 5 V 3 A supply with a shorter cable did **not** fix it. On a Pi 3B the usual
+  culprit is the micro-USB path itself; the official 5.1 V supply exists precisely to
+  compensate for that drop, and GPIO power bypasses the connector entirely.
+
+Consequences to keep in mind when working on this machine:
+
+- **A deploy can crash it.** `npm ci` on the Pi is the heaviest thing that ever runs there. If
+  a deploy stops responding, check whether the host is reachable at all before debugging the
+  script.
+- **Do not add continuous CPU load casually.** Transcoding audio for two cameras (~30% of a
+  core each, 24/7) was enough to cause the first crash; that is why `CCTV_RECORD_AUDIO`
+  defaults to off (`modules/cctv/README.md`).
+- Check the state with `vcgencmd get_throttled` (bit 0 = under-voltage now, bit 16 = it has
+  happened since boot) and `dmesg | grep -i undervoltage`.
+
 ## Git workflow
 
 - Repository: `git@github.com:apanamaryov/sweethome.git` (remote `origin`, default branch `main`).
