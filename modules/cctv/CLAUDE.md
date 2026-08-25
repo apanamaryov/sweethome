@@ -129,6 +129,36 @@ keyframe interval. That value is the one place the design spec explicitly leaves
 on-stand measurement (spec §8) — if it has since been re-tuned on the Pi, `ffmpeg.test.ts`
 pins the current value; trust the test over this document.
 
+## Browser side — what the device taught us
+
+Three things about playback were only learnable on a real iPhone, and all three are load-bearing.
+
+**There is no plain `MediaSource` on iPhone.** Apple ships `ManagedMediaSource` instead, and
+only since iOS 17.1. `new MediaSource()` threw straight out of the effect and took the whole
+page down with a client-side exception. Both players now pick whichever implementation exists
+(`pickMediaSource` in `LivePlayer.tsx`, `Hls.isSupported()` for the archive) and set
+`video.disableRemotePlayback = true` — Apple will not open a ManagedMediaSource without it.
+
+**iOS plays exactly one video at a time.** A grid of cameras leaves every frame but one black.
+The live page therefore shows one camera with tabs to switch. Bonus: one live ffmpeg on the Pi
+instead of one per camera.
+
+**Seeking inside a playlist kills playback on these recordings — permanently.** Move the
+position within a long playlist and the picture stops and never comes back, not by autoplay
+and not by the play button; the very first start always worked, which is what gives it away.
+Reproduced with ffmpeg on the Pi itself, so it is not a Safari quirk. The data is fine: the
+same fragments play end to end when concatenated into one file, and a playlist that *starts*
+at the wanted moment plays normally. So every jump — timeline click, ±10s/±1min button, time
+field — reloads the playlist from that moment and rebuilds the player (a React `key` on the
+component, so the `<video>` element itself is new). For the same reason the element carries
+**no native controls**: its slider seeks the broken way, and leaving it there is handing the
+user a button that breaks playback. The player's own clock shows the recording's real time,
+because the player's scale restarts at zero after every jump.
+
+Safari's built-in HLS player is not used even where it exists: it plays only the first
+fragment of our playlists. `hls.js` assembles fragments itself and handles them, and on iPhone
+it runs on ManagedMediaSource too.
+
 ## Lessons from review — easy to reintroduce if you write similar code
 
 1. **Recheck the stop flag after every `await` in an async loop.** Deciding "should I still
