@@ -32,6 +32,18 @@ export interface CctvModuleOverrides {
   post?: SoapPost;
 }
 
+/**
+ * Порог неотправленного хвоста у сокета зрителя.
+ *
+ * `ws` буферизует не влезшее в сокет прямо в куче и БЕЗ предела. Телефон, ушедший
+ * из зоны Wi-Fi, держит соединение открытым до таймаута — это 10–15 минут; при
+ * ~90 КБ/с это 50–80 МБ на одного зрителя, при том что свободной памяти на малине
+ * около 440 МБ и ограничения памяти в юните нет. OOM убил бы весь монолит вместе
+ * с мониторингом инвертора. Спека §8: для живой картинки актуальность важнее
+ * непрерывности — отставший просто пропустит фрагменты и догонит.
+ */
+const LIVE_MAX_BUFFERED_BYTES = 2 * 1024 * 1024;
+
 const realTimers: Timers = {
   setTimeout: (cb, ms) => setTimeout(cb, ms),
   clearTimeout: (h) => clearTimeout(h as NodeJS.Timeout),
@@ -131,7 +143,10 @@ export function createCctvModule(rootDataDir: string, over: CctvModuleOverrides 
       onConnection(ws: WebSocket) {
         const sink: Sink = {
           send: (data) => {
-            if (ws.readyState === WebSocket.OPEN) ws.send(data);
+            if (ws.readyState !== WebSocket.OPEN) return;
+            // Зритель не успевает — фрагмент выбрасываем, а не копим в куче.
+            if (ws.bufferedAmount > LIVE_MAX_BUFFERED_BYTES) return;
+            ws.send(data);
           },
           sendText: (msg) => {
             if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
@@ -162,6 +177,11 @@ export function createCctvModule(rootDataDir: string, over: CctvModuleOverrides 
           }
         });
         ws.on("close", () => hub.unsubscribeAll(sink));
+        // У `ws` событие "error" без слушателя — брошенное исключение, а обрыв
+        // соединения у зрителя на мобильном это обычное дело. Полагаться на общий
+        // перехватчик в server/src/index.ts этому модулю нельзя (урок из его же
+        // документации): отписываем зрителя ровно так же, как при close.
+        ws.on("error", () => hub.unsubscribeAll(sink));
       },
     },
 

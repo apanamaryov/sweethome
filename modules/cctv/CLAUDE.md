@@ -112,7 +112,11 @@ instead of breaking.
 
 `live/session.ts` spawns one ffmpeg per camera on the first subscriber and kills it
 `CCTV_LIVE_IDLE_SEC` (15 s) after the last one leaves; multiple viewers of the same camera
-share one process. The command (`recorder/ffmpeg.ts::liveArgs`) fragments MP4 via
+share one process. **A viewer that cannot keep up is dropped frames, not buffered**
+(`LIVE_MAX_BUFFERED_BYTES` in `module.ts`): `ws` queues unsent data in the heap without any
+limit, and a phone that walked out of Wi-Fi holds the socket open for 10–15 minutes — tens of
+megabytes per viewer against ~440 MB free on the Pi, with no memory limit in the unit. Spec
+§8 says it outright: for a live picture, being current beats being continuous. The command (`recorder/ffmpeg.ts::liveArgs`) fragments MP4 via
 `-frag_duration` (500 ms by default in code) so latency does not end up tied to the ~2.9 s
 keyframe interval. That value is the one place the design spec explicitly leaves open for
 on-stand measurement (spec §8) — if it has since been re-tuned on the Pi, `ffmpeg.test.ts`
@@ -129,13 +133,17 @@ pins the current value; trust the test over this document.
    version of this bug: matching a just-killed session back to its map entry by camera id
    alone is wrong once a new session for that id may already have been created — check
    identity, not just the key.
-2. **A spawned child process needs an `"error"` listener, always.** This is a monolith:
-   an unhandled `"error"` on a `ChildProcess` (bad path to the ffmpeg binary, no permission —
-   anything that fails before an `"exit"` would ever fire) is an uncaught exception that can
-   take down the whole process, inverter monitoring included, not just this module. Every
-   `spawn()` call in this module (`recorder/process.ts`, `live/session.ts`) has an
-   `"error"` handler that cleans up and reports failure instead of leaving the caller
-   hanging or the process dead in the water.
+2. **A spawned child process needs an `"error"` listener, always — and its `stderr` must be
+   drained.** This is a monolith: an unhandled `"error"` on a `ChildProcess` (bad path to the
+   ffmpeg binary, no permission — anything that fails before an `"exit"` would ever fire) is
+   an uncaught exception that can take down the whole process, inverter monitoring included,
+   not just this module. Both `spawn()` call sites (`recorder/process.ts`, `live/session.ts`)
+   have an `"error"` handler that cleans up and reports failure. Both also read `stderr` and
+   keep the last line: an unread pipe fills its 64 KB buffer and then **wedges ffmpeg
+   permanently** — the picture just freezes with nothing in the log — and that last line is
+   the only text there is to show the viewer when the stream dies. The same rule applies to
+   `ws` sockets (`module.ts`): an `"error"` event with no listener is a thrown exception, so
+   every viewer socket gets one, and it unsubscribes the viewer exactly like `"close"` does.
 3. **Playback errors must reach the user, not fade into the next frame.** A black rectangle
    with no explanation is a support ticket, not a UI. Both the live and the archive players
    surface stream/HLS failures as a visible status banner (with the reason where one is

@@ -27,7 +27,13 @@ class FakeChild implements ChildLike {
  * child_process тоже не подменяет один слушатель другим.
  */
 class FakeLiveChild implements LiveChild {
-  stdout = { on: () => {} };
+  private dataCb: ((c: Buffer) => void) | null = null;
+  stdout = {
+    on: (_ev: "data", cb: (c: Buffer) => void) => {
+      this.dataCb = cb;
+    },
+  };
+  stderr = { on: () => {} };
   killed = false;
   private exitCb: ((arg?: unknown) => void) | null = null;
   private errorCb: ((arg?: unknown) => void) | null = null;
@@ -42,6 +48,10 @@ class FakeLiveChild implements LiveChild {
   /** Неудачный спавн: только "error", без "exit" — как у настоящего ENOENT. */
   triggerError(err: unknown): void {
     this.errorCb?.(err);
+  }
+  /** Фрагмент из ffmpeg — как будто пришли данные в stdout. */
+  emit(data: string): void {
+    this.dataCb?.(Buffer.from(data));
   }
 }
 
@@ -77,12 +87,17 @@ const fakeFs = {
 function fakeWs() {
   const sent: unknown[] = [];
   let closeCb: (() => void) | null = null;
+  let errorCb: ((err?: unknown) => void) | null = null;
   let msgCb: ((data: unknown) => void) | null = null;
   const ws = {
     readyState: 1,
+    // Неотправленный хвост, как у настоящего ws: тесты про отставшего зрителя
+    // двигают его руками.
+    bufferedAmount: 0,
     send: (d: unknown) => sent.push(d),
     on(ev: string, cb: (arg?: unknown) => void) {
       if (ev === "close") closeCb = cb as () => void;
+      if (ev === "error") errorCb = cb;
       if (ev === "message") msgCb = cb;
     },
   };
@@ -92,6 +107,8 @@ function fakeWs() {
     message: (m: unknown) => msgCb!(Buffer.from(JSON.stringify(m))),
     raw: (buf: Buffer) => msgCb!(buf),
     close: () => closeCb!(),
+    hasErrorListener: () => errorCb !== null,
+    error: (e: unknown) => errorCb!(e),
   };
 }
 
@@ -275,6 +292,89 @@ describe("createCctvModule", () => {
     expect(() => raw(Buffer.from("null"))).not.toThrow();
     expect(() => raw(Buffer.from("42"))).not.toThrow();
     expect(() => raw(Buffer.from('"just a string"'))).not.toThrow();
+
+    await mod.stop();
+    db.close();
+  });
+
+  it("отставший зритель не копит фрагменты в памяти, а пропускает их", async () => {
+    const db = new CctvDb(":memory:");
+    const children: FakeLiveChild[] = [];
+    const mod = createCctvModule("/data", {
+      cfg: loadCctvConfig("/data", { CCTV_CAMERAS: "drive=10.0.0.1" }),
+      db,
+      spawn: () => new FakeChild(),
+      liveSpawn: () => {
+        const c = new FakeLiveChild();
+        children.push(c);
+        return c;
+      },
+      timers: noopTimers,
+      fs: fakeFs,
+      probe: async () => ({ ok: true, version: "7.0.2" }),
+      post: noopPost,
+    });
+    await mod.start();
+
+    const { ws, sent, message } = fakeWs();
+    mod.ws!.onConnection(ws as never);
+    message({ type: "subscribe", cam: "drive" });
+
+    const binary = () => sent.filter((x) => Buffer.isBuffer(x)).length;
+    children[0].emit("HEAD");
+    expect(binary()).toBe(1);
+
+    // Телефон ушёл из зоны Wi-Fi: сокет ещё открыт, но ничего не уходит.
+    // Копить это в куче нельзя — на малине это прямой путь к OOM, который
+    // убьёт весь монолит вместе с мониторингом инвертора.
+    ws.bufferedAmount = 8 * 1024 * 1024;
+    children[0].emit("FRAG1");
+    children[0].emit("FRAG2");
+    expect(binary()).toBe(1);
+
+    // Сеть вернулась — зритель снова получает свежее (и догоняет по живому).
+    ws.bufferedAmount = 0;
+    children[0].emit("FRAG3");
+    expect(binary()).toBe(2);
+
+    await mod.stop();
+    db.close();
+  });
+
+  it("ошибка WS-сокета не роняет процесс и снимает зрителя со всех камер", async () => {
+    const db = new CctvDb(":memory:");
+    const children: FakeLiveChild[] = [];
+    const mod = createCctvModule("/data", {
+      cfg: loadCctvConfig("/data", { CCTV_CAMERAS: "drive=10.0.0.1" }),
+      db,
+      spawn: () => new FakeChild(),
+      liveSpawn: () => {
+        const c = new FakeLiveChild();
+        children.push(c);
+        return c;
+      },
+      timers: noopTimers,
+      fs: fakeFs,
+      probe: async () => ({ ok: true, version: "7.0.2" }),
+      post: noopPost,
+    });
+    await mod.start();
+
+    const { ws, sent, message, hasErrorListener, error } = fakeWs();
+    mod.ws!.onConnection(ws as never);
+    // У ws событие "error" без слушателя — брошенное исключение, а обрыв
+    // соединения на мобильном это обычное дело.
+    expect(hasErrorListener()).toBe(true);
+
+    message({ type: "subscribe", cam: "drive" });
+    children[0].emit("HEAD");
+    const before = sent.filter((x) => Buffer.isBuffer(x)).length;
+    expect(before).toBe(1);
+
+    expect(() => error(new Error("ECONNRESET"))).not.toThrow();
+
+    children[0].emit("FRAG1"); // зритель отписан — новых фрагментов ему не шлём
+    expect(sent.filter((x) => Buffer.isBuffer(x)).length).toBe(before);
 
     await mod.stop();
     db.close();

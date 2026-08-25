@@ -30,6 +30,7 @@ class FakeTimers {
 
 class FakeChild implements LiveChild {
   dataCb: ((c: Buffer) => void) | null = null;
+  errCb: ((c: Buffer) => void) | null = null;
   exitCb: ((code: number | null) => void) | null = null;
   errorCb: ((err?: unknown) => void) | null = null;
   killed = false;
@@ -41,6 +42,11 @@ class FakeChild implements LiveChild {
   stdout = {
     on: (_ev: "data", cb: (c: Buffer) => void) => {
       this.dataCb = cb;
+    },
+  };
+  stderr = {
+    on: (_ev: "data", cb: (c: Buffer) => void) => {
+      this.errCb = cb;
     },
   };
   // "exit" и "error" — разные слушатели с разными callback'ами; сессия
@@ -59,6 +65,9 @@ class FakeChild implements LiveChild {
   }
   emit(data: string): void {
     this.dataCb?.(Buffer.from(data));
+  }
+  emitErr(data: string): void {
+    this.errCb?.(Buffer.from(data));
   }
 }
 
@@ -188,6 +197,28 @@ describe("LiveHub", () => {
     await timers.advance(10_000);
     expect(children).toHaveLength(1);
     expect(children[0].killed).toBe(false);
+    hub.stop();
+  });
+
+  it("stderr живой сессии вычитывается — иначе канал переполнится и ffmpeg встанет", () => {
+    const { hub, children } = make();
+    hub.subscribe("drive", fakeSink());
+    // Слушатель повешен: без него 64 КБ канала забиваются и процесс виснет
+    // насмерть — живая картинка замирает без единого сообщения.
+    expect(children[0].errCb).not.toBeNull();
+    hub.stop();
+  });
+
+  it("последняя строка stderr попадает в сообщение об ошибке зрителю", () => {
+    const { hub, children } = make();
+    const s = fakeSink();
+    hub.subscribe("drive", s);
+    children[0].emitErr("Connection timed out\nrtsp: could not open input");
+    children[0].exitCb?.(1);
+
+    const err = s.texts.find((t) => t.type === "error");
+    expect(err).toBeDefined();
+    expect((err as { error: string }).error).toContain("rtsp: could not open input");
     hub.stop();
   });
 

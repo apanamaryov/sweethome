@@ -4,6 +4,11 @@ import { liveArgs } from "../recorder/ffmpeg";
 
 export interface LiveChild {
   stdout: { on(ev: "data", cb: (c: Buffer) => void): void } | null;
+  // stderr обязателен к вычитыванию: процесс запускается с обычными каналами,
+  // и непрочитанный канал на 64 КБ переполняется — ffmpeg встаёт намертво, а
+  // живая картинка замирает без единого сообщения. Заодно последняя строка
+  // отсюда — единственный текст, который есть смысл показать зрителю.
+  stderr: { on(ev: "data", cb: (c: Buffer) => void): void } | null;
   // "error" — отдельно от "exit": неудачный спавн (нет бинарника, нет прав)
   // у настоящего child_process обычно шлёт только "error", без "exit" вовсе.
   // Оба нужно слушать явно — необработанный "error" на EventEmitter иначе
@@ -31,6 +36,8 @@ export class LiveSession {
   private child: LiveChild | null = null;
   private header: Buffer | null = null;
   private sinks = new Set<Sink>();
+  /** Последняя строка из stderr — причина, которую видно зрителю, когда поток умер. */
+  private lastStderr: string | undefined;
   /**
    * kill() не гарантирует синхронный exit (у настоящего child_process — почти
    * никогда). Пока флаг не поднят, поздний exit уже остановленной сессии не
@@ -53,6 +60,12 @@ export class LiveSession {
       for (const s of this.sinks) s.send(chunk);
     });
 
+    // Читаем так же, как рекордер (recorder/process.ts): иначе канал забьётся.
+    child.stderr?.on("data", (chunk: Buffer) => {
+      const line = chunk.toString().trim().split("\n").pop();
+      if (line) this.lastStderr = line;
+    });
+
     child.on("exit", () => this.dropDeadChild("live stream stopped"));
 
     // Неудачный спавн (нет бинарника ffmpeg, нет прав на него) обычно шлёт
@@ -70,8 +83,12 @@ export class LiveSession {
     if (this.stopped) return;
     this.child = null;
     this.header = null;
+    // Чёрный прямоугольник без объяснений — это заявка в поддержку, а не UI:
+    // если ffmpeg что-то сказал перед смертью, зритель должен это увидеть.
+    const reason = this.lastStderr ? `${error}: ${this.lastStderr}` : error;
+    this.lastStderr = undefined;
     for (const s of this.sinks) {
-      s.sendText({ type: "error", cam: this.deps.cam.id, error });
+      s.sendText({ type: "error", cam: this.deps.cam.id, error: reason });
     }
     // Процесс мёртв: данные из буфера пайпа могут прийти уже после exit, а у
     // подписчика к этому моменту закрыт MediaSource — фрагмент туда слать нельзя.
@@ -97,6 +114,7 @@ export class LiveSession {
     this.stopped = true;
     this.child = null;
     this.header = null;
+    this.lastStderr = undefined;
     this.sinks.clear();
     child?.kill("SIGTERM");
   }
