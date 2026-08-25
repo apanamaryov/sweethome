@@ -2,9 +2,21 @@
 
 import { useEffect, useRef, useState } from "react";
 import { wsUrl } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 
 /** Кодек по умолчанию — запасной вариант, если сервер не успел прислать свой mime. */
 const DEFAULT_MIME = 'video/mp4; codecs="avc1.4d0032"';
+
+/**
+ * На iPhone обычного MediaSource нет вовсе: Apple даёт только ManagedMediaSource,
+ * и то начиная с iOS 17.1. Поэтому берём ту реализацию, которая есть, а если нет
+ * ни одной — честно говорим об этом вместо падения всей страницы.
+ */
+function pickMediaSource(): (new () => MediaSource) | null {
+  if (typeof window === "undefined") return null;
+  const w = window as unknown as Record<string, unknown>;
+  return ((w.ManagedMediaSource ?? w.MediaSource) as (new () => MediaSource) | undefined) ?? null;
+}
 /** Сколько ждать mime от сервера, прежде чем откатиться на дефолт — иначе плеер зависнет навсегда. */
 const MIME_FALLBACK_MS = 3000;
 
@@ -14,6 +26,7 @@ const MIME_FALLBACK_MS = 3000;
  * а так она около секунды (спека §8).
  */
 export default function LivePlayer({ cam, label }: { cam: string; label: string }) {
+  const t = useT();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,7 +42,17 @@ export default function LivePlayer({ cam, label }: { cam: string; label: string 
       if (!cancelled) setError(msg);
     };
 
-    const ms = new MediaSource();
+    const MediaSourceImpl = pickMediaSource();
+    if (!MediaSourceImpl) {
+      setError(t.cctvLiveUnsupported);
+      return;
+    }
+
+    // ManagedMediaSource работает только при отключённом удалённом воспроизведении
+    // (иначе Safari оставляет за собой AirPlay и источник не открывается).
+    video.disableRemotePlayback = true;
+
+    const ms = new MediaSourceImpl();
     video.src = URL.createObjectURL(ms);
 
     let sb: SourceBuffer | null = null;
@@ -155,7 +178,7 @@ export default function LivePlayer({ cam, label }: { cam: string; label: string 
         URL.revokeObjectURL(video.src);
       } catch {}
     };
-  }, [cam]);
+  }, [cam, t]);
 
   return (
     <figure className="cctv-live">
