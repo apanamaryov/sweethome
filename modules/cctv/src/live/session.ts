@@ -2,6 +2,7 @@ import type { LiveServerMessage } from "@sweethome/cctv-shared";
 import type { CameraConfig } from "../config";
 import { liveArgs } from "../recorder/ffmpeg";
 import { headerHasAudio, liveMime } from "../audio";
+import { initSegmentLength, MAX_INIT_BYTES } from "./init-segment";
 
 export interface LiveChild {
   stdout: { on(ev: "data", cb: (c: Buffer) => void): void } | null;
@@ -36,8 +37,11 @@ export interface Sink {
 export class LiveSession {
   private child: LiveChild | null = null;
   private header: Buffer | null = null;
-  /** Кодеки объявляем по факту: они известны только после первого фрагмента. */
+  /** Кодеки объявляем по факту: они известны только из заголовка потока. */
   private mime: string | null = null;
+  /** Куски, из которых ещё собирается заголовок: ffmpeg отдаёт его не за раз. */
+  private pending: Buffer[] = [];
+  private pendingBytes = 0;
   private sinks = new Set<Sink>();
   /** Последняя строка из stderr — причина, которую видно зрителю, когда поток умер. */
   private lastStderr: string | undefined;
@@ -60,12 +64,8 @@ export class LiveSession {
 
     child.stdout?.on("data", (chunk: Buffer) => {
       if (this.header === null) {
-        this.header = chunk;
-        // Первый фрагмент — заголовок потока: только теперь видно, есть ли звук.
-        // Поэтому "ready" уходит здесь, а не при подписке: раньше кодеки
-        // пришлось бы угадывать, а ошибка в них не даёт открыть MediaSource.
-        this.mime = liveMime(headerHasAudio(chunk));
-        for (const s of this.sinks) s.sendText({ type: "ready", cam: this.deps.cam.id, mime: this.mime });
+        this.collectHeader(chunk);
+        return;
       }
       for (const s of this.sinks) s.send(chunk);
     });
@@ -88,12 +88,52 @@ export class LiveSession {
     });
   }
 
+  /**
+   * Собирает заголовок потока (`ftyp`+`moov`) из кусков stdout.
+   *
+   * Первый кусок — не весь заголовок: на живых камерах `ftyp` приезжает
+   * отдельно, а `moov` следом. Пока заголовок не собран целиком, ни кодеки не
+   * известны (в `moov` описание дорожек), ни зрителю послать нечего — им
+   * нечего инициализировать.
+   */
+  private collectHeader(chunk: Buffer): void {
+    this.pending.push(chunk);
+    this.pendingBytes += chunk.length;
+
+    // Заголовок такого размера — это уже не заголовок: не копим бесконечно.
+    if (this.pendingBytes > MAX_INIT_BYTES) {
+      this.pending = [];
+      this.pendingBytes = 0;
+      this.dropDeadChild("live stream header is not readable");
+      return;
+    }
+
+    const buf = this.pending.length === 1 ? this.pending[0] : Buffer.concat(this.pending);
+    const len = initSegmentLength(buf);
+    if (len === null) return; // ещё не всё пришло
+
+    this.header = buf.subarray(0, len);
+    this.mime = liveMime(headerHasAudio(this.header));
+    this.pending = [];
+    this.pendingBytes = 0;
+
+    for (const s of this.sinks) {
+      s.sendText({ type: "ready", cam: this.deps.cam.id, mime: this.mime });
+      s.send(this.header);
+    }
+    // Хвост того же куска — уже данные, а не заголовок.
+    const rest = buf.subarray(len);
+    if (rest.length > 0) for (const s of this.sinks) s.send(rest);
+  }
+
   /** Общая уборка на смерть процесса — от штатного "exit" и от неудачного спавна ("error"). */
   private dropDeadChild(error: string): void {
     if (this.stopped) return;
     this.child = null;
     this.header = null;
     this.mime = null;
+    this.pending = [];
+    this.pendingBytes = 0;
     // Чёрный прямоугольник без объяснений — это заявка в поддержку, а не UI:
     // если ffmpeg что-то сказал перед смертью, зритель должен это увидеть.
     const reason = this.lastStderr ? `${error}: ${this.lastStderr}` : error;
@@ -130,6 +170,8 @@ export class LiveSession {
     this.child = null;
     this.header = null;
     this.mime = null;
+    this.pending = [];
+    this.pendingBytes = 0;
     this.lastStderr = undefined;
     this.sinks.clear();
     child?.kill("SIGTERM");

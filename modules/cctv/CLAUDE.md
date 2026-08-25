@@ -143,8 +143,16 @@ question for the archive, because the header of every recording run sits in `ini
 `RecorderManager` reads it once per run (during the scan tick, async — that mount is SMB over
 Wi-Fi) and reports `hasAudio` in `CameraInfo`.
 
+**The header does not arrive in one piece.** ffmpeg writes `ftyp` and `moov` with separate
+writes, so the first stdout chunk is not the init segment — on the live cameras the `mp4a`
+marker sits at byte ~900 while the first chunk ended earlier. `live/init-segment.ts` walks the
+box lengths and reports where the init segment ends; `LiveSession` buffers until then. This
+also fixes an older bug that predates audio: a viewer joining a running session used to be sent
+whatever the first chunk happened to be, which could be a bare `ftyp` — nothing a player can
+initialize with.
+
 **Consequence for the live protocol:** `ready` moved from "the moment you subscribe" to "the
-moment the first fragment arrives", because only then are the tracks known. `LiveSession` sends
+moment the header is complete", because only then are the tracks known. `LiveSession` sends
 it; the hub no longer does. A viewer joining a running session gets `ready` and the header
 together, in that order. The client's old three-second "guess a codec" fallback is gone for the
 same reason — it now just says the stream never started, after fifteen seconds.
