@@ -28,12 +28,20 @@ The camera glues `SPS + PPS + IDR` into a single NAL unit and fragments it under
 header of **type 7 (SPS) instead of 5 (IDR)**. A strict decoder never recognizes the start of
 a keyframe and shows grey garbage instead of a picture — verified with `gstreamer` +
 `rtph264depay`. **`ffmpeg` parses this correctly**; recording and frame extraction both come
-out clean. Consequence: the entire receive/parse path for camera video in this module goes
-through ffmpeg only — recording (`recorder/`), live view (`live/`) and archive concat
-(the download route in `router.ts`, using `concatArgs` from `download.ts`) all spawn
-ffmpeg rather than talking RTP/RTSP directly. Moving to `gstreamer`
-or a hand-rolled RTP parser would need its own investigation; do not assume it is a drop-in
-swap.
+out clean. Consequence: everything that *receives* camera video in this module goes through
+ffmpeg only — recording (`recorder/`) and live view (`live/`) both spawn it rather than
+talking RTP/RTSP directly. Moving to `gstreamer` or a hand-rolled RTP parser would need its
+own investigation; do not assume it is a drop-in swap.
+
+**The archive download route is the exception, and deliberately so.** `/download` in
+`router.ts` copies bytes: the init segment, then the `.m4s` files in order, straight into the
+response. That is what fragmented MP4 is for, and it is the only correct way here — the
+`concat` demuxer opens every file in its list *separately*, so an init segment yields no
+packets and a `styp`+`moof`+`mdat` fragment has no streams at all; the "concatenation" it
+produced was an empty file served with a 200. Byte copying also removes a process and a
+temporary file from the Pi's hot path. Because the copy is byte-wise, an interval that
+spans a recording restart (two different init segments) cannot be served at all — the route
+answers 400 rather than handing out a file that will not open.
 
 ### ONVIF — read-only, and that is final
 
@@ -125,8 +133,7 @@ pins the current value; trust the test over this document.
    an unhandled `"error"` on a `ChildProcess` (bad path to the ffmpeg binary, no permission —
    anything that fails before an `"exit"` would ever fire) is an uncaught exception that can
    take down the whole process, inverter monitoring included, not just this module. Every
-   `spawn()` call in this module (`recorder/process.ts`, `live/session.ts`, the download
-   route's concat spawn in `router.ts`, using `concatArgs` from `download.ts`) has an
+   `spawn()` call in this module (`recorder/process.ts`, `live/session.ts`) has an
    `"error"` handler that cleans up and reports failure instead of leaving the caller
    hanging or the process dead in the water.
 3. **Playback errors must reach the user, not fade into the next frame.** A black rectangle

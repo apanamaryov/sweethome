@@ -50,8 +50,8 @@ npm test           # same as check, but with the web jest suite instead of typec
   playlist generation (`playlist.test.ts`), the recorder (`recorder/ffmpeg.test.ts`,
   `process.test.ts`, `manager.test.ts`), live view (`live/hub.test.ts`), ONVIF motion
   events (`events/onvif.test.ts`), the archive download route (`download.test.ts` for the
-  pure concat helpers, `router.test.ts` for the route itself, which owns the actual ffmpeg
-  spawn), config (`config.test.ts`) and the assembled module (`module.test.ts`). No real
+  file-name helper, `router.test.ts` for the route itself, which streams the segments),
+  config (`config.test.ts`) and the assembled module (`module.test.ts`). No real
   cameras or disk needed — see `modules/cctv/CLAUDE.md` for the hardware findings behind
   the fixtures.
 - **`npm test -w @sweethome/server` runs jest**: password hashes/roles/auth flows and

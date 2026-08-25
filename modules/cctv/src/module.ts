@@ -1,7 +1,6 @@
 import { spawn as nodeSpawn } from "child_process";
-import { mkdirSync } from "fs";
+import { createReadStream, mkdirSync } from "fs";
 import { promises as nodeFs } from "fs";
-import { randomUUID } from "crypto";
 import { WebSocket } from "ws";
 import type { HomeModule, ModuleHealth } from "@sweethome/shared/module";
 import type { LiveClientMessage } from "@sweethome/cctv-shared";
@@ -120,15 +119,9 @@ export function createCctvModule(rootDataDir: string, over: CctvModuleOverrides 
       storageAvailable: () => manager?.storageAvailable() ?? false,
     },
     sendFile: (res, abs) => res.sendFile(abs),
-    spawn: (cmd, args) => nodeSpawn(cmd, args),
-    tmpFile: async (content) => {
-      // Временный файл для concat-списка — не то, что тесты подставляют через
-      // overrides.fs (там нет writeFile: это внутренняя деталь одного маршрута,
-      // не часть контракта модуля). Пишем напрямую через настоящий fs.
-      const p = `${cfg.dataDir}/download-${randomUUID()}.txt`;
-      await nodeFs.writeFile(p, content);
-      return { path: p, cleanup: () => fs.unlink(p).catch(() => {}) };
-    },
+    // Чтение с диска для /download — не через overrides.fs: там нет потокового
+    // чтения (это внутренняя деталь одного маршрута, а не контракт модуля).
+    openRead: (abs) => createReadStream(abs),
   });
 
   return {

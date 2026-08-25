@@ -1,33 +1,32 @@
 import express from "express";
+import { Readable } from "stream";
 import request from "supertest";
 import type { CameraInfo } from "@sweethome/cctv-shared";
 import { loadCctvConfig } from "./config";
 import { CctvDb } from "./index/db";
-import { createCctvRouter } from "./router";
+import { createCctvRouter, type OpenRead } from "./router";
 
-type FakeSpawn = (
-  cmd: string,
-  args: string[]
-) => {
-  stdout: { pipe(dest: unknown): void } | null;
-  on(ev: "exit" | "error", cb: (arg?: unknown) => void): void;
-  kill(sig?: string): void;
-};
-
-type FakeTmpFile = (content: string) => Promise<{ path: string; cleanup: () => Promise<void> }>;
+/** Ответ супертеста как сырые байты: /download отдаёт видео, а не JSON. */
+const asBuffer = (r: request.Test) =>
+  r.buffer(true).parse((res, cb) => {
+    const chunks: Buffer[] = [];
+    res.on("data", (c: Buffer) => chunks.push(Buffer.from(c)));
+    res.on("end", () => cb(null, Buffer.concat(chunks)));
+  });
 
 function app(
   db: CctvDb,
   over: {
     cameras?: CameraInfo[];
     storage?: boolean;
-    spawns?: { cmd: string; args: string[] }[];
-    spawn?: FakeSpawn;
-    tmpFile?: FakeTmpFile;
+    /** Содержимое «диска»: абсолютный путь → байты файла. */
+    files?: Record<string, string>;
+    openRead?: OpenRead;
   } = {}
 ) {
   const sent: string[] = [];
-  const spawns = over.spawns ?? [];
+  const reads: string[] = [];
+  const files = over.files ?? {};
   const cfg = loadCctvConfig("/data", { CCTV_CAMERAS: "drive=10.0.0.1", CCTV_STORAGE_DIR: "/st" });
   const a = express();
   a.use(
@@ -44,22 +43,26 @@ function app(
         sent.push(abs);
         res.status(200).end();
       },
-      spawn:
-        over.spawn ??
-        ((cmd, args) => {
-          spawns.push({ cmd, args });
-          return {
-            stdout: { pipe: (dest: unknown) => (dest as { end(): void }).end() },
-            on: (ev: "exit" | "error", cb: (arg?: unknown) => void) => {
-              if (ev === "exit") setImmediate(() => cb(0));
-            },
-            kill: () => {},
-          };
+      openRead:
+        over.openRead ??
+        ((abs) => {
+          reads.push(abs);
+          const content = files[abs];
+          if (content === undefined) {
+            return Readable.from(
+              (async function* () {
+                throw Object.assign(new Error(`ENOENT: ${abs}`), { code: "ENOENT" });
+              })()
+            );
+          }
+          // Двумя кусками — чтобы склейка проверялась на потоке, а не на одном
+          // удачно целиком прочитанном буфере.
+          const mid = Math.ceil(content.length / 2);
+          return Readable.from([Buffer.from(content.slice(0, mid)), Buffer.from(content.slice(mid))]);
         }),
-      tmpFile: over.tmpFile ?? (async () => ({ path: "/tmp/list.txt", cleanup: async () => {} })),
     })
   );
-  return { a, sent, spawns };
+  return { a, sent, reads };
 }
 
 const T = Date.UTC(2026, 7, 24, 10, 0, 0);
@@ -255,41 +258,84 @@ describe("cctv router", () => {
     expect(res.body.depthDays).toBeNull();
   });
 
-  it("GET /download отдаёт файл с нужными заголовками", async () => {
-    seed(db);
-    const spawns: { cmd: string; args: string[] }[] = [];
-    const { a } = app(db, { spawns });
-    const res = await request(a)
-      .get(`/api/cctv/download?cam=drive&from=${T}&to=${T + 120_000}`)
-      .expect(200);
+  it("GET /download склеивает init и сегменты побайтово, по порядку", async () => {
+    const { ids } = seed(db);
+    const files = {
+      "/st/drive/init_run1.mp4": "INIT",
+      "/st/drive/seg_0.m4s": "AAAA",
+      "/st/drive/seg_1.m4s": "BBBB",
+    };
+    const { a, reads } = app(db, { files });
+    const res = await asBuffer(request(a).get(`/api/cctv/download?cam=drive&from=${T}&to=${T + 120_000}`)).expect(
+      200
+    );
+
     expect(res.headers["content-type"]).toContain("video/mp4");
     expect(res.headers["content-disposition"]).toContain("attachment");
     expect(res.headers["content-disposition"]).toMatch(/drive_\d{8}_\d{6}\.mp4/);
-    expect(spawns).toHaveLength(1);
-    expect(spawns[0].args.join(" ")).toContain("-f concat");
+    // Сначала заголовок потока, затем сегменты в порядке времени и целиком.
+    expect((res.body as Buffer).toString()).toBe("INITAAAABBBB");
+    expect(reads).toEqual(["/st/drive/init_run1.mp4", "/st/drive/seg_0.m4s", "/st/drive/seg_1.m4s"]);
+    expect(ids).toHaveLength(3);
+  });
+
+  it("GET /download: интервал через перезапуск записи → 400, а не битый файл", async () => {
+    // Два прогона записи — два разных заголовка потока. Побайтовая склейка
+    // такого диапазона нерабочая в принципе, поэтому отвечаем ошибкой.
+    const init1 = db.upsertInit("drive", "drive/init_run1.mp4", 800, T);
+    const init2 = db.upsertInit("drive", "drive/init_run2.mp4", 800, T + 60_000);
+    db.addSegment({ cam: "drive", initId: init1, path: "drive/a.m4s", startMs: T, durMs: 60_000, bytes: 1 });
+    db.addSegment({
+      cam: "drive", initId: init2, path: "drive/b.m4s",
+      startMs: T + 60_000, durMs: 60_000, bytes: 1,
+    });
+
+    const { a, reads } = app(db, {
+      files: { "/st/drive/init_run1.mp4": "I1", "/st/drive/a.m4s": "A", "/st/drive/b.m4s": "B" },
+    });
+    const res = await request(a).get(`/api/cctv/download?cam=drive&from=${T}&to=${T + 120_000}`).expect(400);
+    expect(res.body.ok).toBe(false);
+    expect(String(res.body.error)).toContain("restart");
+    expect(reads).toEqual([]); // ни одного файла не читали
+  });
+
+  it("GET /download внутри одного прогона отдаёт кусок, даже если рядом есть другой init", async () => {
+    const init1 = db.upsertInit("drive", "drive/init_run1.mp4", 800, T);
+    const init2 = db.upsertInit("drive", "drive/init_run2.mp4", 800, T + 60_000);
+    db.addSegment({ cam: "drive", initId: init1, path: "drive/a.m4s", startMs: T, durMs: 60_000, bytes: 1 });
+    db.addSegment({
+      cam: "drive", initId: init2, path: "drive/b.m4s",
+      startMs: T + 60_000, durMs: 60_000, bytes: 1,
+    });
+
+    const { a } = app(db, { files: { "/st/drive/init_run2.mp4": "I2", "/st/drive/b.m4s": "B" } });
+    const res = await asBuffer(
+      request(a).get(`/api/cctv/download?cam=drive&from=${T + 60_000}&to=${T + 120_000}`)
+    ).expect(200);
+    expect((res.body as Buffer).toString()).toBe("I2B");
   });
 
   it("GET /download отказывает на слишком длинном интервале", async () => {
     seed(db);
-    const { a, spawns } = app(db);
+    const { a, reads } = app(db);
     await request(a)
       .get(`/api/cctv/download?cam=drive&from=${T}&to=${T + 31 * 60_000}`)
       .expect(413);
-    // Регрессия: если проверку интервала переставят после запуска ffmpeg,
-    // счётчик спавнов это поймает раньше, чем кто-то заметит по логам.
-    expect(spawns).toHaveLength(0);
+    // Регрессия: если проверку интервала переставят после начала выдачи,
+    // счётчик чтений это поймает раньше, чем кто-то заметит по логам.
+    expect(reads).toEqual([]);
   });
 
   it("GET /download на пустом интервале → 404", async () => {
     seed(db);
-    const { a, spawns } = app(db);
+    const { a, reads } = app(db);
     await request(a)
       .get(`/api/cctv/download?cam=drive&from=${T + 10_000_000}&to=${T + 10_060_000}`)
       .expect(404);
-    expect(spawns).toHaveLength(0);
+    expect(reads).toEqual([]);
   });
 
-  it("GET /download: отсутствующий в индексе init → 500, ffmpeg не запускается", async () => {
+  it("GET /download: отсутствующий в индексе init → 500, файлы не читаются", async () => {
     // node:sqlite держит PRAGMA foreign_keys = ON, поэтому через настоящий
     // CctvDb сегмент с несуществующим initId не создать — сама база не даёт
     // дойти до рассогласования. Подставляем минимальный фейковый индекс, чтобы
@@ -300,90 +346,37 @@ describe("cctv router", () => {
       ],
       initPathById: () => null,
     } as unknown as CctvDb;
-    const { a, spawns } = app(fakeDb);
+    const { a, reads } = app(fakeDb);
     const res = await request(a)
       .get(`/api/cctv/download?cam=drive&from=${T}&to=${T + 60_000}`)
       .expect(500);
     expect(res.body.ok).toBe(false);
-    expect(spawns).toHaveLength(0);
+    expect(reads).toEqual([]);
   });
 
-  it("GET /download: синхронный сбой spawn не роняет процесс, отдаёт 500 и убирает временный файл", async () => {
+  it("GET /download: файл не открылся до первого байта → 500 JSON, а не .mp4 с ошибкой внутри", async () => {
     seed(db);
-    let cleaned = false;
-    const { a } = app(db, {
-      spawn: () => {
-        throw new Error("ffmpeg binary not found");
-      },
-      tmpFile: async () => ({
-        path: "/tmp/list.txt",
-        cleanup: async () => {
-          cleaned = true;
-        },
-      }),
-    });
-    const res = await request(a)
-      .get(`/api/cctv/download?cam=drive&from=${T}&to=${T + 120_000}`)
-      .expect(500);
-    expect(res.body.ok).toBe(false);
-    expect(cleaned).toBe(true);
-  });
-
-  it("GET /download: событие error от ffmpeg обрабатывается, не роняя процесс", async () => {
-    seed(db);
-    let cleaned = false;
-    const { a } = app(db, {
-      spawn: () => ({
-        stdout: { pipe: () => {} },
-        on: (ev, cb) => {
-          // Реальный ChildProcess эмитит "error" асинхронно (spawn ENOENT и
-          // подобные) — setImmediate воспроизводит эту асинхронность.
-          if (ev === "error") setImmediate(() => cb(new Error("ffmpeg crashed")));
-        },
-        kill: () => {},
-      }),
-      tmpFile: async () => ({
-        path: "/tmp/list.txt",
-        cleanup: async () => {
-          cleaned = true;
-        },
-      }),
-    });
-    // Само по себе отсутствие необработанного исключения (и незавершившийся
-    // процесс jest) — уже доказательство того, что "error" обработан.
+    const { a } = app(db, { files: {} }); // на «диске» нет ничего — падаем на init'е
     const res = await request(a).get(`/api/cctv/download?cam=drive&from=${T}&to=${T + 120_000}`);
     expect(res.status).toBe(500);
-    // Заголовки видео были выставлены синхронно до срабатывания "error" —
-    // без явного сброса браузер сохранил бы JSON-ошибку под именем "….mp4".
+    // Заголовки видео выставлены до чтения — без явного сброса браузер сохранил
+    // бы JSON-ошибку под именем "….mp4".
     expect(res.headers["content-type"]).toContain("application/json");
     expect(res.headers["content-disposition"]).toBeUndefined();
     expect(res.body.ok).toBe(false);
-    expect(cleaned).toBe(true);
   });
 
-  it("GET /download: и error, и exit для одного сбоя убирают временный файл только один раз", async () => {
+  it("GET /download: обрыв чтения на середине рвёт ответ, а не дописывает тишину", async () => {
     seed(db);
-    let cleanupCalls = 0;
+    // init и первый сегмент читаются, второй ломается на середине — клиент
+    // должен увидеть незавершённую загрузку, а не «успешный» обрезанный файл.
     const { a } = app(db, {
-      spawn: () => ({
-        stdout: { pipe: () => {} },
-        on: (ev, cb) => {
-          // Реальный ChildProcess может отдать оба события за один сбой —
-          // порядок здесь не важен, важно что уборка сработает только раз.
-          if (ev === "error") setImmediate(() => cb(new Error("ffmpeg crashed")));
-          if (ev === "exit") setImmediate(() => cb(1));
-        },
-        kill: () => {},
-      }),
-      tmpFile: async () => ({
-        path: "/tmp/list.txt",
-        cleanup: async () => {
-          cleanupCalls++;
-        },
-      }),
+      files: { "/st/drive/init_run1.mp4": "INIT", "/st/drive/seg_0.m4s": "AAAA" },
     });
-    const res = await request(a).get(`/api/cctv/download?cam=drive&from=${T}&to=${T + 120_000}`);
-    expect(res.status).toBe(500);
-    expect(cleanupCalls).toBe(1);
+    const err = await asBuffer(request(a).get(`/api/cctv/download?cam=drive&from=${T}&to=${T + 120_000}`)).then(
+      () => null,
+      (e: Error) => e
+    );
+    expect(err).not.toBeNull();
   });
 });

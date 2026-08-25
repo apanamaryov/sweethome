@@ -1,8 +1,9 @@
 import express, { Router } from "express";
+import { pipeline } from "stream/promises";
 import type { CameraInfo, StorageInfo, TimelineResponse } from "@sweethome/cctv-shared";
 import type { CctvConfig } from "./config";
 import type { CctvDb } from "./index/db";
-import { buildConcatList, concatArgs, downloadFileName } from "./download";
+import { downloadFileName } from "./download";
 import { buildSpans, clampSpans } from "./index/spans";
 import { buildVodPlaylist } from "./playlist";
 
@@ -19,14 +20,8 @@ function parseRange(q: Record<string, unknown>): { cam: string; fromMs: number; 
   return { cam, fromMs, toMs };
 }
 
-/** Дочерний процесс, каким его видит `/download` — минимум, достаточный для склейки и обрыва по SIGTERM. */
-export interface DownloadChild {
-  stdout: { pipe(dest: unknown): void } | null;
-  on(ev: "exit" | "error", cb: (arg?: unknown) => void): void;
-  // Как у настоящего child_process.kill — чтобы реальный ChildProcess подходил
-  // сюда без приведений типа.
-  kill(sig?: NodeJS.Signals): void;
-}
+/** Чтение файла хранилища потоком — вся файловая зависимость `/download`. */
+export type OpenRead = (absPath: string) => NodeJS.ReadableStream;
 
 /** Зависимости роутера — отдельный экспортируемый тип, чтобы сборка модуля проверялась типами, а не приведениями. */
 export interface CctvRouterDeps {
@@ -34,8 +29,7 @@ export interface CctvRouterDeps {
   db: CctvDb;
   manager: { cameras(): CameraInfo[]; storageAvailable(): boolean };
   sendFile: SendFile;
-  spawn: (cmd: string, args: string[]) => DownloadChild;
-  tmpFile: (content: string) => Promise<{ path: string; cleanup: () => Promise<void> }>;
+  openRead: OpenRead;
 }
 
 export function createCctvRouter(deps: CctvRouterDeps): Router {
@@ -114,6 +108,15 @@ export function createCctvRouter(deps: CctvRouterDeps): Router {
     res.json(body);
   });
 
+  /**
+   * Склейка интервала в один файл — БЕЗ ffmpeg.
+   *
+   * Фрагментированный MP4 для того и придуман, чтобы склеиваться побайтово:
+   * init (`ftyp`+`moov`), затем сегменты (`styp`+`moof`+`mdat`) по порядку.
+   * Демуксер `concat` тут не работает в принципе — он открывает каждый файл
+   * списка отдельно, а в `.m4s` без `moov` нет ни одного потока; на малине
+   * лишний процесс ещё и заметно дороже простого чтения с диска.
+   */
   router.get("/download", async (req, res) => {
     const r = parseRange(req.query as Record<string, unknown>);
     if (!r) return res.status(400).json({ ok: false, error: "cam, from and to are required (from < to)" });
@@ -125,66 +128,49 @@ export function createCctvRouter(deps: CctvRouterDeps): Router {
     const segs = db.segmentsBetween(r.cam, r.fromMs, r.toMs);
     if (segs.length === 0) return res.status(404).json({ ok: false, error: "nothing recorded in this interval" });
 
+    // Разные init в интервале — это разные прогоны записи, у каждого свой
+    // заголовок потока; такой диапазон побайтово не склеивается вообще. Отдать
+    // «что получилось» нельзя: пользователь сохранит файл, который не откроется,
+    // и узнает об этом сильно позже. На живой малине перезапуск записи случился
+    // в первые же сутки — это не гипотетический случай.
+    const initId = segs[0].initId;
+    if (segs.some((s) => s.initId !== initId)) {
+      return res.status(400).json({
+        ok: false,
+        error: "interval covers a recording restart: pick a range that does not span it",
+      });
+    }
+
     // Init без записи в индексе — рассогласование данных, а не ошибка запроса:
-    // молча продолжать нельзя, иначе склейка отдаст 200 с файлом без заголовков
-    // потока, который просто не откроется.
-    const init = db.initPathById(segs[0].initId);
+    // без заголовков потока склейка не откроется ни одним плеером.
+    const init = db.initPathById(initId);
     if (!init) return res.status(500).json({ ok: false, error: "index inconsistency: init segment is missing" });
-
-    const list = buildConcatList(segs, cfg.storageDir, init.path);
-
-    // Ставим слушатель ДО await'ов и spawn: клиент может отвалиться, пока мы
-    // ждём временный файл или запуск ffmpeg, — без этой ссылки гасить в
-    // тот момент было бы некого. `child` заполнится ниже, когда процесс
-    // появится; до этого kill() просто не на чём вызывать.
-    let child: ReturnType<typeof deps.spawn> | null = null;
-    res.on("close", () => child?.kill("SIGTERM"));
-
-    let tmp: { path: string; cleanup: () => Promise<void> };
-    try {
-      tmp = await deps.tmpFile(list);
-    } catch (e) {
-      return res.status(500).json({ ok: false, error: `cannot prepare download: ${(e as Error).message}` });
-    }
-
-    // Node может отдать и "error", и "exit" за один и тот же сбой — уборка
-    // должна быть безопасна при повторном вызове, иначе второе отклонение
-    // промиса (файла уже нет) улетит необработанным и уронит процесс.
-    let cleaned = false;
-    const cleanupOnce = async () => {
-      if (cleaned) return;
-      cleaned = true;
-      await tmp.cleanup().catch(() => {});
-    };
-
-    try {
-      child = deps.spawn(cfg.ffmpegPath, concatArgs({ listPath: tmp.path }));
-    } catch (e) {
-      await cleanupOnce();
-      return res.status(500).json({ ok: false, error: `cannot start ffmpeg: ${(e as Error).message}` });
-    }
-
-    // ffmpeg не запустился (нет бинарника, нет прав): без этого слушателя Node
-    // бросит необработанное исключение и уронит весь монолит — вместе с
-    // мониторингом инвертора и остальными модулями в этом же процессе.
-    child.on("error", (err) => {
-      void cleanupOnce();
-      if (!res.headersSent) {
-        // Заголовки видео уже выставлены синхронно ниже; express сам не
-        // перезаписывает Content-Type в res.json(), и без явного сброса
-        // браузер сохранит JSON-ошибку под именем "….mp4".
-        res.removeHeader("Content-Disposition");
-        res.setHeader("Content-Type", "application/json");
-        res.status(500).json({ ok: false, error: `ffmpeg failed: ${(err as Error)?.message ?? "unknown"}` });
-      } else {
-        res.end();
-      }
-    });
 
     res.setHeader("Content-Type", "video/mp4");
     res.setHeader("Content-Disposition", `attachment; filename="${downloadFileName(r.cam, r.fromMs)}"`);
-    child.stdout?.pipe(res);
-    child.on("exit", () => void cleanupOnce());
+
+    try {
+      for (const relPath of [init.path, ...segs.map((s) => s.path)]) {
+        // end: false — ответ закрываем сами, после последнего сегмента.
+        await pipeline(deps.openRead(`${cfg.storageDir}/${relPath}`), res, { end: false });
+      }
+    } catch (e) {
+      const msg = (e as Error)?.message ?? "unknown error";
+      if (!res.headersSent && !res.destroyed) {
+        // Ни байта ещё не ушло — можно ответить честной ошибкой. Заголовки
+        // видео при этом надо снять, иначе браузер сохранит JSON под ".mp4".
+        res.removeHeader("Content-Disposition");
+        res.setHeader("Content-Type", "application/json");
+        return res.status(500).json({ ok: false, error: `cannot read recording: ${msg}` });
+      }
+      // Часть файла уже у клиента. Аккуратно закрыть ответ здесь нельзя:
+      // браузер счёл бы обрезанную склейку целой. Рвём соединение — незакрытая
+      // загрузка видна пользователю как незакрытая.
+      console.warn(`[cctv] download ${r.cam}: поток оборван — ${msg}`);
+      res.destroy();
+      return;
+    }
+    res.end();
   });
 
   return router;
