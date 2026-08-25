@@ -756,3 +756,24 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
 .cctv-cursor { position: absolute; top: -3px; bottom: -3px; width: 2px; background: #fff; }
 .cctv-controls { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
 .cctv-warn, .cctv-error { color: #e05; }
+
+.cctv-player-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.cctv-player-bar button {
+  min-width: 44px;
+  padding: 6px 10px;
+  font-variant-numeric: tabular-nums;
+}
+.cctv-player-bar .cctv-play { min-width: 56px; }
+.cctv-clock {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 16px;
+  font-weight: 600;
+}

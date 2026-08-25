@@ -19,6 +19,8 @@ export default function ArchivePlayer({
   startMs,
   toMs,
   onPositionMs,
+  onSeekRequest,
+  locale,
 }: {
   cam: string;
   /** С какого момента играть: начало суток или точка, куда ткнули на ленте. */
@@ -26,9 +28,16 @@ export default function ArchivePlayer({
   toMs: number;
   /** Текущая позиция в реальном времени — для курсора на ленте. */
   onPositionMs?: (ms: number) => void;
+  /** Перемотка: просим страницу перезапустить плеер с другого момента. */
+  onSeekRequest?: (ms: number) => void;
+  locale: string;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [playing, setPlaying] = useState(false);
+  // Реальное время текущего кадра: шкала самого плеера всегда начинается с нуля,
+  // потому что после каждой перемотки он получает новый плейлист.
+  const [nowMs, setNowMs] = useState(startMs);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -37,21 +46,31 @@ export default function ArchivePlayer({
     // Новый источник — прошлая ошибка к нему не относится.
     setError(null);
 
-    const onPlaying = () => setError(null);
+    const onPlaying = () => {
+      setError(null);
+      setPlaying(true);
+    };
+    const onPause = () => setPlaying(false);
     const onVideoError = () => {
       const code = video.error?.code;
       setError(`playback failed${code ? ` (code ${code})` : ""}`);
     };
     // Позиция плеера отсчитывается от начала плейлиста, а лента живёт в реальном
     // времени — пересчитываем одно в другое здесь, в одном месте.
-    const onTimeUpdate = () => onPositionMs?.(startMs + video.currentTime * 1000);
+    const onTimeUpdate = () => {
+      const real = startMs + video.currentTime * 1000;
+      setNowMs(real);
+      onPositionMs?.(real);
+    };
 
     video.addEventListener("playing", onPlaying);
+    video.addEventListener("pause", onPause);
     video.addEventListener("error", onVideoError);
     video.addEventListener("timeupdate", onTimeUpdate);
 
     const cleanupVideo = () => {
       video.removeEventListener("playing", onPlaying);
+      video.removeEventListener("pause", onPause);
       video.removeEventListener("error", onVideoError);
       video.removeEventListener("timeupdate", onTimeUpdate);
       // src не трогаем: элемент всё равно уничтожается вместе с компонентом
@@ -98,9 +117,32 @@ export default function ArchivePlayer({
     };
   }, [cam, startMs, toMs, onPositionMs]);
 
+  const toggle = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) void video.play()?.catch(() => {});
+    else video.pause();
+  };
+
+  const jump = (deltaSec: number) => onSeekRequest?.(nowMs + deltaSec * 1000);
+
   return (
     <div className="cctv-archive-player">
-      <video ref={videoRef} controls playsInline className="cctv-archive-video" />
+      {/* Штатных контролов нет намеренно: их ползунок перематывает внутри
+          плейлиста, а на наших записях после такой перемотки воспроизведение
+          не восстанавливается. Единственный способ сдвинуться по времени —
+          перезапуск с нужного момента, что и делают эти кнопки и лента внизу. */}
+      <video ref={videoRef} playsInline className="cctv-archive-video" onClick={toggle} />
+      <div className="cctv-player-bar">
+        <button onClick={() => jump(-60)} aria-label="-1 min">−1м</button>
+        <button onClick={() => jump(-10)} aria-label="-10 s">−10с</button>
+        <button onClick={toggle} className="cctv-play">{playing ? "❚❚" : "▶"}</button>
+        <button onClick={() => jump(10)} aria-label="+10 s">+10с</button>
+        <button onClick={() => jump(60)} aria-label="+1 min">+1м</button>
+        <span className="cctv-clock">
+          {new Date(nowMs).toLocaleTimeString(locale)}
+        </span>
+      </div>
       {error && <p className="cctv-error">{error}</p>}
     </div>
   );
