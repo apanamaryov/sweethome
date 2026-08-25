@@ -5,6 +5,7 @@ import { CctvDb } from "./index/db";
 import { loadCctvConfig } from "./config";
 import type { ChildLike } from "./recorder/process";
 import type { LiveChild } from "./live/hub";
+import { fakeFragment, fakeInitSegment } from "./live/testing";
 
 class FakeChild implements ChildLike {
   stderr = { on: () => {} };
@@ -50,8 +51,8 @@ class FakeLiveChild implements LiveChild {
     this.errorCb?.(err);
   }
   /** Фрагмент из ffmpeg — как будто пришли данные в stdout. */
-  emit(data: string): void {
-    this.dataCb?.(Buffer.from(data));
+  emit(data: string | Buffer): void {
+    this.dataCb?.(typeof data === "string" ? Buffer.from(data) : data);
   }
 }
 
@@ -212,7 +213,7 @@ describe("createCctvModule", () => {
     // Готовность и заголовок уходят вместе с первым фрагментом: до него неизвестно,
     // какие в потоке дорожки, а ошибка в объявленных кодеках не даёт открыть плеер.
     expect(sent.length).toBe(0);
-    liveChildren[0].emit("ftyp...mp4a");
+    liveChildren[0].emit(fakeInitSegment(true));
     expect(sent.length).toBeGreaterThan(0);
 
     msgCb!(Buffer.from("не json"));      // мусор не должен ронять соединение
@@ -330,20 +331,20 @@ describe("createCctvModule", () => {
     message({ type: "subscribe", cam: "drive" });
 
     const binary = () => sent.filter((x) => Buffer.isBuffer(x)).length;
-    children[0].emit("HEAD");
+    children[0].emit(fakeInitSegment());
     expect(binary()).toBe(1);
 
     // Телефон ушёл из зоны Wi-Fi: сокет ещё открыт, но ничего не уходит.
     // Копить это в куче нельзя — на малине это прямой путь к OOM, который
     // убьёт весь монолит вместе с мониторингом инвертора.
     ws.bufferedAmount = 8 * 1024 * 1024;
-    children[0].emit("FRAG1");
-    children[0].emit("FRAG2");
+    children[0].emit(fakeFragment("FRAG1"));
+    children[0].emit(fakeFragment("FRAG2"));
     expect(binary()).toBe(1);
 
     // Сеть вернулась — зритель снова получает свежее (и догоняет по живому).
     ws.bufferedAmount = 0;
-    children[0].emit("FRAG3");
+    children[0].emit(fakeFragment("FRAG3"));
     expect(binary()).toBe(2);
 
     await mod.stop();
@@ -376,13 +377,13 @@ describe("createCctvModule", () => {
     expect(hasErrorListener()).toBe(true);
 
     message({ type: "subscribe", cam: "drive" });
-    children[0].emit("HEAD");
+    children[0].emit(fakeInitSegment());
     const before = sent.filter((x) => Buffer.isBuffer(x)).length;
     expect(before).toBe(1);
 
     expect(() => error(new Error("ECONNRESET"))).not.toThrow();
 
-    children[0].emit("FRAG1"); // зритель отписан — новых фрагментов ему не шлём
+    children[0].emit(fakeFragment("FRAG1")); // зритель отписан — новых фрагментов ему не шлём
     expect(sent.filter((x) => Buffer.isBuffer(x)).length).toBe(before);
 
     await mod.stop();
@@ -424,7 +425,7 @@ describe("createCctvModule", () => {
     const a = fakeWs();
     withAudio.mod.ws!.onConnection(a.ws as never);
     a.message({ type: "subscribe", cam: "drive" });
-    withAudio.liveChildren[0].emit("ftyp....moov....mp4a....");
+    withAudio.liveChildren[0].emit(fakeInitSegment(true));
     const readyA = a.sent.filter((x): x is string => typeof x === "string").map((x) => JSON.parse(x))[0];
     expect(readyA).toMatchObject({ type: "ready", cam: "drive" });
     expect(readyA.mime).toContain("mp4a.40.2");
@@ -436,7 +437,7 @@ describe("createCctvModule", () => {
     const b = fakeWs();
     noAudio.mod.ws!.onConnection(b.ws as never);
     b.message({ type: "subscribe", cam: "terrace" });
-    noAudio.liveChildren[0].emit("ftyp....moov....avc1....");
+    noAudio.liveChildren[0].emit(fakeInitSegment(false));
     const readyB = b.sent.filter((x): x is string => typeof x === "string").map((x) => JSON.parse(x))[0];
     expect(readyB.mime).toBe('video/mp4; codecs="avc1.4d0032"');
     await noAudio.mod.stop();

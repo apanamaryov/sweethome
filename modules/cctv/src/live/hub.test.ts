@@ -1,5 +1,6 @@
 import { loadCctvConfig } from "../config";
 import { LiveHub, type LiveChild, type Sink } from "./hub";
+import { fakeFragment, fakeFtyp, fakeInitSegment, fakeMoov } from "./testing";
 import type { LiveServerMessage } from "@sweethome/cctv-shared";
 
 class FakeTimers {
@@ -63,8 +64,8 @@ class FakeChild implements LiveChild {
       this.exitCb?.(null);
     }
   }
-  emit(data: string): void {
-    this.dataCb?.(Buffer.from(data));
+  emit(data: string | Buffer): void {
+    this.dataCb?.(typeof data === "string" ? Buffer.from(data) : data);
   }
   emitErr(data: string): void {
     this.errCb?.(Buffer.from(data));
@@ -118,7 +119,10 @@ describe("LiveHub", () => {
     expect(children).toHaveLength(1);
     expect(s.texts).toEqual([]);
 
-    children[0].emit("ftyp....moov....mp4a");
+    // Заголовок приходит двумя кусками — ровно как от живого ffmpeg.
+    children[0].emit(fakeFtyp());
+    expect(s.texts).toEqual([]);
+    children[0].emit(fakeMoov(true));
     expect(s.texts).toEqual([
       { type: "ready", cam: "drive", mime: 'video/mp4; codecs="avc1.4d0032,mp4a.40.2"' },
     ]);
@@ -157,10 +161,13 @@ describe("LiveHub", () => {
     const b = fakeSink();
     hub.subscribe("drive", a);
     hub.subscribe("drive", b);
-    children[0].emit("HEAD");
-    children[0].emit("FRAG1");
-    expect(a.chunks.map(String)).toEqual(["HEAD", "FRAG1"]);
-    expect(b.chunks.map(String)).toEqual(["HEAD", "FRAG1"]);
+    const head = fakeInitSegment();
+    children[0].emit(head);
+    children[0].emit(fakeFragment("FRAG1"));
+    expect(a.chunks).toHaveLength(2);
+    expect(a.chunks[0].equals(head)).toBe(true);
+    expect(String(a.chunks[1])).toContain("FRAG1");
+    expect(b.chunks[0].equals(head)).toBe(true);
     hub.stop();
   });
 
@@ -168,14 +175,19 @@ describe("LiveHub", () => {
     const { hub, children } = make();
     const first = fakeSink();
     hub.subscribe("drive", first);
-    children[0].emit("HEAD");
-    children[0].emit("FRAG1");
+    // Заголовок двумя кусками: опоздавший обязан получить его целиком, а не
+    // первый попавшийся кусок — обрезанным нечего инициализировать.
+    children[0].emit(fakeFtyp());
+    children[0].emit(fakeMoov(false));
+    children[0].emit(fakeFragment("FRAG1"));
 
     const late = fakeSink();
     hub.subscribe("drive", late);
-    expect(late.chunks.map(String)).toEqual(["HEAD"]); // только заголовок, без старых фрагментов
-    children[0].emit("FRAG2");
-    expect(late.chunks.map(String)).toEqual(["HEAD", "FRAG2"]);
+    expect(late.chunks).toHaveLength(1);
+    expect(late.chunks[0].equals(fakeInitSegment())).toBe(true);
+    children[0].emit(fakeFragment("FRAG2"));
+    expect(late.chunks).toHaveLength(2);
+    expect(String(late.chunks[1])).toContain("FRAG2");
     hub.stop();
   });
 
@@ -243,13 +255,13 @@ describe("LiveHub", () => {
     const { hub, children } = make();
     const s = fakeSink();
     hub.subscribe("drive", s);
-    children[0].emit("HEAD");
+    children[0].emit(fakeInitSegment());
     const chunksBeforeExit = s.chunks.length;
 
     children[0].exitCb?.(1);
     // данные из буфера пайпа могут прийти уже после exit — к этому моменту
     // подписчик уже получил ошибку и, вероятно, закрыл MediaSource у себя
-    children[0].emit("LATE");
+    children[0].emit(fakeFragment("LATE"));
 
     expect(s.texts.some((t) => t.type === "error")).toBe(true);
     expect(s.chunks.length).toBe(chunksBeforeExit);
