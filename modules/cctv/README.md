@@ -120,6 +120,28 @@ about a month.
 - **Seeking is accurate to about three seconds** — the cameras' keyframe
   interval, not something this module can improve.
 
+## 🔧 Known gaps
+
+Found by the final review, deliberately left for a follow-up — none of them
+break recording or playback:
+
+1. **Every download logs a few "possible EventEmitter memory leak" warnings.**
+   The route opens one pipeline per fragment and their listeners pile up on the
+   response. Noise in the journal only; no leak between requests. One-line fix:
+   a single pipeline over an async generator.
+2. **A viewer whose socket is already backed up never gets the stream header.**
+   The backpressure threshold is applied to the header too, so subscribing to a
+   second camera while the first is stalled yields a picture that cannot decode.
+   The header is ~1 KB and should bypass the threshold.
+3. **Recordings made during a backward clock step are lost from the index** and
+   then leak on disk, since retention only ever deletes what the index knows.
+   NTP normally steps forward, so this is unlikely here.
+4. **A user cancelling a download is logged as an anomaly.** Cosmetic.
+
+Also unverified, because it needs a browser: live-view latency in practice,
+archive scrubbing, and clip download. And the live view does not reconnect on
+its own after a WebSocket drop — a Wi-Fi blip means reloading the page.
+
 ## 🗂️ Structure
 
 ```
