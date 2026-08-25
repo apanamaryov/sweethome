@@ -146,6 +146,7 @@ export function createCctvModule(rootDataDir: string, over: CctvModuleOverrides 
         lastSegmentMs: null,
         restarts: 0,
         hasAudio: false,
+        recordsAudio: false,
       })),
     storageAvailable: () => manager?.storageAvailable() ?? false,
   };

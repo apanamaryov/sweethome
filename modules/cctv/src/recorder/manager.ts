@@ -79,7 +79,7 @@ export class RecorderManager {
         },
         mkdir: this.deps.mkdir,
         newRunId: this.deps.newRunId ?? (() => `${Date.now().toString(36)}`),
-        withAudio: () => this.hasAudio(cam.id),
+        withAudio: () => this.hasAudio(cam.id) && cfg.recordAudio,
       });
       this.procs.set(cam.id, proc);
       await proc.start();
@@ -157,6 +157,7 @@ export class RecorderManager {
         lastSegmentMs: this.deps.db.lastSegmentStart(cam.id),
         restarts: st?.restarts ?? 0,
         hasAudio: this.hasAudio(cam.id),
+        recordsAudio: this.hasAudio(cam.id) && this.deps.cfg.recordAudio,
         ...(st?.lastError ? { lastError: st.lastError } : {}),
       };
     });

@@ -30,8 +30,8 @@ function jsonOk(body: unknown) {
 }
 
 const CAMS = [
-  { id: "drive", name: "drive", recording: true, lastSegmentMs: 1, restarts: 0, hasAudio: true },
-  { id: "terrace", name: "terrace", recording: true, lastSegmentMs: 1, restarts: 0, hasAudio: false },
+  { id: "drive", name: "drive", recording: true, lastSegmentMs: 1, restarts: 0, hasAudio: true, recordsAudio: true },
+  { id: "terrace", name: "terrace", recording: true, lastSegmentMs: 1, restarts: 0, hasAudio: false, recordsAudio: false },
 ];
 
 beforeEach(() => {

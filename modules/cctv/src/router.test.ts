@@ -36,7 +36,7 @@ function app(
       db,
       manager: {
         cameras: () =>
-          over.cameras ?? [{ id: "drive", name: "drive", recording: true, lastSegmentMs: 1000, restarts: 0, hasAudio: false }],
+          over.cameras ?? [{ id: "drive", name: "drive", recording: true, lastSegmentMs: 1000, restarts: 0, hasAudio: false, recordsAudio: false }],
         storageAvailable: () => over.storage ?? true,
       },
       sendFile: (res, abs) => {
@@ -89,7 +89,7 @@ describe("cctv router", () => {
     const { a } = app(db);
     const res = await request(a).get("/api/cctv/cameras").expect(200);
     expect(res.body).toEqual({
-      cameras: [{ id: "drive", name: "drive", recording: true, lastSegmentMs: 1000, restarts: 0, hasAudio: false }],
+      cameras: [{ id: "drive", name: "drive", recording: true, lastSegmentMs: 1000, restarts: 0, hasAudio: false, recordsAudio: false }],
     });
   });
 

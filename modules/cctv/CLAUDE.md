@@ -152,6 +152,14 @@ costs almost nothing. 44.1 kHz rather than the native 8 kHz because every browse
 mid-stream. Things that do *not* help, measured: `-analyzeduration`/`-probesize`, `-fflags
 nobuffer`, `-max_interleave_delta 0` (that means *unlimited*, not zero wait).
 
+**The re-encoding costs about a third of a core per camera, and that mattered.** Measured on
+the live Pi: 25–31% per recorder with audio against ~1.5% copying video only. With two such
+recorders the Pi 3B started logging `Undervoltage detected` twice a minute (zero with the
+service stopped) and had already gone down hard once. `CCTV_RECORD_AUDIO` therefore gates
+audio in *recording* and defaults to off; live view keeps it, since that load only exists
+while someone watches. `CameraInfo` carries both `hasAudio` (the camera sends sound) and
+`recordsAudio` (the archive will have it) so the archive's sound button is never a decoration.
+
 **Whether a camera has sound is decided by listening.** `recorder/probe-audio.ts` runs a few
 seconds of `volumedetect` per camera at `RecorderManager.start()` — decoding, so it sees what
 copying cannot. Watch the parsing: ffmpeg prints `n_samples` twice and the first line is always

@@ -139,7 +139,7 @@ export default function CctvArchivePage() {
               onSeekRequest={seekTo}
               expanded={expanded}
               onToggleSize={toggleSize}
-              hasAudio={cams.find((c) => c.id === cam)?.hasAudio ?? false}
+              hasAudio={cams.find((c) => c.id === cam)?.recordsAudio ?? false}
             />
           );
         })()}
