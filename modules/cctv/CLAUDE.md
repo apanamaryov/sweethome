@@ -155,6 +155,11 @@ component, so the `<video>` element itself is new). For the same reason the elem
 user a button that breaks playback. The player's own clock shows the recording's real time,
 because the player's scale restarts at zero after every jump.
 
+Enlarging on click is a CSS overlay (`.cctv-expanded`), not the Fullscreen API, for the same
+reason the native controls are gone — and because the element must not move in the DOM or the
+stream dies. The archive's expanded state lives in the *page*, not in `ArchivePlayer`: every
+seek remounts the player, so a flag kept inside it would collapse the picture on each jump.
+
 Safari's built-in HLS player is not used even where it exists: it plays only the first
 fragment of our playlists. `hls.js` assembles fragments itself and handles them, and on iPhone
 it runs on ManagedMediaSource too.

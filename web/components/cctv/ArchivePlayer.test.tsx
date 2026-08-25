@@ -142,4 +142,53 @@ describe("ArchivePlayer", () => {
     expect(screen.getByText(/4:01:30|04:01:30/)).toBeInTheDocument();
   });
 
+  it("клик по картинке просит увеличение, а не ставит на паузу", () => {
+    // Кадр 1920×2160 в обычном размере вписан в окно, поэтому нужен способ
+    // разглядеть его крупно. Пауза при этом живёт на кнопке в баре: одно
+    // действие на картинке — один смысл, иначе увеличение и пауза дерутся.
+    const play = jest.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    const pause = jest.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    const asked: number[] = [];
+    render(
+      <ArchivePlayer
+        cam="drive"
+        startMs={0}
+        toMs={1000}
+        locale="ru-RU"
+        onToggleSize={() => asked.push(1)}
+      />
+    );
+
+    act(() => { document.querySelector("video")!.click(); });
+    expect(asked).toHaveLength(1);
+    expect(play).not.toHaveBeenCalled();
+    expect(pause).not.toHaveBeenCalled();
+
+    play.mockRestore();
+    pause.mockRestore();
+  });
+
+  it("увеличенный вид приходит снаружи: плеер только отражает его", () => {
+    // Состоянием владеет страница — иначе перемотка, которая пересоздаёт
+    // плеер, схлопывала бы картинку обратно на каждом переходе.
+    const { rerender } = render(
+      <ArchivePlayer cam="drive" startMs={0} toMs={1000} locale="ru-RU" expanded={false} />
+    );
+    expect(document.querySelector(".cctv-archive-player")!.className).not.toContain("cctv-expanded");
+
+    rerender(<ArchivePlayer cam="drive" startMs={0} toMs={1000} locale="ru-RU" expanded />);
+    expect(document.querySelector(".cctv-archive-player")!.className).toContain("cctv-expanded");
+  });
+
+  it("кнопка в баре по-прежнему запускает воспроизведение", () => {
+    // Пауза переехала с картинки на кнопку — значит, кнопка обязана работать.
+    const play = jest.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    render(<ArchivePlayer cam="drive" startMs={0} toMs={1000} locale="ru-RU" />);
+
+    act(() => { document.querySelector(".cctv-play")!.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
+    expect(play).toHaveBeenCalled();
+
+    play.mockRestore();
+  });
+
 });

@@ -21,6 +21,8 @@ export default function ArchivePlayer({
   onPositionMs,
   onSeekRequest,
   locale,
+  expanded,
+  onToggleSize,
 }: {
   cam: string;
   /** С какого момента играть: начало суток или точка, куда ткнули на ленте. */
@@ -31,6 +33,10 @@ export default function ArchivePlayer({
   /** Перемотка: просим страницу перезапустить плеер с другого момента. */
   onSeekRequest?: (ms: number) => void;
   locale: string;
+  /** Картинка увеличена. Состоянием владеет страница: перемотка пересоздаёт
+   *  плеер, и своё состояние он потерял бы на каждом переходе. */
+  expanded?: boolean;
+  onToggleSize?: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -127,12 +133,15 @@ export default function ArchivePlayer({
   const jump = (deltaSec: number) => onSeekRequest?.(nowMs + deltaSec * 1000);
 
   return (
-    <div className="cctv-archive-player">
+    <div className={`cctv-archive-player${expanded ? " cctv-expanded" : ""}`}>
       {/* Штатных контролов нет намеренно: их ползунок перематывает внутри
           плейлиста, а на наших записях после такой перемотки воспроизведение
           не восстанавливается. Единственный способ сдвинуться по времени —
-          перезапуск с нужного момента, что и делают эти кнопки и лента внизу. */}
-      <video ref={videoRef} playsInline className="cctv-archive-video" onClick={toggle} />
+          перезапуск с нужного момента, что и делают эти кнопки и лента внизу.
+
+          Клик по картинке увеличивает её, а не ставит на паузу: пауза живёт на
+          кнопке в баре, и делить один жест на два действия незачем. */}
+      <video ref={videoRef} playsInline className="cctv-archive-video" onClick={onToggleSize} />
       <div className="cctv-player-bar">
         <button onClick={() => jump(-60)} aria-label="-1 min">−1м</button>
         <button onClick={() => jump(-10)} aria-label="-10 s">−10с</button>

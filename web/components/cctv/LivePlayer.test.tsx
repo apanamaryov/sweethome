@@ -226,4 +226,22 @@ describe("LivePlayer", () => {
     expect(FakeMediaSource.lastAddedMime).toBe('video/mp4; codecs="avc1.4d0032"');
   });
 
+  it("клик по картинке разворачивает её и сворачивает обратно", () => {
+    // На десктопе кадр 1920×2160 в обычном размере вписан в окно; разглядеть
+    // его крупно можно кликом — как и в архиве, чтобы жест был один и тот же.
+    render(<LivePlayer cam="drive" label="Въезд" />);
+
+    const wrap = document.querySelector(".cctv-live")!;
+    const video = document.querySelector("video")!;
+    expect(wrap.className).not.toContain("cctv-expanded");
+
+    act(() => { video.click(); });
+    expect(wrap.className).toContain("cctv-expanded");
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    expect(wrap.className).not.toContain("cctv-expanded");
+  });
+
 });

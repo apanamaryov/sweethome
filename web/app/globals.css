@@ -749,7 +749,21 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
 
 /* ---------- раздел видеонаблюдения (/cctv, /cctv/archive) ---------- */
 .cctv-tabs { margin-bottom: 12px; }
-.cctv-live video, .cctv-archive-video { width: 100%; max-width: 100%; background: #000; display: block; }
+/* Кадр у камер 1920×2160 — две линзы одна над другой. Если растянуть его по
+   ширине колонки, на десктопе он оказывается выше экрана и не влезает даже
+   одной линзой, поэтому ограничиваем по высоте окна: width/height auto —
+   чтобы браузер сам сохранил пропорции без чёрных полей по бокам. */
+.cctv-live video,
+.cctv-archive-video {
+  display: block;
+  margin: 0 auto;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: max(240px, min(70vh, calc(100vh - 220px)));
+  background: #000;
+  cursor: zoom-in;
+}
 .cctv-timeline { position: relative; height: 28px; background: var(--bg-muted, #222); border-radius: 4px; cursor: pointer; margin: .75rem 0; }
 .cctv-span { position: absolute; top: 0; bottom: 0; background: var(--accent, #4a9); opacity: .65; }
 .cctv-mark { position: absolute; top: 0; bottom: 0; width: 2px; background: #f5a623; }
@@ -783,3 +797,30 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
   font-variant-numeric: tabular-nums;
   padding: 5px 8px;
 }
+
+/* Увеличенная картинка: слой поверх страницы, а не полноэкранный режим
+   браузера — тот подменил бы наши кнопки штатными, а штатный ползунок
+   перематывает так, что воспроизведение больше не поднимается. */
+.cctv-expanded {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  margin: 0;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.94);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.cctv-expanded figcaption { color: #fff; }
+.cctv-expanded video,
+.cctv-expanded .cctv-archive-video {
+  max-width: 100%;
+  /* оставляем место под подпись и бар с кнопками */
+  max-height: calc(100vh - 90px);
+  cursor: zoom-out;
+}
+.cctv-expanded .cctv-player-bar { margin-top: 0; }
+.cctv-expanded .cctv-clock { color: #fff; }
