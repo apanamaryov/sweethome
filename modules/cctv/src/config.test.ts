@@ -63,4 +63,12 @@ describe("loadCctvConfig", () => {
     expect(cfg.motionEvents).toBe(false);
     expect(cfg.downloadMaxMin).toBe(10);
   });
+
+  it("звук в записи по умолчанию выключен и включается переменной", () => {
+    expect(loadCctvConfig("/data", { CCTV_CAMERAS: "a=1.1.1.1" }).recordAudio).toBe(false);
+    expect(
+      loadCctvConfig("/data", { CCTV_CAMERAS: "a=1.1.1.1", CCTV_RECORD_AUDIO: "true" }).recordAudio
+    ).toBe(true);
+  });
+
 });

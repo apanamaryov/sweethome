@@ -76,6 +76,7 @@ clear message if it is missing.
 | `CCTV_LIVE_IDLE_SEC` | `15` | how long a live process outlives its last viewer |
 | `CCTV_MOTION_EVENTS` | `true` | subscribe to ONVIF motion events |
 | `CCTV_DOWNLOAD_MAX_MIN` | `30` | largest downloadable interval |
+| `CCTV_RECORD_AUDIO` | `false` | write sound into the archive (see Caveats — it costs CPU) |
 
 Give the cameras fixed addresses on the router: if an address changes, recording
 stops until the config is updated.
@@ -169,8 +170,13 @@ playback, and the clock shows the recording's own time.
 - **Audio is re-encoded, video never is.** These cameras send audio with
   timestamps ffmpeg cannot use: copied, every packet is dropped and the archive
   gets a silent track, while the picture waits ten seconds for the audio that
-  never arrives. Decoding and re-encoding the 8 kHz mono track costs almost
-  nothing and fixes both.
+  never arrives. Decoding and re-encoding fixes both.
+- **That re-encoding is not free, and on a Pi it showed.** About a third of a
+  core per camera, around the clock — enough to push a Pi 3B on a marginal power
+  supply into repeated under-voltage events and, once, a hard crash. So sound in
+  the *archive* is off by default (`CCTV_RECORD_AUDIO`); live view keeps it,
+  because that cost is only paid while somebody is watching. Turn it on once the
+  power supply is known good.
 - **One camera on screen at a time.** iOS refuses to play a second video at
   once, so the live page switches cameras with tabs rather than showing a grid.
 - **Seeking is a reload, not a scrub.** Moving the position inside a long

@@ -19,6 +19,13 @@ export interface CctvConfig {
   liveIdleSec: number;
   motionEvents: boolean;
   downloadMaxMin: number;
+  /**
+   * Писать ли звук в архив. По умолчанию нет: перекодирование стоит примерно
+   * треть ядра на камеру и идёт круглосуточно — на малине со слабым питанием
+   * это вызывало просадки напряжения. В живом просмотре звук остаётся: он
+   * включается только пока кто-то смотрит.
+   */
+  recordAudio: boolean;
 }
 
 /** Путь RTSP у этих камер один и тот же для всех (см. спеку §2.1). */
@@ -55,6 +62,7 @@ export function loadCctvConfig(rootDataDir: string, env: NodeJS.ProcessEnv = pro
       liveIdleSec: envInt("CCTV_LIVE_IDLE_SEC", 15),
       motionEvents: envBool("CCTV_MOTION_EVENTS", true),
       downloadMaxMin: envInt("CCTV_DOWNLOAD_MAX_MIN", 30),
+      recordAudio: envBool("CCTV_RECORD_AUDIO", false),
     };
   } finally {
     process.env = prev;
