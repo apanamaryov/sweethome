@@ -87,14 +87,23 @@ export default function CctvArchivePage() {
         )}
       </div>
 
-      {cam && (
-        <ArchivePlayer
-          cam={cam}
-          startMs={startMs ?? tl?.spans[0]?.startMs ?? fromMs}
-          toMs={toMs}
-          onPositionMs={setPositionMs}
-        />
-      )}
+      {cam &&
+        (() => {
+          const playFrom = startMs ?? tl?.spans[0]?.startMs ?? fromMs;
+          // key заставляет React выбросить старый <video> и создать новый на
+          // каждый новый момент. Переиспользование элемента после перемотки
+          // оставляло плеер в состоянии, из которого он не запускался ни сам,
+          // ни по кнопке — а первый старт при этом всегда работал.
+          return (
+            <ArchivePlayer
+              key={`${cam}:${playFrom}`}
+              cam={cam}
+              startMs={playFrom}
+              toMs={toMs}
+              onPositionMs={setPositionMs}
+            />
+          );
+        })()}
 
       <Timeline
         spans={tl?.spans ?? []}
