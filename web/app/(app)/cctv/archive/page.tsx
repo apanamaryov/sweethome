@@ -79,7 +79,16 @@ export default function CctvArchivePage() {
         )}
       </div>
 
-      {cam && <ArchivePlayer cam={cam} fromMs={fromMs} toMs={toMs} spans={tl?.spans ?? []} seekToMs={seekToMs} />}
+      {cam && (
+        <ArchivePlayer
+          cam={cam}
+          fromMs={fromMs}
+          toMs={toMs}
+          spans={tl?.spans ?? []}
+          playlistStartMs={tl?.playlistStartMs ?? null}
+          seekToMs={seekToMs}
+        />
+      )}
 
       <Timeline
         spans={tl?.spans ?? []}

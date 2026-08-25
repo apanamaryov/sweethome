@@ -68,9 +68,22 @@ export function spanBars(
  * Плеер не знает о пропусках: в его шкале время идёт подряд, поэтому позицию
  * приходится считать как сумму длительностей предыдущих отрезков. Момент, когда
  * записи не было, спозиционировать нельзя — отсюда null.
+ *
+ * `playlistStartMs` (поле ответа `/timeline`) — начало первого неподрезанного
+ * сегмента, то есть настоящий нуль шкалы плеера. Отрезки в `spans` подрезаны по
+ * границам запроса, а плейлист начинается с сегмента, стартовавшего ДО них:
+ * без этой поправки позиция уезжала бы в прошлое ровно на длину этого «хвоста»
+ * (до минуты при минутных сегментах).
  */
-export function offsetInSpans(tsMs: number, spans: Span[]): number | null {
+export function offsetInSpans(
+  tsMs: number,
+  spans: Span[],
+  playlistStartMs?: number | null
+): number | null {
   let acc = 0;
+  if (spans.length > 0 && playlistStartMs != null && playlistStartMs < spans[0].startMs) {
+    acc = spans[0].startMs - playlistStartMs;
+  }
   for (const sp of spans) {
     if (tsMs < sp.startMs) return null;
     if (tsMs < sp.endMs) return Math.round((acc + (tsMs - sp.startMs)) / 1000);

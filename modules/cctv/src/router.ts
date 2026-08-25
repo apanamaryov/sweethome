@@ -61,6 +61,10 @@ export function createCctvRouter(deps: CctvRouterDeps): Router {
       marks: db.motionBetween(r.cam, r.fromMs, r.toMs),
       segments: segs.length,
       bytes: segs.reduce((sum, s) => sum + s.bytes, 0),
+      // Та же выборка, что уходит в /playlist.m3u8, и без подрезки: это нулевая
+      // отметка шкалы плеера. Клиенту нужны обе системы отсчёта — подрезанные
+      // отрезки для полос на ленте и эта отметка для перевода времени в позицию.
+      playlistStartMs: segs.length > 0 ? segs[0].startMs : null,
     };
     res.json(body);
   });

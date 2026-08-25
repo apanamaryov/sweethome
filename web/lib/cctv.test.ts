@@ -82,6 +82,43 @@ describe("offsetInSpans", () => {
   it("на пустой ленте отдаёт null", () => {
     expect(offsetInSpans(T, [])).toBeNull();
   });
+
+  /**
+   * Стык суток — тот самый случай, из-за которого перемотка промахивалась.
+   *
+   * Сервер (см. `modules/cctv/src/router.test.ts`, тест «нуль шкалы плейлиста»)
+   * на запрос суток отдаёт: `spans`, подрезанные по полуночи, и
+   * `playlistStartMs` — начало ПЕРВОГО НЕПОДРЕЗАННОГО сегмента. Плейлист
+   * начинается с этого же сегмента, поэтому нуль шкалы плеера — не полночь, а
+   * момент на 30 секунд раньше. Цифры здесь те же, что в серверном тесте.
+   */
+  describe("стык суток: позиция считается в шкале плейлиста", () => {
+    const midnight = T;
+    const segA = midnight - 30_000; // начался вчера, доигрывает уже в новых сутках
+    const segB = segA + 60_000;
+    const spansFromServer = [{ startMs: midnight, endMs: segB + 60_000 }]; // подрезано по полуночи
+    const playlistStartMs = segA;
+
+    it("совпадает с положением момента в плейлисте", () => {
+      const ts = midnight + 10_000;
+      // Шкала плейлиста: сегмент A занимает 0..60 с, сегмент B — 60..120 с.
+      // Момент ts лежит внутри A, на (ts - segA) от его начала.
+      const expectedInPlaylist = (ts - segA) / 1000; // 40 секунд
+      expect(offsetInSpans(ts, spansFromServer, playlistStartMs)).toBe(expectedInPlaylist);
+    });
+
+    it("во втором сегменте сдвиг тот же, а не накапливается", () => {
+      const ts = segB + 15_000;
+      expect(offsetInSpans(ts, spansFromServer, playlistStartMs)).toBe((ts - segA) / 1000);
+    });
+
+    it("без сдвига (плейлист начинается ровно с интервала) ничего не меняется", () => {
+      const ts = midnight + 10_000;
+      expect(offsetInSpans(ts, spansFromServer, midnight)).toBe(10);
+      // Пустой интервал: сервер отдаёт playlistStartMs = null — считаем как раньше.
+      expect(offsetInSpans(ts, spansFromServer, null)).toBe(10);
+    });
+  });
 });
 
 describe("url helpers", () => {

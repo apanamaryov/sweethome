@@ -14,12 +14,15 @@ export default function ArchivePlayer({
   fromMs,
   toMs,
   spans,
+  playlistStartMs,
   seekToMs,
 }: {
   cam: string;
   fromMs: number;
   toMs: number;
   spans: Span[];
+  /** Нуль шкалы плеера из ответа /timeline — см. offsetInSpans. */
+  playlistStartMs: number | null;
   seekToMs: number | null;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -76,9 +79,11 @@ export default function ArchivePlayer({
   useEffect(() => {
     const video = videoRef.current;
     if (!video || seekToMs === null) return;
-    const offset = offsetInSpans(seekToMs, spans);
+    // Позиция считается в шкале плейлиста, а не запрошенных суток: плейлист
+    // начинается с сегмента, стартовавшего до начала интервала.
+    const offset = offsetInSpans(seekToMs, spans, playlistStartMs);
     if (offset !== null) video.currentTime = offset;
-  }, [seekToMs, spans]);
+  }, [seekToMs, spans, playlistStartMs]);
 
   return (
     <div className="cctv-archive-player">

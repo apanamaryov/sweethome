@@ -126,6 +126,50 @@ describe("cctv router", () => {
     expect(res.body.spans).toEqual([{ startMs: T + 30_000, endMs: T + 90_000 }]);
   });
 
+  // Стык суток: сегмент начался до полуночи и продолжается внутрь суток. Полосы
+  // на ленте подрезаны по границе запроса, а плейлист начинается с целого
+  // сегмента — обе стороны должны договориться о нуле шкалы, иначе перемотка
+  // промахивается на «хвост» первого сегмента (тут — на 30 секунд).
+  it("GET /timeline отдаёт нуль шкалы плейлиста — начало неподрезанного сегмента", async () => {
+    const midnight = Date.UTC(2026, 7, 24, 0, 0, 0);
+    const firstStart = midnight - 30_000; // начался вчера, доиграет уже в новых сутках
+    const initId = db.upsertInit("drive", "drive/init_run1.mp4", 800, firstStart);
+    db.addSegment({
+      cam: "drive", initId, path: "drive/seg_a.m4s",
+      startMs: firstStart, durMs: 60_000, bytes: 10,
+    });
+    db.addSegment({
+      cam: "drive", initId, path: "drive/seg_b.m4s",
+      startMs: firstStart + 60_000, durMs: 60_000, bytes: 10,
+    });
+
+    const { a } = app(db);
+    const res = await request(a)
+      .get(`/api/cctv/timeline?cam=drive&from=${midnight}&to=${midnight + 86_400_000}`)
+      .expect(200);
+
+    // Полосы ленты подрезаны по запросу — это правильно и остаётся как было.
+    expect(res.body.spans[0].startMs).toBe(midnight);
+    // А нуль шкалы плеера — начало сегмента ДО подрезки.
+    expect(res.body.playlistStartMs).toBe(firstStart);
+
+    // Плейлист построен из той же выборки: его первый сегмент — тот самый,
+    // с которого начинается шкала.
+    const pl = await request(a)
+      .get(`/api/cctv/playlist.m3u8?cam=drive&from=${midnight}&to=${midnight + 86_400_000}`)
+      .expect(200);
+    expect(pl.text).toContain(`#EXT-X-PROGRAM-DATE-TIME:${new Date(firstStart).toISOString()}`);
+  });
+
+  it("GET /timeline на пустом интервале отдаёт нуль шкалы null", async () => {
+    seed(db);
+    const { a } = app(db);
+    const res = await request(a)
+      .get(`/api/cctv/timeline?cam=drive&from=${T + 10_000_000}&to=${T + 10_060_000}`)
+      .expect(200);
+    expect(res.body.playlistStartMs).toBeNull();
+  });
+
   it("GET /timeline требует корректных параметров", async () => {
     const { a } = app(db);
     await request(a).get("/api/cctv/timeline").expect(400);
