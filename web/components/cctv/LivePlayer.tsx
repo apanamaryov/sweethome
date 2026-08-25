@@ -5,9 +5,6 @@ import { wsUrl } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { useExpandable } from "./useExpandable";
 
-/** Кодек по умолчанию — запасной вариант, если сервер не успел прислать свой mime. */
-const DEFAULT_MIME = 'video/mp4; codecs="avc1.4d0032"';
-
 /**
  * На iPhone обычного MediaSource нет вовсе: Apple даёт только ManagedMediaSource,
  * и то начиная с iOS 17.1. Поэтому берём ту реализацию, которая есть, а если нет
@@ -18,8 +15,15 @@ function pickMediaSource(): (new () => MediaSource) | null {
   const w = window as unknown as Record<string, unknown>;
   return ((w.ManagedMediaSource ?? w.MediaSource) as (new () => MediaSource) | undefined) ?? null;
 }
-/** Сколько ждать mime от сервера, прежде чем откатиться на дефолт — иначе плеер зависнет навсегда. */
-const MIME_FALLBACK_MS = 3000;
+/**
+ * Сколько ждать первого фрагмента, прежде чем честно сказать, что потока нет.
+ *
+ * Раньше по этому таймеру подставлялся зашитый кодек, но угадывать больше нельзя:
+ * состав дорожек у камер разный (у одной звука нет вовсе), а неверно объявленный
+ * кодек не даёт открыть источник вообще. Пятнадцать секунд — с запасом на
+ * подключение к камере и ожидание опорного кадра (~3 с).
+ */
+const NO_STREAM_MS = 15_000;
 
 /**
  * Живой просмотр: фрагменты приходят по WebSocket и складываются в MediaSource.
@@ -30,6 +34,10 @@ export default function LivePlayer({ cam, label }: { cam: string; label: string 
   const t = useT();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Звук по умолчанию выключен: открытая вкладка не должна начинать орать,
+  // да и автозапуск браузеры разрешают только беззвучный.
+  const [muted, setMuted] = useState(true);
+  const [hasAudio, setHasAudio] = useState(false);
   const { expanded, toggle: toggleSize } = useExpandable();
 
   useEffect(() => {
@@ -42,6 +50,9 @@ export default function LivePlayer({ cam, label }: { cam: string; label: string 
     let cancelled = false;
     const setErrorSafe = (msg: string | null) => {
       if (!cancelled) setError(msg);
+    };
+    const setHasAudioSafe = (v: boolean) => {
+      if (!cancelled) setHasAudio(v);
     };
 
     const MediaSourceImpl = pickMediaSource();
@@ -111,9 +122,8 @@ export default function LivePlayer({ cam, label }: { cam: string; label: string 
       // Если сервер за MIME_FALLBACK_MS не прислал mime — не зависаем навсегда молча,
       // откатываемся на зашитый кодек.
       mimeFallbackTimer = setTimeout(() => {
-        if (!mime) mime = DEFAULT_MIME;
-        tryCreateBuffer();
-      }, MIME_FALLBACK_MS);
+        if (!mime) setErrorSafe(t.cctvNoStream);
+      }, NO_STREAM_MS);
       tryCreateBuffer();
     };
 
@@ -145,6 +155,9 @@ export default function LivePlayer({ cam, label }: { cam: string; label: string 
         const msg = JSON.parse(ev.data) as { type: string; mime?: string; error?: string };
         if (msg.type === "ready" && msg.mime) {
           mime = msg.mime;
+          // Кнопка звука появляется только там, где звук реально есть: сервер
+          // объявляет дорожки по факту потока (см. modules/cctv/src/audio.ts).
+          setHasAudioSafe(mime.includes("mp4a"));
           tryCreateBuffer();
         }
         if (msg.type === "error") setErrorSafe(msg.error ?? "stream error");
@@ -186,7 +199,16 @@ export default function LivePlayer({ cam, label }: { cam: string; label: string 
     <figure className={`cctv-live${expanded ? " cctv-expanded" : ""}`}>
       <figcaption>{label}</figcaption>
       {/* Клик увеличивает картинку — тот же жест, что и в архиве. */}
-      <video ref={videoRef} muted playsInline autoPlay onClick={toggleSize} />
+      <video ref={videoRef} muted={muted} playsInline autoPlay onClick={toggleSize} />
+      {hasAudio && (
+        <button
+          className="cctv-sound"
+          aria-label={muted ? t.cctvUnmute : t.cctvMute}
+          onClick={() => setMuted((m) => !m)}
+        >
+          {muted ? "🔇" : "🔊"}
+        </button>
+      )}
       {error && <p className="cctv-error">{error}</p>}
     </figure>
   );

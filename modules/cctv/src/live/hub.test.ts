@@ -1,5 +1,5 @@
 import { loadCctvConfig } from "../config";
-import { LiveHub, LIVE_MIME, type LiveChild, type Sink } from "./hub";
+import { LiveHub, type LiveChild, type Sink } from "./hub";
 import type { LiveServerMessage } from "@sweethome/cctv-shared";
 
 class FakeTimers {
@@ -108,12 +108,20 @@ function make() {
 }
 
 describe("LiveHub", () => {
-  it("первый подписчик поднимает процесс и получает готовность", () => {
+  it("первый подписчик поднимает процесс, а готовность приходит с первым фрагментом", () => {
+    // Раньше кодеки объявлялись сразу и наугад. Теперь их видно только по
+    // заголовку потока: у камер разный состав дорожек, а неверно объявленный
+    // кодек не даёт браузеру открыть источник вообще.
     const { hub, children } = make();
     const s = fakeSink();
     hub.subscribe("drive", s);
     expect(children).toHaveLength(1);
-    expect(s.texts).toEqual([{ type: "ready", cam: "drive", mime: LIVE_MIME }]);
+    expect(s.texts).toEqual([]);
+
+    children[0].emit("ftyp....moov....mp4a");
+    expect(s.texts).toEqual([
+      { type: "ready", cam: "drive", mime: 'video/mp4; codecs="avc1.4d0032,mp4a.40.2"' },
+    ]);
     hub.stop();
   });
 

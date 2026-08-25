@@ -129,6 +129,29 @@ keyframe interval. That value is the one place the design spec explicitly leaves
 on-stand measurement (spec §8) — if it has since been re-tuned on the Pi, `ffmpeg.test.ts`
 pins the current value; trust the test over this document.
 
+## Sound — read from the stream, never assumed
+
+Two of the three cameras serve AAC 8 kHz mono next to the video; the third serves video only.
+Recording never dropped it (`recordArgs` is a plain `-c copy`), so the archive has had sound
+from day one. Live view used to drop it (`-an`); it no longer does.
+
+**The MIME is derived from the header, not configured.** `audio.ts::headerHasAudio` looks for
+the `mp4a` box in the fMP4 header, and `liveMime()` builds the codec string from that. This is
+load-bearing: declaring `mp4a.40.2` for a camera that sends no audio means MediaSource refuses
+to open at all — a black rectangle, not a silent picture. The same one-line check answers the
+question for the archive, because the header of every recording run sits in `init_<runId>.mp4`;
+`RecorderManager` reads it once per run (during the scan tick, async — that mount is SMB over
+Wi-Fi) and reports `hasAudio` in `CameraInfo`.
+
+**Consequence for the live protocol:** `ready` moved from "the moment you subscribe" to "the
+moment the first fragment arrives", because only then are the tracks known. `LiveSession` sends
+it; the hub no longer does. A viewer joining a running session gets `ready` and the header
+together, in that order. The client's old three-second "guess a codec" fallback is gone for the
+same reason — it now just says the stream never started, after fifteen seconds.
+
+Both players start muted: browsers only allow muted autoplay, and an open tab that starts
+shouting is a bug report. The sound button appears only where a track exists.
+
 ## Browser side — what the device taught us
 
 Three things about playback were only learnable on a real iPhone, and all three are load-bearing.

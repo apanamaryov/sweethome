@@ -130,7 +130,14 @@ export function createCctvModule(rootDataDir: string, over: CctvModuleOverrides 
   const managerView = {
     cameras: () =>
       manager?.cameras() ??
-      cfg.cameras.map((c) => ({ id: c.id, name: c.name, recording: false, lastSegmentMs: null, restarts: 0 })),
+      cfg.cameras.map((c) => ({
+        id: c.id,
+        name: c.name,
+        recording: false,
+        lastSegmentMs: null,
+        restarts: 0,
+        hasAudio: false,
+      })),
     storageAvailable: () => manager?.storageAvailable() ?? false,
   };
 
@@ -243,6 +250,7 @@ export function createCctvModule(rootDataDir: string, over: CctvModuleOverrides 
         timers,
         storageReady,
         mkdir: (p) => fs.mkdir(p, { recursive: true }).then(() => undefined),
+        readFile: (p) => fs.readFile(p),
       });
       await manager.start();
 

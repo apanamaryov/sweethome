@@ -24,7 +24,7 @@ const CFG: CctvConfig = {
 };
 
 const CAMERAS: CameraInfo[] = [
-  { id: "drive", name: "Въезд", recording: true, lastSegmentMs: NOW - 30_000, restarts: 2 },
+  { id: "drive", name: "Въезд", recording: true, lastSegmentMs: NOW - 30_000, restarts: 2, hasAudio: false },
 ];
 
 /** Поддельный ffmpeg: всегда отдаёт «картинку» и запоминает, чем его звали. */

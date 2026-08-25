@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Hls from "hls.js";
 import { playlistUrl } from "@/lib/cctv";
+import { useT } from "@/lib/i18n";
 
 /**
  * Плеер архива.
@@ -23,6 +24,7 @@ export default function ArchivePlayer({
   locale,
   expanded,
   onToggleSize,
+  hasAudio = false,
 }: {
   cam: string;
   /** С какого момента играть: начало суток или точка, куда ткнули на ленте. */
@@ -37,13 +39,19 @@ export default function ArchivePlayer({
    *  плеер, и своё состояние он потерял бы на каждом переходе. */
   expanded?: boolean;
   onToggleSize?: () => void;
+  /** Есть ли у камеры звук: без него кнопка громкости — обманка. */
+  hasAudio?: boolean;
 }) {
+  const t = useT();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
   // Реальное время текущего кадра: шкала самого плеера всегда начинается с нуля,
   // потому что после каждой перемотки он получает новый плейлист.
   const [nowMs, setNowMs] = useState(startMs);
+  // Заглушено по умолчанию — как и в живом просмотре: архив часто открывают,
+  // чтобы просто посмотреть, а не слушать.
+  const [muted, setMuted] = useState(true);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -141,13 +149,22 @@ export default function ArchivePlayer({
 
           Клик по картинке увеличивает её, а не ставит на паузу: пауза живёт на
           кнопке в баре, и делить один жест на два действия незачем. */}
-      <video ref={videoRef} playsInline className="cctv-archive-video" onClick={onToggleSize} />
+      <video ref={videoRef} muted={muted} playsInline className="cctv-archive-video" onClick={onToggleSize} />
       <div className="cctv-player-bar">
         <button onClick={() => jump(-60)} aria-label="-1 min">−1м</button>
         <button onClick={() => jump(-10)} aria-label="-10 s">−10с</button>
         <button onClick={toggle} className="cctv-play">{playing ? "❚❚" : "▶"}</button>
         <button onClick={() => jump(10)} aria-label="+10 s">+10с</button>
         <button onClick={() => jump(60)} aria-label="+1 min">+1м</button>
+        {hasAudio && (
+          <button
+            className="cctv-sound"
+            aria-label={muted ? t.cctvUnmute : t.cctvMute}
+            onClick={() => setMuted((m) => !m)}
+          >
+            {muted ? "🔇" : "🔊"}
+          </button>
+        )}
         <span className="cctv-clock">
           {new Date(nowMs).toLocaleTimeString(locale)}
         </span>

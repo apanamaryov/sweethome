@@ -41,6 +41,10 @@ export function recordArgs(opts: {
 /**
  * Команда живого просмотра: фрагменты идут в stdout по 0.5 с, чтобы задержка не
  * равнялась интервалу опорных кадров (~2.9 с у этих камер).
+ *
+ * Звук копируется вместе с видео (у кого он есть — две камеры из трёх). Что
+ * именно оказалось в потоке, определяется по заголовку в live/session.ts, а не
+ * настройкой: объявить браузеру несуществующий кодек хуже, чем промолчать.
  */
 export function liveArgs(opts: { cam: CameraConfig; fragMs?: number }): string[] {
   const fragUs = (opts.fragMs ?? 500) * 1000;
@@ -49,7 +53,6 @@ export function liveArgs(opts: { cam: CameraConfig; fragMs?: number }): string[]
     "-rtsp_transport", "tcp",
     "-use_wallclock_as_timestamps", "1",
     "-i", rtspUrl(opts.cam),
-    "-an",
     "-c", "copy",
     "-f", "mp4",
     "-movflags", "+frag_keyframe+empty_moov+default_base_moof",

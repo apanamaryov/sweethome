@@ -114,17 +114,22 @@ function fakeWs() {
 
 function build(env: NodeJS.ProcessEnv, probeOk = true) {
   const db = new CctvDb(":memory:");
+  const liveChildren: FakeLiveChild[] = [];
   const mod = createCctvModule("/data", {
     cfg: loadCctvConfig("/data", env),
     db,
     spawn: () => new FakeChild(),
-    liveSpawn: () => new FakeLiveChild(),
+    liveSpawn: () => {
+      const c = new FakeLiveChild();
+      liveChildren.push(c);
+      return c;
+    },
     timers: noopTimers,
     fs: fakeFs,
     probe: async () => (probeOk ? { ok: true, version: "7.0.2" } : { ok: false, error: "ENOENT" }),
     post: noopPost,
   });
-  return { mod, db };
+  return { mod, db, liveChildren };
 }
 
 describe("createCctvModule", () => {
@@ -187,7 +192,7 @@ describe("createCctvModule", () => {
   });
 
   it("WS: подписка на камеру и отключение не бросают исключений", async () => {
-    const { mod, db } = build({ CCTV_CAMERAS: "drive=10.0.0.1" });
+    const { mod, db, liveChildren } = build({ CCTV_CAMERAS: "drive=10.0.0.1" });
     await mod.start();
 
     const sent: unknown[] = [];
@@ -204,6 +209,10 @@ describe("createCctvModule", () => {
 
     mod.ws!.onConnection(ws as never);
     msgCb!(Buffer.from(JSON.stringify({ type: "subscribe", cam: "drive" })));
+    // Готовность и заголовок уходят вместе с первым фрагментом: до него неизвестно,
+    // какие в потоке дорожки, а ошибка в объявленных кодеках не даёт открыть плеер.
+    expect(sent.length).toBe(0);
+    liveChildren[0].emit("ftyp...mp4a");
     expect(sent.length).toBeGreaterThan(0);
 
     msgCb!(Buffer.from("не json"));      // мусор не должен ронять соединение
@@ -406,4 +415,32 @@ describe("createCctvModule", () => {
     await mod.stop();
     db.close();
   });
+
+  it("объявляет звуковой кодек только тем камерам, у которых звук есть", async () => {
+    // Объявить mp4a там, где его нет, — значит не дать открыться MediaSource:
+    // зритель увидит пустой прямоугольник вместо картинки.
+    const withAudio = build({ CCTV_CAMERAS: "drive=10.0.0.1" });
+    await withAudio.mod.start();
+    const a = fakeWs();
+    withAudio.mod.ws!.onConnection(a.ws as never);
+    a.message({ type: "subscribe", cam: "drive" });
+    withAudio.liveChildren[0].emit("ftyp....moov....mp4a....");
+    const readyA = a.sent.filter((x): x is string => typeof x === "string").map((x) => JSON.parse(x))[0];
+    expect(readyA).toMatchObject({ type: "ready", cam: "drive" });
+    expect(readyA.mime).toContain("mp4a.40.2");
+    await withAudio.mod.stop();
+    withAudio.db.close();
+
+    const noAudio = build({ CCTV_CAMERAS: "terrace=10.0.0.2" });
+    await noAudio.mod.start();
+    const b = fakeWs();
+    noAudio.mod.ws!.onConnection(b.ws as never);
+    b.message({ type: "subscribe", cam: "terrace" });
+    noAudio.liveChildren[0].emit("ftyp....moov....avc1....");
+    const readyB = b.sent.filter((x): x is string => typeof x === "string").map((x) => JSON.parse(x))[0];
+    expect(readyB.mime).toBe('video/mp4; codecs="avc1.4d0032"');
+    await noAudio.mod.stop();
+    noAudio.db.close();
+  });
+
 });
