@@ -29,6 +29,7 @@ DRYER_TRANSPORT=mqtt
 DRYER_MQTT_URL=mqtt://127.0.0.1:1883
 DRYER_MQTT_USER=dryer-service
 DRYER_MQTT_PASS=<пароль>
+DRYER_MQTT_PREFIX=dryer
 ```
 
 ## Диагностика
