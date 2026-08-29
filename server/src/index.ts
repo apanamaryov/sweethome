@@ -3,6 +3,7 @@ import { createServer } from "./server";
 import { ModuleHost } from "./host";
 import { createInverterModule } from "@sweethome/inverter";
 import { createCctvModule } from "@sweethome/cctv";
+import { createDryerModule } from "@sweethome/dryer";
 
 process.on("unhandledRejection", (reason) => {
   console.error("[sweethome] unhandledRejection:", reason);
@@ -13,7 +14,11 @@ process.on("uncaughtException", (err) => {
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
-  const host = new ModuleHost([createInverterModule(cfg.dataDir), createCctvModule(cfg.dataDir)]);
+  const host = new ModuleHost([
+    createInverterModule(cfg.dataDir),
+    createCctvModule(cfg.dataDir),
+    createDryerModule(cfg.dataDir),
+  ]);
 
   const server = createServer(host, cfg);
   server.on("error", (e) => {

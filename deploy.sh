@@ -46,6 +46,8 @@ rsync -az --relative --delete -e "$RSYNC_SSH" \
   modules/inverter/package.json modules/inverter/dist \
   packages/cctv-shared/package.json packages/cctv-shared/dist \
   modules/cctv/package.json modules/cctv/dist \
+  packages/dryer-shared/package.json packages/dryer-shared/dist \
+  modules/dryer/package.json modules/dryer/dist \
   server/package.json server/dist server/systemd server/.env.example \
   web/package.json web/out \
   "$PI_HOST:$PI_DIR/"
@@ -58,8 +60,11 @@ if ! command -v ffmpeg >/dev/null; then
   echo "FAIL: на Pi нет ffmpeg — модуль камер работать не будет: sudo apt install ffmpeg" >&2
   exit 1
 fi
+if ! systemctl is-active --quiet mosquitto; then
+  echo "WARN: на Pi не активен mosquitto — модуль сушилки покажет 'broker' в health (docs/dryer/README.md)" >&2
+fi
 rm -rf shared mcp   # каталоги старой раскладки, если остались
-npm ci -w server -w modules/inverter -w packages/inverter-mcp -w modules/cctv -w packages/cctv-shared -w packages/home-mcp --omit=dev
+npm ci -w server -w modules/inverter -w packages/inverter-mcp -w modules/cctv -w packages/cctv-shared -w packages/home-mcp -w modules/dryer -w packages/dryer-shared --omit=dev
 sudo cp server/systemd/sweethome.service /etc/systemd/system/sweethome.service
 sudo systemctl daemon-reload
 sudo systemctl enable sweethome >/dev/null 2>&1 || true

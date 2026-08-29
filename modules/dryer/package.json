@@ -1,31 +1,24 @@
 {
-  "name": "@sweethome/server",
+  "name": "@sweethome/dryer",
   "version": "1.0.0",
   "private": true,
-  "description": "Local monitoring and control for an ISolar/EASUN SMG II hybrid inverter (SK-5500P-48L) over Modbus RTU / RS232. No cloud.",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "INVERTER_TRANSPORT=mock DRYER_TRANSPORT=mock tsx watch src/index.ts",
-    "clean": "rm -rf dist",
+    "build": "tsc -p tsconfig.json",
     "check": "jest",
     "test": "jest",
     "test:coverage": "jest --coverage"
   },
-  "engines": {
-    "node": ">=24"
-  },
   "dependencies": {
-    "@sweethome/inverter": "1.0.0",
-    "@sweethome/inverter-shared": "1.0.0",
-    "@sweethome/cctv": "1.0.0",
-    "@sweethome/dryer": "1.0.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@sweethome/dryer-shared": "1.0.0",
     "@sweethome/home-mcp": "1.0.0",
     "@sweethome/shared": "1.0.0",
     "express": "^4.19.2",
-    "ws": "^8.18.0"
+    "mqtt": "^5.10.1",
+    "ws": "^8.18.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
@@ -36,8 +29,8 @@
     "jest": "^29.7.0",
     "supertest": "^7.2.2",
     "ts-jest": "^29.4.12",
-    "tsx": "^4.19.0",
     "typescript": "^5.4.5"
   },
+  "engines": { "node": ">=24" },
   "license": "MIT"
 }

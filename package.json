@@ -3,11 +3,11 @@
   "private": true,
   "workspaces": ["packages/*", "modules/*", "server", "web"],
   "scripts": {
-    "build": "npm run build -w @sweethome/shared && npm run build -w @sweethome/home-mcp && npm run build -w @sweethome/inverter-shared && npm run build -w @sweethome/inverter-mcp && npm run build -w @sweethome/inverter && npm run build -w @sweethome/cctv-shared && npm run build -w @sweethome/cctv && npm run build -w @sweethome/server && npm run build -w @sweethome/web",
-    "check": "npm run check -w @sweethome/home-mcp && npm run check -w @sweethome/inverter-mcp && npm run check -w @sweethome/inverter && npm run check -w @sweethome/cctv && npm run check -w @sweethome/server && npm run typecheck -w @sweethome/web",
+    "build": "npm run build -w @sweethome/shared && npm run build -w @sweethome/home-mcp && npm run build -w @sweethome/inverter-shared && npm run build -w @sweethome/inverter-mcp && npm run build -w @sweethome/inverter && npm run build -w @sweethome/cctv-shared && npm run build -w @sweethome/cctv && npm run build -w @sweethome/dryer-shared && npm run build -w @sweethome/dryer && npm run build -w @sweethome/server && npm run build -w @sweethome/web",
+    "check": "npm run check -w @sweethome/home-mcp && npm run check -w @sweethome/inverter-mcp && npm run check -w @sweethome/inverter && npm run check -w @sweethome/cctv && npm run check -w @sweethome/dryer && npm run check -w @sweethome/server && npm run typecheck -w @sweethome/web",
     "dev": "concurrently -k -n server,web -c blue,magenta \"npm run dev -w @sweethome/server\" \"npm run dev -w @sweethome/web\"",
-    "test": "npm test -w @sweethome/home-mcp && npm test -w @sweethome/inverter-mcp && npm test -w @sweethome/inverter && npm test -w @sweethome/cctv && npm test -w @sweethome/server && npm test -w @sweethome/web",
-    "test:coverage": "npm run test:coverage -w @sweethome/home-mcp && npm run test:coverage -w @sweethome/inverter-mcp && npm run test:coverage -w @sweethome/inverter && npm run test:coverage -w @sweethome/cctv && npm run test:coverage -w @sweethome/server && npm run test:coverage -w @sweethome/web"
+    "test": "npm test -w @sweethome/home-mcp && npm test -w @sweethome/inverter-mcp && npm test -w @sweethome/inverter && npm test -w @sweethome/cctv && npm test -w @sweethome/dryer && npm test -w @sweethome/server && npm test -w @sweethome/web",
+    "test:coverage": "npm run test:coverage -w @sweethome/home-mcp && npm run test:coverage -w @sweethome/inverter-mcp && npm run test:coverage -w @sweethome/inverter && npm run test:coverage -w @sweethome/cctv && npm run test:coverage -w @sweethome/dryer && npm run test:coverage -w @sweethome/server && npm run test:coverage -w @sweethome/web"
   },
   "devDependencies": { "concurrently": "^9.1.0" },
   "engines": { "node": ">=24" }

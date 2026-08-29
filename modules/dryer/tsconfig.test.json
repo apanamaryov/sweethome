@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "rootDir": "../..", "noEmit": true },
+  "include": ["src/**/*.ts", "../../packages/dryer-shared/src/**/*.ts", "../../packages/shared/src/**/*.ts", "../../packages/home-mcp/src/**/*.ts"]
+}
