@@ -168,4 +168,16 @@ describe("sendJson", () => {
     expect(calls[1][1]).toMatchObject({ method: "DELETE" });
     expect(calls[1][1].body).toBeUndefined();
   });
+
+  it("GET без тела и заголовков", async () => {
+    const calls: [string, RequestInit][] = [];
+    global.fetch = jest.fn((url: string, init: RequestInit) => {
+      calls.push([url, init]);
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({}) } as Response);
+    }) as unknown as typeof fetch;
+    await sendJson("GET", "/api/x");
+    expect(calls[0][1]).toMatchObject({ method: "GET" });
+    expect(calls[0][1].body).toBeUndefined();
+    expect(calls[0][1].headers).toBeUndefined();
+  });
 });

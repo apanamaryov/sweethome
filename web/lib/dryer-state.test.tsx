@@ -24,10 +24,10 @@ describe("DryerProvider", () => {
     expect(screen.getByTestId("probe")).toHaveTextContent("drying");
   });
 
-  it("ошибка HTTP показывается текстом, а не нулями", async () => {
+  it("ошибка HTTP показывается текстом сервера, а не кодом", async () => {
     global.fetch = jest.fn(() => Promise.resolve(jsonResponse(500, { ok: false, error: "boom" }))) as unknown as typeof fetch;
     render(<DryerProvider><Probe /></DryerProvider>);
     await act(() => flushMicrotasks());
-    expect(screen.getByTestId("probe")).toHaveTextContent("HTTP 500");
+    expect(screen.getByTestId("probe")).toHaveTextContent("boom");
   });
 });

@@ -2,7 +2,7 @@ import type uPlot from "uplot";
 import type {
   DryerSettings, DryerSnapshot, EndReason, NodeSnapshot, Preset, PresetInput, Run, Sample, SettingsPatch, StartRunRequest,
 } from "@sweethome/dryer-shared";
-import { getJson, sendJson } from "@/lib/api";
+import { sendJson } from "@/lib/api";
 import type { Dict } from "@/lib/i18n/dict";
 
 export type { DryerSnapshot, Preset, Run, Sample };
@@ -18,14 +18,15 @@ async function unwrap<T>(res: Response): Promise<T> {
   throw new Error(msg);
 }
 
-export const fetchDryerState = () => getJson<DryerSnapshot>("/api/dryer/state");
-export const fetchPresets = async () => (await getJson<{ presets: Preset[] }>("/api/dryer/presets")).presets;
+export const fetchDryerState = async () => unwrap<DryerSnapshot>(await sendJson("GET", "/api/dryer/state"));
+export const fetchPresets = async () => (await unwrap<{ presets: Preset[] }>(await sendJson("GET", "/api/dryer/presets"))).presets;
 export const startRun = async (req: StartRunRequest) => unwrap<DryerSnapshot>(await sendJson("POST", "/api/dryer/runs", req));
 export const stopRun = async () => unwrap<DryerSnapshot>(await sendJson("POST", "/api/dryer/runs/current/stop"));
 export const fetchRuns = async (fromMs: number, toMs: number) =>
-  (await getJson<{ runs: Run[] }>(`/api/dryer/runs?from=${fromMs}&to=${toMs}`)).runs;
-export const fetchRunSamples = (runId: number) => getJson<{ run: Run; samples: Sample[] }>(`/api/dryer/runs/${runId}/samples`);
-export const fetchSettings = async () => (await getJson<{ settings: DryerSettings }>("/api/dryer/settings")).settings;
+  (await unwrap<{ runs: Run[] }>(await sendJson("GET", `/api/dryer/runs?from=${fromMs}&to=${toMs}`))).runs;
+export const fetchRunSamples = async (runId: number) =>
+  unwrap<{ run: Run; samples: Sample[] }>(await sendJson("GET", `/api/dryer/runs/${runId}/samples`));
+export const fetchSettings = async () => (await unwrap<{ settings: DryerSettings }>(await sendJson("GET", "/api/dryer/settings"))).settings;
 export const saveSettings = async (patch: SettingsPatch) =>
   (await unwrap<{ settings: DryerSettings }>(await sendJson("PUT", "/api/dryer/settings", patch))).settings;
 export const createPreset = async (p: PresetInput) => (await unwrap<{ preset: Preset }>(await sendJson("POST", "/api/dryer/presets", p))).preset;

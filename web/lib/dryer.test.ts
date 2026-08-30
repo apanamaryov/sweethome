@@ -1,5 +1,5 @@
 import { DICTS } from "@/lib/i18n/dict";
-import { chartData, endReasonLabel, faultLabel, fmtHm, startRun, stateLabel, stateTone } from "./dryer";
+import { chartData, endReasonLabel, faultLabel, fetchDryerState, fmtHm, startRun, stateLabel, stateTone } from "./dryer";
 import { buildNode } from "@/test-utils/dryer";
 
 const t = DICTS.ru;
@@ -53,5 +53,14 @@ describe("startRun", () => {
       Promise.resolve({ ok: false, status: 409, json: async () => ({ ok: false, code: "already_running", error: "Сушка уже идёт" }) } as Response)
     ) as unknown as typeof fetch;
     await expect(startRun({ presetId: 1 })).rejects.toThrow("Сушка уже идёт");
+  });
+});
+
+describe("fetchDryerState", () => {
+  it("бросает серверный текст ошибки, а не HTTP <status>", async () => {
+    global.fetch = jest.fn(() =>
+      Promise.resolve({ ok: false, status: 503, json: async () => ({ ok: false, code: "node_offline", error: "Нет связи с сушилкой" }) } as Response)
+    ) as unknown as typeof fetch;
+    await expect(fetchDryerState()).rejects.toThrow("Нет связи с сушилкой");
   });
 });

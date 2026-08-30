@@ -43,7 +43,7 @@ export async function getJson<T>(path: string): Promise<T> {
 }
 
 /** JSON-запрос любым методом. 401 → /login; 403 must_change → /change-password. Не-2xx НЕ бросает — решает вызывающий. */
-export async function sendJson(method: "POST" | "PUT" | "DELETE", path: string, body?: unknown): Promise<Response> {
+export async function sendJson(method: "GET" | "POST" | "PUT" | "DELETE", path: string, body?: unknown): Promise<Response> {
   const res = await fetch(path, {
     method,
     headers: body === undefined ? undefined : { "Content-Type": "application/json" },
