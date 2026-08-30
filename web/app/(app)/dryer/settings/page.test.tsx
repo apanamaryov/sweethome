@@ -7,7 +7,10 @@ const t = DICTS.uk;
 const toast = jest.fn();
 jest.mock("@/lib/toast", () => ({ useToast: () => ({ toast }) }));
 
-const PRESETS = [{ id: 1, name: "Яблоки", group: "fruit", setpoint: 60, maxMinutes: 840, autostop: true, sort: 1 }];
+const PRESETS = [
+  { id: 1, name: "Яблоки", group: "fruit", setpoint: 60, maxMinutes: 840, autostop: true, sort: 1 },
+  { id: 3, name: "Морковь", group: "vegetable", setpoint: 55, maxMinutes: 600, autostop: true, sort: 2 },
+];
 const calls: { url: string; init?: RequestInit }[] = [];
 
 beforeEach(() => {
@@ -67,5 +70,33 @@ describe("настройки сушилки", () => {
     await waitFor(() => expect(calls.some((c) => c.url.endsWith("/presets") && c.init?.method === "POST")).toBe(true));
     fireEvent.click(row.querySelector("button.btn-danger")!);
     await waitFor(() => expect(calls.some((c) => c.url.includes("/presets/1") && c.init?.method === "DELETE")).toBe(true));
+  });
+
+  it("сохранение одного пресета не сбрасывает правки другого", async () => {
+    render(<SettingsPage />);
+    await act(async () => {});
+    const carrotRow = screen.getByDisplayValue("Морковь").closest(".dryer-form-row")!;
+    const carrotSetpoint = carrotRow.querySelector('input[name="setpoint"]') as HTMLInputElement;
+    fireEvent.change(carrotSetpoint, { target: { value: "50" } });
+    const appleRow = screen.getByDisplayValue("Яблоки").closest(".dryer-form-row")!;
+    fireEvent.click(appleRow.querySelector("button.apply")!);
+    await waitFor(() => expect(calls.some((c) => c.url.includes("/presets/1") && c.init?.method === "PUT")).toBe(true));
+    expect(carrotSetpoint.value).toBe("50");
+    const putIndex = calls.findIndex((c) => c.url.includes("/presets/1") && c.init?.method === "PUT");
+    const readsAfterPut = calls.slice(putIndex + 1).filter((c) => c.url.endsWith("/presets") && (!c.init?.method || c.init.method === "GET"));
+    expect(readsAfterPut.length).toBe(0);
+  });
+
+  it("ошибка загрузки показывается текстом", async () => {
+    global.fetch = jest.fn((url: string, init?: RequestInit) => {
+      const isRead = !init?.method || init.method === "GET";
+      if (url.endsWith("/settings") && isRead) return Promise.resolve({ ok: false, status: 500, json: async () => ({ ok: false, error: "boom" }) } as Response);
+      if (url.endsWith("/presets") && isRead) return Promise.resolve({ ok: true, status: 200, json: async () => ({ presets: PRESETS }) } as Response);
+      return Promise.resolve({ ok: false, status: 404, json: async () => ({}) } as Response);
+    }) as unknown as typeof fetch;
+    render(<SettingsPage />);
+    await act(async () => {});
+    expect(screen.getByText(/boom/)).toHaveClass("banner");
+    expect(screen.queryByText(t.connecting)).not.toBeInTheDocument();
   });
 });

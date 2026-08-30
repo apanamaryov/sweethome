@@ -27,11 +27,15 @@ export default function SettingsForm() {
   const { toast } = useToast();
   const [saved, setSaved] = useState<DryerSettings | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchSettings().then((s) => { setSaved(s); setDraft(Object.fromEntries(FIELDS.map((f) => [f.key, String(read(s, f))]))); }).catch(() => {});
+    fetchSettings()
+      .then((s) => { setSaved(s); setDraft(Object.fromEntries(FIELDS.map((f) => [f.key, String(read(s, f))]))); })
+      .catch((e) => setLoadError((e as Error).message));
   }, []);
 
+  if (loadError) return <p className="banner">{`${t.dryerError}: ${loadError}`}</p>;
   if (!saved) return <p className="muted">{t.connecting}</p>;
 
   const submit = async () => {

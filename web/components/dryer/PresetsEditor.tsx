@@ -18,21 +18,24 @@ export default function PresetsEditor() {
   const t = useT();
   const { toast } = useToast();
   const [rows, setRows] = useState<Draft[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const reload = () => fetchPresets().then((ps) => setRows(ps.map(toDraft))).catch(() => setRows([]));
-  useEffect(() => { reload(); }, []);
+  useEffect(() => {
+    fetchPresets().then((ps) => setRows(ps.map(toDraft))).catch((e) => setLoadError((e as Error).message));
+  }, []);
 
+  if (loadError) return <p className="banner">{`${t.dryerError}: ${loadError}`}</p>;
   if (!rows) return <p className="muted">{t.connecting}</p>;
 
   const patch = (i: number, p: Partial<Draft>) => setRows((r) => r!.map((row, j) => (j === i ? { ...row, ...p } : row)));
 
-  const save = async (row: Draft) => {
+  /** Успешное сохранение обновляет ТОЛЬКО эту строку (по индексу) — правки в других строках не теряются. */
+  const save = async (row: Draft, i: number) => {
     const input: PresetInput = { name: row.name, group: row.group, setpoint: row.setpoint, maxMinutes: Math.round(row.maxHours * 60), autostop: row.autostop };
     try {
-      if (row.id === null) await createPreset(input);
-      else await updatePreset(row.id, input);
+      const saved = row.id === null ? await createPreset(input) : await updatePreset(row.id, input);
+      setRows((r) => r!.map((row, j) => (j === i ? toDraft(saved) : row)));
       toast(t.dryerSaved, "ok");
-      await reload();
     } catch (e) {
       toast((e as Error).message, "bad");
     }
@@ -42,7 +45,7 @@ export default function PresetsEditor() {
     if (row.id === null) return setRows((r) => r!.filter((_, j) => j !== i));
     try {
       await deletePreset(row.id);
-      await reload();
+      setRows((r) => r!.filter((_, j) => j !== i));
     } catch (e) {
       toast((e as Error).message, "bad");
     }
@@ -63,7 +66,7 @@ export default function PresetsEditor() {
           <label>{t.dryerMaxHours}<input name="maxHours" type="number" min={0.5} max={48} step={0.5} value={row.maxHours} onChange={(e) => patch(i, { maxHours: Number(e.target.value) })} /></label>
           <label>{t.dryerAutostop}<input name="autostop" type="checkbox" checked={row.autostop} onChange={(e) => patch(i, { autostop: e.target.checked })} /></label>
           <div className="dryer-actions">
-            <button className="apply" onClick={() => save(row)}>{t.dryerSave}</button>
+            <button className="apply" onClick={() => save(row, i)}>{t.dryerSave}</button>
             <button className="btn-danger" onClick={() => remove(row, i)}>{t.dryerDelete}</button>
           </div>
         </div>
