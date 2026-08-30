@@ -10,6 +10,9 @@ behind a single web UI, shared authentication and a single deploy.
   over Modbus RTU. See [modules/inverter/README.md](modules/inverter/README.md).
 - **cctv** — round-the-clock recording, live view and seekable archive for IP
   cameras, with no vendor cloud. See [modules/cctv/README.md](modules/cctv/README.md).
+- **dryer** — a food dehydrator with presets, humidity-driven autostop and run
+  history, controlled through an ESP32/ESPHome node over MQTT. See
+  [modules/dryer/README.md](modules/dryer/README.md).
 - **heating** — designed, not yet implemented. See [docs/heating/SPEC.md](docs/heating/SPEC.md).
 
 ## For LLM agents (MCP)

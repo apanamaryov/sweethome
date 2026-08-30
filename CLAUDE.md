@@ -15,8 +15,12 @@ inverter over Modbus RTU (see `modules/inverter/CLAUDE.md` for its protocol, arc
 and write-safety model). `modules/cctv` — local, cloud-free recording, live view and
 archive playback for two ONVIF/RTSP cameras, with all video going through an external
 `ffmpeg` (see `modules/cctv/CLAUDE.md` for the camera hardware findings and review
-lessons). Heating is designed but not yet implemented — see `docs/heating/SPEC.md`; the
-implementation will land as its own module (`modules/heating`) in a later pass.
+lessons). `modules/dryer` — a food dehydrator built around an ESP32/ESPHome node that
+talks MQTT to a `mosquitto` broker on the Pi, with presets, humidity-driven autostop and
+run history (see `modules/dryer/CLAUDE.md` for the `NodeLink` boundary and its two
+implementations). Heating is designed but not yet implemented — see
+`docs/heating/SPEC.md`; the implementation will land as its own module
+(`modules/heating`) in a later pass.
 
 Unification design (why the repo looks the way it does): `docs/superpowers/specs/2026-08-01-sweethome-unification-design.md`.
 
@@ -25,9 +29,9 @@ Unification design (why the repo looks the way it does): `docs/superpowers/specs
 ```bash
 npm install        # installs dependencies for all workspaces at once (this is a monorepo)
 npm run dev        # server :3000 (forces INVERTER_TRANSPORT=mock) + web :3001 (Next.js HMR, proxies /api to :3000)
-npm run build      # STRICTLY in the order packages/shared → packages/home-mcp → packages/inverter-shared → packages/inverter-mcp → modules/inverter → packages/cctv-shared → modules/cctv → server → web
-npm run check      # jest: home-mcp + inverter-mcp + inverter (protocol/transport/stats/mqtt/store/router/mcp) + cctv (recorder/index/live/router/mcp) + server (auth/host/http/mcp) + typecheck (web)
-npm test           # same as check, but with the web jest suite instead of typecheck: inverter-mcp → inverter → cctv → server → web
+npm run build      # STRICTLY in the order packages/shared → packages/home-mcp → packages/inverter-shared → packages/inverter-mcp → modules/inverter → packages/cctv-shared → modules/cctv → packages/dryer-shared → modules/dryer → server → web
+npm run check      # jest: home-mcp + inverter-mcp + inverter (protocol/transport/stats/mqtt/store/router/mcp) + cctv (recorder/index/live/router/mcp) + dryer (autostop/humidity/runs/node/store/router/mcp) + server (auth/host/http/mcp) + typecheck (web)
+npm test           # same as check, but with the web jest suite instead of typecheck: inverter-mcp → inverter → cctv → dryer → server → web
 ./deploy.sh        # local build → rsync to the Pi → npm ci → systemd restart (incl. enabling autostart) → health check
 ```
 
@@ -55,6 +59,18 @@ npm test           # same as check, but with the web jest suite instead of typec
   over `InMemoryTransport` — and `mcp/snapshot.test.ts` for frame grabbing) and the
   assembled module (`module.test.ts`). No real cameras or disk needed — see `modules/cctv/CLAUDE.md` for the hardware findings behind
   the fixtures.
+- **`npm test -w @sweethome/dryer` runs jest** (14 suites), no broker or hardware needed: pure
+  logic (`src/humidity.test.ts` — the Magnus formula, `src/autostop.test.ts` — threshold,
+  hold window, data gaps, `src/texts.test.ts`, `src/validate.test.ts`), the run lifecycle
+  (`src/runs.test.ts` — start/stop, the physical button, reboot restart and its cutoff,
+  node-lost), the tick (`src/dryer.test.ts`), both `NodeLink` implementations
+  (`src/node/mqtt.test.ts` — topic parsing, freshness, `cfg/*` before `START`, `cmd` never
+  retained, LWT; `src/node/mock.test.ts` — the simulator), the store (`src/store.test.ts` —
+  schema, preset seeding, sample pruning, settings fallback), the REST router
+  (`src/router.test.ts`), the MCP tools (`src/mcp/tools.test.ts`, `src/mcp/provider.test.ts`
+  — through a real MCP client over `InMemoryTransport`) and the assembled module
+  (`src/module.test.ts` — health in different states). See `modules/dryer/CLAUDE.md` for the
+  `NodeLink` boundary that makes this possible.
 - **`npm test -w @sweethome/server` runs jest**: password hashes/roles/auth flows and
   tokens (`src/auth/hash.test.ts`, `db.test.ts`, `service.test.ts`, `tokens.test.ts`), the
   module host (`src/host.test.ts`), config (`src/config.test.ts`), authorization through
@@ -81,8 +97,8 @@ npm test           # same as check, but with the web jest suite instead of typec
 
 An npm-workspaces monorepo, strict build order: `packages/shared` → `packages/home-mcp` → `packages/inverter-shared`
 → `packages/inverter-mcp` → `modules/inverter` → `packages/cctv-shared` → `modules/cctv` →
-`server` → `web`. Each package imports the previous ones from their **built `dist/`**, not
-from source, so the order is not arbitrary.
+`packages/dryer-shared` → `modules/dryer` → `server` → `web`. Each package imports the
+previous ones from their **built `dist/`**, not from source, so the order is not arbitrary.
 
 ### `server/` — the host
 Express (REST under `/api` + serving the `web/out` static files) and WebSocket. The host
@@ -138,21 +154,24 @@ write-safety model.
 - **Routes**: `/` — the home overview (compact per-module status cards linking into each
   module's section); `/inverter/*` — the inverter module's pages; `/cctv` — live view
   (one camera at a time, tabs to switch) and `/cctv/archive` — the archive with its
-  timeline, time field and player; `/users` — user/token management (admin only).
+  timeline, time field and player; `/dryer` — status, controls and the current run's
+  chart, `/dryer/history` — past runs with their own chart, `/dryer/settings` (admin) —
+  presets and autostop/exhaust tuning; `/users` — user/token management (admin only).
   `app/login/` and `app/change-password/` are open. The shared app shell — top navigation,
   session, logout, toasts — lives in `app/(app)/layout.tsx` + `web/lib/session.tsx`
-  (`GET /api/me`); it grows a nav entry per module ("Overview", "Inverter", "CCTV", plus
-  "Users" for admins).
+  (`GET /api/me`); it grows a nav entry per module ("Overview", "Inverter", "CCTV",
+  "Dryer", plus "Users" for admins).
 - **Video playback lives in `web/components/cctv/`** and does not use the browser's own
   player controls: what the device forced on those two components is written up in
   `modules/cctv/CLAUDE.md` ("Browser side"). Read it before touching them — the
   non-obvious parts are load-bearing, not stylistic.
-- **Role-gated pages** — currently `/inverter/settings`, `/inverter/diagnostics` and
-  `/users` — are enforced both on the server (`ADMIN_PAGES` in `src/server.ts`: redirects
-  a `viewer` to `/`) and client-side (`ADMIN_PATH_PREFIXES` in
+- **Role-gated pages** — currently `/inverter/settings`, `/inverter/diagnostics`,
+  `/users` and `/dryer/settings` — are enforced both on the server (`ADMIN_PAGES` in
+  `src/server.ts`: redirects a `viewer` to `/`) and client-side (`ADMIN_PATH_PREFIXES` in
   `app/(app)/layout.tsx`, a defense-in-depth guard for SPA navigation). A `viewer` reaches
-  `/`, `/inverter`, `/inverter/stats` and both camera pages — watching and rewinding is
-  deliberately not an admin privilege (spec §13).
+  `/`, `/inverter`, `/inverter/stats`, both camera pages, `/dryer` and `/dryer/history` —
+  watching and rewinding is deliberately not an admin privilege (spec §13); starting,
+  stopping and editing presets is (dryer spec §8).
 - **i18n** (`web/lib/i18n/`): a typed UA/RU/EN dictionary shared by the whole app. The
   initial language is hard-coded to `uk` to match the SSG prerender (otherwise hydration
   mismatches); the real choice is picked up from `localStorage` after mount.
@@ -190,11 +209,12 @@ write-safety model.
 
 - The build is **entirely local**; the Pi only runs
   `npm ci -w server -w modules/inverter -w packages/inverter-mcp -w modules/cctv
-  -w packages/cctv-shared -w packages/home-mcp --omit=dev` + a systemd restart. The Pi
-  compiles nothing. `rsync` uploads `packages/shared/dist`, `packages/home-mcp/dist`,
-  `packages/inverter-shared/dist`, `packages/inverter-mcp/dist`, `modules/inverter/dist`,
-  `packages/cctv-shared/dist`, `modules/cctv/dist`, `server/dist`, `web/out` and the
-  workspace manifests.
+  -w packages/cctv-shared -w packages/home-mcp -w modules/dryer -w packages/dryer-shared
+  --omit=dev` + a systemd restart. The Pi compiles nothing. `rsync` uploads
+  `packages/shared/dist`, `packages/home-mcp/dist`, `packages/inverter-shared/dist`,
+  `packages/inverter-mcp/dist`, `modules/inverter/dist`, `packages/cctv-shared/dist`,
+  `modules/cctv/dist`, `packages/dryer-shared/dist`, `modules/dryer/dist`, `server/dist`,
+  `web/out` and the workspace manifests.
 - **`modules/cctv` needs two things on the Pi that nothing else in this project does**: an
   external **`ffmpeg`** binary (`sudo apt install ffmpeg` — Node alone cannot decode what
   these cameras send; see `modules/cctv/CLAUDE.md` for why) and a mounted **`/mnt/cctv`**, a
@@ -203,15 +223,26 @@ write-safety model.
   restarting the service and fails with a clear message if it is missing; it does not check
   the mount itself — a missing `/mnt/cctv` shows up as "storage unavailable" in `health()`
   and the UI rather than as a failed deploy (spec §16).
+- **`modules/dryer` needs a `mosquitto` broker on the Pi** — a one-time manual prerequisite
+  like `ffmpeg` above (`sudo apt install mosquitto mosquitto-clients`, then the listener,
+  ACL and user setup in `docs/dryer/README.md`). Unlike the `ffmpeg` check, `deploy.sh`
+  only **warns** if `mosquitto` isn't active (`systemctl is-active mosquitto`) and lets the
+  deploy continue: the inverter and cctv modules don't need a broker, so a missing one
+  should not block their deploy — the dryer module itself just reports `ok: false` with
+  `details.broker` in its health until mosquitto is installed. `DRYER_*` keys
+  (`DRYER_ENABLED`, `DRYER_TRANSPORT`, `DRYER_MQTT_URL`, `DRYER_MQTT_USER`,
+  `DRYER_MQTT_PASS`, `DRYER_MQTT_PREFIX`) go in the Pi's `server/.env` alongside the
+  inverter's.
 - The Pi directory is `/home/pi/sweethome` (renamed from `/home/pi/inverter-monitor`);
   `deploy.sh` performs that one-time move itself the first time it runs against an
   unmigrated Pi (stops the old `inverter-monitor` unit, moves the directory, splits the
   data layout — see below — and removes the old unit file). Nothing to do by hand.
 - **Data layout**: `server/data/auth.db` is system-level (shared by every module);
   module-owned data lives one directory per module id — the inverter module's is
-  `server/data/inverter/{stats.db,baseline.json}`. `auth.db`/`stats.db` are created
-  automatically on first start; `deploy.sh` does not touch the `data/` directory except
-  for the one-time migration above.
+  `server/data/inverter/{stats.db,baseline.json}`, the dryer module's is
+  `server/data/dryer/dryer.db`. `auth.db`/`stats.db`/`dryer.db` are created automatically
+  on first start; `deploy.sh` does not touch the `data/` directory except for the one-time
+  migration above.
 - The systemd unit is `sweethome.service` (`server/systemd/sweethome.service`,
   `WorkingDirectory=…/server`).
 - **`deploy.sh` enables autostart itself** (`systemctl enable`) as part of every deploy —
