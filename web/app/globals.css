@@ -677,6 +677,30 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
 }
 .chart-legend .lg-item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .chart-legend .lg-swatch { width: 11px; height: 11px; flex: 0 0 auto; border: 1px solid #0002; }
+
+/* --- dryer --- */
+.banner.amber { border-color: var(--sun-deep); color: var(--sun-deep); }
+.banner.brick { border-color: var(--brick-deep); color: var(--brick-deep); }
+.dryer-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.dryer-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin-top: 12px; }
+.dryer-metric .cap { display: block; }
+.dryer-groups { display: flex; flex-direction: column; gap: 10px; margin: 10px 0; }
+.dryer-group-title { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-soft); }
+.dryer-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.dryer-chips button { font: inherit; padding: 6px 10px; border: 1px solid var(--ink-faint); background: transparent; cursor: pointer; }
+.dryer-chips button.active { background: var(--ink); color: var(--paper-0); border-color: var(--ink); }
+.dryer-chips button:disabled { cursor: not-allowed; opacity: .6; }
+.dryer-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+.dryer-custom { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 10px; }
+.dryer-custom label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ink-soft); }
+.dryer-events { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.dryer-events li { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.dryer-events time { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); }
+.dryer-table { width: 100%; border-collapse: collapse; }
+.dryer-table th, .dryer-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--ink-faint); }
+.dryer-table tr.clickable { cursor: pointer; }
+.dryer-form-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto auto; gap: 8px; align-items: end; margin-bottom: 8px; }
+@media (max-width: 640px) { .dryer-form-row { grid-template-columns: 1fr 1fr; } }
 .chart-legend .lg-val { font-weight: 700; font-variant-numeric: tabular-nums; }
 
 /* Таблицы (8 колонок у суточных) шире телефона — скроллятся ВНУТРИ своей
