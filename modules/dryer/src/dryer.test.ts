@@ -111,4 +111,44 @@ describe("Dryer", () => {
     dryer.tick(); // первый тик после старта — чистка
     expect(store.excessSeries(0, timers.now - 399 * 86_400_000)).toHaveLength(0);
   });
+
+  it("подписчик, бросающий исключение, не мешает остальным и следующему тику", async () => {
+    const { dryer, timers } = make();
+    const got: number[] = [];
+    dryer.subscribe(() => {
+      throw new Error("boom");
+    });
+    dryer.subscribe((s) => got.push(s.now));
+    await timers.advance(20_000);
+    expect(got).toHaveLength(2);
+  });
+
+  it("ошибка внутри тика по таймеру логируется, интервал живёт", async () => {
+    const timers = new FakeTimers();
+    timers.now = Date.UTC(2026, 7, 30, 12, 0, 0);
+    const now = () => timers.now;
+    const store = new DryerStore(":memory:");
+    const link = new MockNodeLink({ now, timers, excessTauMs: 5 * 60_000 });
+    const cfg = loadDryerConfig("/data", { DRYER_TRANSPORT: "mock", DRYER_TICK_MS: "10000" });
+    const logs: string[] = [];
+    const dryer = new Dryer({ cfg, store, link, timers, now, log: (s) => logs.push(s) });
+    dryer.start();
+
+    // Первый вызов view() после старта падает — имитируем сбой внутри тика.
+    let calls = 0;
+    const originalView = link.view.bind(link);
+    link.view = ((n: number, staleMs: number) => {
+      calls++;
+      if (calls === 1) throw new Error("view boom");
+      return originalView(n, staleMs);
+    }) as typeof link.view;
+
+    const got: number[] = [];
+    dryer.subscribe((s) => got.push(s.now));
+
+    await timers.advance(20_000);
+
+    expect(logs.some((m) => m.startsWith("tick failed:"))).toBe(true);
+    expect(got).toHaveLength(1);
+  });
 });

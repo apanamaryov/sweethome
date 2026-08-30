@@ -47,7 +47,15 @@ export class Dryer {
     const seeded = this.d.store.seedPresetsIfEmpty();
     if (seeded) this.log(`seeded ${seeded} presets`);
     this.d.link.start();
-    this.handle = this.d.timers.setInterval(() => this.tick(), this.d.cfg.tickMs);
+    // Сбой одного тика не должен убивать интервал (и с ним весь процесс — ModuleHost
+    // изолирует только start()/stop()): логируем и ждём следующего срабатывания.
+    this.handle = this.d.timers.setInterval(() => {
+      try {
+        this.tick();
+      } catch (e) {
+        this.log(`tick failed: ${(e as Error).message}`);
+      }
+    }, this.d.cfg.tickMs);
   }
 
   stop(): void {
@@ -102,7 +110,15 @@ export class Dryer {
     }
 
     const snap = this.snapshot(now);
-    for (const cb of this.subs) cb(snap);
+    // Исключение одного подписчика (например, ws.send на закрывающемся сокете) не
+    // должно мешать остальным подписчикам получить снапшот, ни самому тику завершиться.
+    for (const cb of this.subs) {
+      try {
+        cb(snap);
+      } catch (e) {
+        this.log(`subscriber failed: ${(e as Error).message}`);
+      }
+    }
     return snap;
   }
 
