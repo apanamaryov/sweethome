@@ -1,5 +1,6 @@
 import { DEFAULT_SETTINGS } from "@sweethome/dryer-shared";
 import { loadDryerConfig } from "./config";
+import { excessHumidity } from "./humidity";
 import { Dryer } from "./dryer";
 import { MockNodeLink } from "./node/mock";
 import { DryerStore } from "./store";
@@ -116,6 +117,31 @@ describe("Dryer", () => {
     const all = store.listRuns(0, timers.now + 1);
     expect(all).toHaveLength(1);
     expect(all[0].endReason).toBe("stopped");
+  });
+
+  it("избыток: нода его не прислала — считаем сами из температур и влажности", async () => {
+    const { store, dryer, link, timers } = make();
+    const real = link.view.bind(link);
+    const chamber = { temp: 58, rh: 42 };
+    const ambient = { temp: 22, rh: 50 };
+    link.view = ((n: number, staleMs: number) => ({
+      ...real(n, staleMs), state: "drying" as const, excess: null, chamber, ambient,
+    })) as typeof link.view;
+    timers.now += 10_000;
+
+    const expected = excessHumidity(chamber, ambient)!;
+    expect(expected).toBeGreaterThan(0);
+    const snap = dryer.tick();
+    expect(snap.node.excess).toBeCloseTo(expected, 6);
+    expect(store.excessSeries(0, timers.now).at(-1)!.excess).toBeCloseTo(expected, 6);
+
+    // Нет входных данных — остаётся null: нулём это подменять нельзя (ноль значит «сухо»).
+    link.view = ((n: number, staleMs: number) => ({
+      ...real(n, staleMs), state: "drying" as const, excess: null, chamber: { temp: null, rh: null }, ambient,
+    })) as typeof link.view;
+    timers.now += 10_000;
+    expect(dryer.tick().node.excess).toBeNull();
+    expect(store.excessSeries(0, timers.now).at(-1)!.excess).toBeNull();
   });
 
   it("health: ok при брокере и ноде на связи; ok:false с причиной при потере ноды", () => {

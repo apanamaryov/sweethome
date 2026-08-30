@@ -1,7 +1,8 @@
-import type { DryerSnapshot, RunSnapshot, Sample, StartRunRequest } from "@sweethome/dryer-shared";
+import type { DryerSnapshot, NodeSnapshot, RunSnapshot, Sample, StartRunRequest } from "@sweethome/dryer-shared";
 import type { ModuleHealth } from "@sweethome/shared/module";
 import { decideAutostop, type AutostopDecision } from "./autostop";
 import type { DryerConfig } from "./config";
+import { excessHumidity } from "./humidity";
 import type { NodeLink } from "./node/link";
 import { RunError, RunManager, type StartParams } from "./runs";
 import type { DryerStore } from "./store";
@@ -72,7 +73,7 @@ export class Dryer {
 
   tick(now: number = this.now()): DryerSnapshot {
     const settings = this.d.store.getSettings();
-    const view = this.d.link.view(now, settings.staleAfterSeconds * 1000);
+    const view = this.withExcess(this.d.link.view(now, settings.staleAfterSeconds * 1000));
 
     for (const e of this.runs.tick(now, view, settings)) {
       this.d.store.addEvent(now, e.kind, e.text, e.runId);
@@ -125,6 +126,15 @@ export class Dryer {
     return snap;
   }
 
+  /**
+   * Избыток влажности: обычно его считает сама нода (`humidity_excess`), но если она его не
+   * прислала (сенсор отвалился, старая прошивка) — считаем той же формулой Магнуса на нашей
+   * стороне (humidity.ts, спека §4). Нет входных данных — остаётся null, а не ноль.
+   */
+  private withExcess(v: NodeSnapshot): NodeSnapshot {
+    return v.excess === null ? { ...v, excess: excessHumidity(v.chamber, v.ambient) } : v;
+  }
+
   private toSample(now: number, v: DryerSnapshot["node"], runId: number | null): Sample {
     return {
       ts: now,
@@ -144,7 +154,7 @@ export class Dryer {
 
   snapshot(now: number = this.now()): DryerSnapshot {
     const settings = this.d.store.getSettings();
-    const node = this.d.link.view(now, settings.staleAfterSeconds * 1000);
+    const node = this.withExcess(this.d.link.view(now, settings.staleAfterSeconds * 1000));
     const run = this.d.store.currentRun();
     let runSnap: RunSnapshot | null = null;
     if (run) {
