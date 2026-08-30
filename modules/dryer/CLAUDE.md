@@ -31,11 +31,14 @@ needs no broker and no hardware — every other test drives the mock or a fake `
 
 `humidity.ts::excessHumidity` (via `humidityAtTemperature`/`saturationVaporPressure`) is
 the *exact same math* as `firmware/dryer/dryer.yaml`'s `humidity_excess` sensor. The node
-computes its own excess to drive the exhaust fan; the module recomputes it independently
-for the chart and for `autostop.ts`'s input series (it does not trust the node's own
-`humidity_excess` reading as the sole source — the module derives it from
-`chamber`/`ambient` temperature and humidity so the two are exercised by the same test
-suite). If you ever touch the coefficients (Alduchov–Eskridge, 1996) or the formula shape,
+computes its own excess to drive the exhaust fan, and that is the value the module normally
+stores and charts: `Dryer` takes `view.excess` as it comes. The TypeScript formula is the
+fallback — when the node did not send an excess at all (`null`: sensor missing, older
+firmware), `Dryer.withExcess()` derives it from `chamber`/`ambient` temperature and humidity
+for both the sample and the snapshot, and leaves `null` when those inputs are missing too
+(zero would mean "the food is dry").
+
+If you ever touch the coefficients (Alduchov–Eskridge, 1996) or the formula shape,
 change both files in the same commit and re-verify `humidity.test.ts`'s table against the
 firmware's own behaviour — a mismatch here means the web chart and the physical fan
 disagree about how wet the batch still is.

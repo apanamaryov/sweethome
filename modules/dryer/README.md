@@ -83,8 +83,8 @@ by zero.
 ## MCP tools
 
 Registered on the shared `/mcp` endpoint (`McpCapable`, like every other module). Read
-tools are always visible; write tools only appear in a session that has the `write`
-scope, and `dryer_upsert_preset` only for the `admin` role.
+tools are always visible; all three write tools appear only in a session that has both the
+`admin` role and the `write` scope (`mcp/tools.ts` — one `canWrite` check for the lot).
 
 | Tool | What it does | Rights |
 |---|---|---|
@@ -92,9 +92,9 @@ scope, and `dryer_upsert_preset` only for the `admin` role.
 | `dryer_list_presets` | presets by group | read |
 | `dryer_get_runs` | runs in a time range: when, preset, duration, how it ended, restarts | read |
 | `dryer_get_run_chart` | one run's time series, thinned to ≤ 200 points | read |
-| `dryer_start` | start by preset name, or explicit `{ setpoint, maxHours, autostop? }` | write |
-| `dryer_stop` | stop the run / clear a fault | write |
-| `dryer_upsert_preset` | create or update a preset | write + admin |
+| `dryer_start` | start by preset name, or explicit `{ setpoint, maxHours, autostop? }` | admin + write |
+| `dryer_stop` | stop the run / clear a fault | admin + write |
+| `dryer_upsert_preset` | create or update a preset | admin + write |
 
 Resources: `dryer://state`, `dryer://runs/recent` (last 20). Prompt: `dryer-report`
 ("how did the last run go"). The server's `instructions` tell an agent to confirm with a
