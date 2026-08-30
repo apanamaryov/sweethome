@@ -9,9 +9,12 @@
 
 - `runs.started_by` принимает и значение `'recovered'` — сушка уже шла, когда сервис
   поднялся; `startedAt` в этом случае восстанавливается из `run_elapsed`.
-- Старт с именем несуществующего пресета → `404 preset_not_found`.
-- MCP `dryer_start` / `dryer_stop` / `dryer_upsert_preset` требуют роль `admin` **и**
-  скоуп `write` — как и REST.
+- Старт с несуществующим `presetId` → `404 preset_not_found` (MCP-инструмент ищет пресет
+  по имени сам и отвечает `isError` с текстом «Пресет не найден: …»).
+- MCP `dryer_start`/`dryer_stop` требуют `admin` + `write` (как REST `/runs`);
+  `dryer_upsert_preset` тоже требует `admin` + `write`, хотя REST-маршруты пресетов
+  проверяют только роль `admin` — в MCP все инструменты записи спрятаны за одним общим
+  правилом.
 - Строки `persistence` в конфиге mosquitto не повторяются в `conf.d`: они уже есть в
   дефолтном `/etc/mosquitto/mosquitto.conf` на Debian.
 - Симулятор (`node/mock.ts`) пересчитывает выходы сразу на `START`/`STOP`, а не только на
