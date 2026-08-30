@@ -11,6 +11,7 @@ esphome:
       - climate.control:
           id: pid_ctrl
           mode: "OFF"
+      - climate.pid.reset_integral_term: pid_ctrl
       - lambda: |-
           id(g_state) = 0;
           id(g_run_started_ms) = 0;
@@ -59,7 +60,7 @@ mqtt:
               if (st == 0) id(start_run)->execute();
             } else if (x == "STOP") {
               if (st == 1 || st == 2) id(stop_run)->execute("command");
-              else if (st == 4) { id(g_state) = 3; id(state_text).update(); }   // сброс ошибки → остывание
+              else if (st == 4) { id(g_state) = 3; id(g_cool_since_ms) = millis(); id(state_text).update(); }   // сброс ошибки → остывание
             }
 
 globals:
@@ -77,10 +78,12 @@ globals:
   - { id: g_plate_last_ms,      type: uint32_t, initial_value: '0' }
   - { id: g_heater_duty,        type: float,    initial_value: '0' }
   - { id: g_heat_hi_since_ms,   type: uint32_t, initial_value: '0' }
-  - { id: g_plate_at_hi,        type: float,    initial_value: '0' }
   - { id: g_exhaust_duty,       type: float,    initial_value: '0' }   # 0..1
   - { id: g_exhaust_hi_since_ms,type: uint32_t, initial_value: '0' }
   - { id: g_rpm,                type: float,    initial_value: '0' }
+  - { id: g_starving,           type: bool,     initial_value: 'false' }
+  - { id: g_cool_since_ms,      type: uint32_t, initial_value: '0' }
+  - { id: g_circ_on,            type: bool,     initial_value: 'false' }
   - { id: g_led_phase,          type: int,      initial_value: '0' }
 
 i2c:
@@ -226,6 +229,7 @@ sensor:
         input: true
     name: exhaust_rpm
     id: exhaust_rpm
+    unit_of_measurement: "rpm"
     update_interval: 10s
     filters:
       - multiply: 0.5             # 2 импульса на оборот → об/мин
@@ -319,28 +323,31 @@ binary_sensor:
         - lambda: |-
             const int st = id(g_state);
             if (st == 0) id(start_run)->execute();
-            else if (st == 4) { id(g_state) = 3; id(state_text).update(); }
+            else if (st == 4) { id(g_state) = 3; id(g_cool_since_ms) = millis(); id(state_text).update(); }
             else if (st == 1 || st == 2) id(stop_run)->execute("button");
   - platform: template
     name: heater
     lambda: 'return id(g_heater_duty) > 0.5f;'
   - platform: template
     name: circulation
-    lambda: 'return id(g_state) != 0;'
+    lambda: 'return id(g_circ_on);'
 
 script:
   - id: start_run
     then:
+      - climate.pid.reset_integral_term: pid_ctrl
       - lambda: |-
           if (id(g_state) != 0) return;
           id(g_state) = 1;
           id(g_run_started_ms) = millis();
           id(g_heat_hi_since_ms) = 0;
           id(g_exhaust_hi_since_ms) = 0;
+          id(g_starving) = false;
           auto call = id(pid_ctrl).make_call();
           call.set_mode(climate::CLIMATE_MODE_HEAT);
           call.set_target_temperature(id(g_setpoint));
           call.perform();
+          id(g_circ_on) = true;
           id(circ_out).turn_on();
       - component.update: state_text        # Pi ждёт heating до 5 с — не тянем до следующего 10-с тика
   - id: stop_run
@@ -351,6 +358,7 @@ script:
           id(g_stop_reason) = reason;
           id(g_state) = (reason.rfind("fault:", 0) == 0) ? 4 : 3;
           id(g_run_started_ms) = 0;
+          id(g_cool_since_ms) = millis();
           auto call = id(pid_ctrl).make_call();
           call.set_mode(climate::CLIMATE_MODE_OFF);
           call.perform();
@@ -375,9 +383,11 @@ interval:
             else if (!std::isnan(chamber) && chamber > 85.0f) fault = "fault:overheat";
             else if (now - id(g_chamber_last_ms) > 30000 || now - id(g_plate_last_ms) > 30000) fault = "fault:sensor";
             else {
+              // живой нагреватель на ≥60% держит пластину заметно теплее камеры;
+              // мёртвый ТЭН, залипший открытым SSR или оборванный NTC (показывает холод) — не проходят.
               if (id(g_heater_duty) >= 60.0f) {
-                if (id(g_heat_hi_since_ms) == 0) { id(g_heat_hi_since_ms) = now; id(g_plate_at_hi) = plate; }
-                else if (now - id(g_heat_hi_since_ms) > 300000 && plate - id(g_plate_at_hi) < 5.0f) fault = "fault:heater";
+                if (id(g_heat_hi_since_ms) == 0) id(g_heat_hi_since_ms) = now;
+                else if (now - id(g_heat_hi_since_ms) > 300000 && !std::isnan(plate) && !std::isnan(chamber) && plate - chamber < 5.0f) fault = "fault:heater";
               } else id(g_heat_hi_since_ms) = 0;
               if (id(g_exhaust_duty) >= 0.30f) {
                 if (id(g_exhaust_hi_since_ms) == 0) id(g_exhaust_hi_since_ms) = now;
@@ -396,21 +406,27 @@ interval:
             float target = id(g_exhaust_min) / 100.0f;
             const float excess = id(humidity_excess).state;
             if (!std::isnan(excess)) target = std::max(target, std::min(1.0f, (id(g_exhaust_min) + excess * id(g_exhaust_gain)) / 100.0f));
-            const bool starving = id(g_heater_duty) >= 99.0f && !std::isnan(chamber) && chamber < id(g_setpoint) - 2.0f;
-            if (starving) target = id(g_exhaust_min) / 100.0f;
+            if (id(g_heater_duty) >= 99.0f && !std::isnan(chamber) && chamber < id(g_setpoint) - 2.0f) id(g_starving) = true;
+            else if (!std::isnan(chamber) && chamber >= id(g_setpoint) - 0.5f) id(g_starving) = false;
+            if (id(g_starving)) target = id(g_exhaust_min) / 100.0f;
             float cur = id(g_exhaust_duty);
             cur += std::max(-0.02f, std::min(0.02f, target - cur));   // плавно, ~1 мин на полный ход
             id(g_exhaust_duty) = cur;
             id(exhaust_out).set_level(cur);
+            id(g_circ_on) = true;
             id(circ_out).turn_on();
           } else if (st == 3 || st == 4) {
             // остывание; ошибка ведёт себя так же, но состояние остаётся fault до сброса
-            if (!std::isnan(plate) && plate < 50.0f) {
+            // без читаемой пластины ждём 10 минут и считаем остывшей — иначе вентиляторы крутятся вечно
+            const bool cooled = (!std::isnan(plate) && plate < 50.0f) || (now - id(g_cool_since_ms) > 600000UL);
+            if (cooled) {
+              id(g_circ_on) = false;
               id(circ_out).turn_off();
               id(g_exhaust_duty) = 0.0f;
               id(exhaust_out).set_level(0.0f);
               if (st == 3) { id(g_state) = 0; id(state_text).update(); }
             } else {
+              id(g_circ_on) = true;
               id(circ_out).turn_on();
               id(g_exhaust_duty) = 0.5f;
               id(exhaust_out).set_level(0.5f);
@@ -418,6 +434,7 @@ interval:
           } else {
             id(g_exhaust_duty) = 0.0f;
             id(exhaust_out).set_level(0.0f);
+            id(g_circ_on) = false;
             id(circ_out).turn_off();
           }
 
