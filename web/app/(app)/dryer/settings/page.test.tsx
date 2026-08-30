@@ -14,8 +14,9 @@ beforeEach(() => {
   calls.length = 0;
   global.fetch = jest.fn((url: string, init?: RequestInit) => {
     calls.push({ url, init });
-    if (url.endsWith("/presets") && !init) return Promise.resolve({ ok: true, status: 200, json: async () => ({ presets: PRESETS }) } as Response);
-    if (url.endsWith("/settings") && !init) return Promise.resolve({ ok: true, status: 200, json: async () => ({ settings: DEFAULT_SETTINGS }) } as Response);
+    const isRead = !init?.method || init.method === "GET";
+    if (url.endsWith("/presets") && isRead) return Promise.resolve({ ok: true, status: 200, json: async () => ({ presets: PRESETS }) } as Response);
+    if (url.endsWith("/settings") && isRead) return Promise.resolve({ ok: true, status: 200, json: async () => ({ settings: DEFAULT_SETTINGS }) } as Response);
     if (url.endsWith("/settings") && init?.method === "PUT") {
       const body = JSON.parse(String(init.body));
       if (body.exhaustMin === 5) return Promise.resolve({ ok: false, status: 400, json: async () => ({ ok: false, error: "Поле «минимум вытяжки» вне допустимого диапазона 20…100" }) } as Response);
