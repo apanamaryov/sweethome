@@ -376,8 +376,17 @@ interval:
           const float chamber = id(chamber_t).state;
           const float plate = id(plate_t).state;
 
+          // --- абсолютные пределы: в любом состоянии, кроме уже поднятой ошибки (§7) ---
+          // Залипший SSR заметнее всего как раз после сушки: нагрев «выключен», а пластина
+          // ползёт вверх в cooldown/idle. Проверять их только под if (active) значило бы
+          // молчать ровно в том случае, ради которого правило и написано.
+          if (st != 4) {
+            if (!std::isnan(plate) && plate > 110.0f) { id(stop_run)->execute("fault:plate_overheat"); return; }
+            if (!std::isnan(chamber) && chamber > 85.0f) { id(stop_run)->execute("fault:overheat"); return; }
+          }
+
           if (active) {
-            // --- защита (§7) ---
+            // --- остальная защита во время сушки (§7) ---
             const char* fault = nullptr;
             if (!std::isnan(plate) && plate > 110.0f) fault = "fault:plate_overheat";
             else if (!std::isnan(chamber) && chamber > 85.0f) fault = "fault:overheat";
