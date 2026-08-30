@@ -178,7 +178,7 @@ export function registerDryerTools(server: McpServer, deps: DryerMcpDeps & { ctx
       inputSchema: {
         preset: z.string().optional().describe("preset name, e.g. 'Яблоки'"),
         setpoint: z.number().min(LIMITS.setpoint.min).max(LIMITS.setpoint.max).optional(),
-        maxHours: z.number().positive().optional(),
+        maxHours: z.number().positive().max(LIMITS.maxMinutes.max / 60).optional(),
         autostop: z.boolean().optional(),
       },
       annotations: { destructiveHint: true },

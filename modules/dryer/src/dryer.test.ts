@@ -48,6 +48,16 @@ describe("Dryer", () => {
     expect(snap.run!.autostop.reason).toBe("автостоп выключен — остановится по таймеру");
   });
 
+  it("startRun проверяет свои параметры на любом пути (не только через роутер)", async () => {
+    const { store, dryer, timers } = make();
+    await expect(dryer.startRun({ setpoint: 60, maxMinutes: 600_000 }, "mcp:laptop")).rejects.toMatchObject({
+      code: "invalid_request",
+      status: 400,
+    });
+    await expect(dryer.startRun({ setpoint: 200, maxMinutes: 600 }, "mcp:laptop")).rejects.toMatchObject({ code: "invalid_request" });
+    expect(store.listRuns(0, timers.now + 1)).toHaveLength(0);
+  });
+
   it("замеры: каждые 10 с во время сушки, раз в 5 минут в простое", async () => {
     const { store, dryer, timers } = make();
     await timers.advance(15 * 60_000); // простой: 90 тиков → 3–4 замера

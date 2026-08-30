@@ -10,7 +10,8 @@ export type RunErrorCode =
   | "fault_active"
   | "node_busy"
   | "node_unresponsive"
-  | "preset_not_found"; // ставит Dryer.startRun (Task 10), сюда — чтобы роутер знал один класс ошибок
+  | "preset_not_found" // ставит Dryer.startRun (Task 10), сюда — чтобы роутер знал один класс ошибок
+  | "invalid_request";
 
 export class RunError extends Error {
   constructor(

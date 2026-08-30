@@ -7,6 +7,7 @@ import { RunError, RunManager, type StartParams } from "./runs";
 import type { DryerStore } from "./store";
 import { fmtDuration, runTitle } from "./texts";
 import type { Timers } from "./timers";
+import { validateStartRequest } from "./validate";
 
 export interface DryerDeps {
   cfg: DryerConfig;
@@ -164,10 +165,14 @@ export class Dryer {
       if (!p) throw new RunError("preset_not_found", 404, "Пресет не найден");
       params = { setpoint: p.setpoint, maxMinutes: p.maxMinutes, autostop: p.autostop, presetName: p.name, startedBy };
     } else {
+      // Единая точка проверки для REST и MCP: роутер валидирует тело сам, но MCP звал
+      // startRun напрямую — и мог записать в сушку любой maxMinutes (спека §5, LIMITS).
+      const v = validateStartRequest({ setpoint: req.setpoint, maxMinutes: req.maxMinutes, autostop: req.autostop });
+      if (!v.ok) throw new RunError("invalid_request", 400, v.error);
       params = {
-        setpoint: req.setpoint as number,
-        maxMinutes: req.maxMinutes as number,
-        autostop: req.autostop ?? true,
+        setpoint: v.value.setpoint as number,
+        maxMinutes: v.value.maxMinutes as number,
+        autostop: v.value.autostop ?? true,
         presetName: null,
         startedBy,
       };

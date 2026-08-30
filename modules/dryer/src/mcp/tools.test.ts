@@ -85,6 +85,14 @@ describe("dryer MCP tools", () => {
     expect(r.structured!.run).toMatchObject({ setpoint: 45, maxMinutes: 120, autostopEnabled: false });
   });
 
+  it("dryer_start: maxHours вне диапазона — isError, сушка не начинается", async () => {
+    const { call, store, timers } = await connect();
+    const r = await call("dryer_start", { setpoint: 60, maxHours: 10000 });
+    expect(r.isError).toBe(true);
+    expect(r.text).toMatch(/maxHours/); // схема режет ещё до startRun; сам startRun проверяет диапазоны второй раз
+    expect(store.listRuns(0, timers.now + 1)).toHaveLength(0);
+  });
+
   it("dryer_get_runs и dryer_get_run_chart (прореживание до 200 точек)", async () => {
     const { call, dryer, timers, store } = await connect();
     await dryer.startRun({ setpoint: 60, maxMinutes: 600 }, "ui:alex");
