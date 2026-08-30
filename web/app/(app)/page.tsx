@@ -6,6 +6,7 @@ import { MetaProvider, useMeta } from "@/lib/meta";
 import { useT, useDocTitle } from "@/lib/i18n";
 import { InverterFlow, WarnChip, flowState } from "@/components/InverterFlow";
 import CctvCard from "@/components/cctv/CctvCard";
+import DryerCard from "@/components/dryer/DryerCard";
 
 function InverterCard() {
   const t = useT();
@@ -44,6 +45,7 @@ export default function HomePage() {
         <InverterCard />
       </MetaProvider>
       <CctvCard />
+      <DryerCard />
     </main>
   );
 }

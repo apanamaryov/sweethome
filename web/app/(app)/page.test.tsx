@@ -5,11 +5,23 @@ import {
   buildStatus,
   buildMeta,
   restoreLocation,
+  jsonResponse,
 } from "@/test-utils/renderWithProviders";
+import { buildDryerSnapshot } from "@/test-utils/dryer";
 import { DICTS } from "@/lib/i18n/dict";
 import HomePage from "./page";
 
 const t = DICTS.uk;
+
+beforeEach(() => {
+  // renderWithProviders() only wires /api/inverter/* and /api/me; DryerCard's own
+  // GET /api/dryer/state needs its own answer or its catch path shows "Нет связи"
+  // (and other overview tests would trip an unhandled-rejection warning otherwise).
+  global.fetch = jest.fn((input: RequestInfo | URL) => {
+    if (String(input) === "/api/dryer/state") return Promise.resolve(jsonResponse(200, buildDryerSnapshot()));
+    return Promise.reject(new Error(`page.test.tsx: unmocked fetch to ${input}`));
+  }) as unknown as typeof fetch;
+});
 
 afterEach(() => {
   restoreLocation();
@@ -52,6 +64,14 @@ describe("HomePage — overview", () => {
     expect(link).toHaveAttribute("href", "/inverter");
     expect(link.querySelector("section.card.home-card")).toBeInTheDocument();
     expect(screen.queryByText(t.homeInverterCardOpen)).not.toBeInTheDocument();
+  });
+
+  it("shows a dryer card linking to /dryer", async () => {
+    await renderWithProviders(<HomePage />, { snapshot: buildSnapshot(), withMeta: true });
+
+    const link = screen.getAllByRole("link").find((l) => l.getAttribute("href") === "/dryer")!;
+    expect(link).toHaveAttribute("href", "/dryer");
+    expect(link.querySelector("section.card.home-card")).toBeInTheDocument();
   });
 
   it("shows the card as a plain always-visible section, not a collapsed/collapsible Panel", async () => {

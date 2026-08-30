@@ -9,7 +9,7 @@ import { ToastProvider } from "@/lib/toast";
 import { useT } from "@/lib/i18n";
 import { LangSwitch } from "@/components/LangSwitch";
 
-const ADMIN_PATH_PREFIXES = ["/inverter/settings", "/inverter/diagnostics", "/users"];
+const ADMIN_PATH_PREFIXES = ["/inverter/settings", "/inverter/diagnostics", "/users", "/dryer/settings"];
 
 function SystemNav() {
   const t = useT();
@@ -28,6 +28,7 @@ function SystemNav() {
     { href: "/", label: t.navOverview, active: pathname === "/" },
     { href: "/inverter", label: t.navInverter, active: pathname.startsWith("/inverter") },
     { href: "/cctv", label: t.navCctv, active: pathname.startsWith("/cctv") },
+    { href: "/dryer", label: t.navDryer, active: pathname.startsWith("/dryer") },
     ...(isAdmin ? [{ href: "/users", label: t.navUsers, active: pathname.startsWith("/users") }] : []),
   ];
 

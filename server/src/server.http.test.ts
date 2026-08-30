@@ -281,6 +281,29 @@ describe("server.ts (HTTP integration via supertest)", () => {
     });
   });
 
+  describe("GET /dryer, /dryer/history, /dryer/settings (test server built without the dryer module — page gates don't depend on modules)", () => {
+    it("viewer has access to /dryer and /dryer/history, but is redirected away from /dryer/settings", async () => {
+      const cookie = await freshSessionCookie("user", "user", "viewer1");
+
+      let res = await request(server).get("/dryer").set("Cookie", cookie);
+      expect(res.status).toBe(200);
+
+      res = await request(server).get("/dryer/history").set("Cookie", cookie);
+      expect(res.status).toBe(200);
+
+      res = await request(server).get("/dryer/settings").set("Cookie", cookie);
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe("/");
+    });
+
+    it("admin has access to /dryer/settings", async () => {
+      const cookie = await freshSessionCookie("admin", "admin", "admin123");
+
+      const res = await request(server).get("/dryer/settings").set("Cookie", cookie);
+      expect(res.status).toBe(200);
+    });
+  });
+
   describe("IP-based lockout (trust proxy 1 hop, req.ip via X-Forwarded-For)", () => {
     it("locks out after 5 failed logins from the same IP, even against correct creds", async () => {
       const ip = "203.0.113.7";

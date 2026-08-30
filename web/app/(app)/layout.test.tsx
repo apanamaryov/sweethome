@@ -70,6 +70,13 @@ describe("AppLayout (system) — SystemNav role-based visibility", () => {
     expect(nav.getByText(t.navInverter).closest("a")).toHaveClass("active");
     expect(nav.getByText(t.navOverview).closest("a")).not.toHaveClass("active");
   });
+
+  it("shows a Dryer link pointing at /dryer", async () => {
+    const { container } = await renderLayout(<div>child</div>, { pathname: "/" });
+
+    const nav = within(container.querySelector<HTMLElement>(".nav-sections")!);
+    expect(nav.getByText(t.navDryer).closest("a")).toHaveAttribute("href", "/dryer");
+  });
 });
 
 describe("AppLayout (system) — admin-only guard", () => {
@@ -79,7 +86,7 @@ describe("AppLayout (system) — admin-only guard", () => {
     await waitFor(() => expect(window.location.href).toBe("/"));
   });
 
-  it.each(["/inverter/diagnostics", "/users"])("also redirects a viewer away from %s", async (path) => {
+  it.each(["/inverter/diagnostics", "/users", "/dryer/settings"])("also redirects a viewer away from %s", async (path) => {
     await renderLayout(<div>child</div>, { session: buildSession("viewer"), pathname: path });
 
     await waitFor(() => expect(window.location.href).toBe("/"));

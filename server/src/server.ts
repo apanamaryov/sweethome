@@ -30,7 +30,7 @@ export function createServer(host: ModuleHost, cfg: Config): http.Server {
   // Страничные редиректы: без сессии → /login; must_change → /change-password;
   // admin-страницы для viewer → /. Статика (css/js/страницы) отдаётся свободно —
   // данные защищены на уровне /api.
-  const ADMIN_PAGES = new Set(["/inverter/settings", "/inverter/diagnostics", "/users"]);
+  const ADMIN_PAGES = new Set(["/inverter/settings", "/inverter/diagnostics", "/users", "/dryer/settings"]);
   app.get(
     [
       "/",
@@ -43,6 +43,9 @@ export function createServer(host: ModuleHost, cfg: Config): http.Server {
       "/change-password",
       "/cctv",
       "/cctv/archive",
+      "/dryer",
+      "/dryer/history",
+      "/dryer/settings",
     ],
     (req, res, next) => {
       const u = auth.verify(reqToken(req));
@@ -71,6 +74,9 @@ export function createServer(host: ModuleHost, cfg: Config): http.Server {
   // (cctv/archive.html) рядом на диске. Без явной отдачи файла express.static
   // увёл бы в такой же бессмысленный редирект на "/cctv/".
   app.get("/cctv", (_req, res) => res.sendFile(path.join(publicDir, "cctv.html")));
+
+  // /dryer — страница (dryer.html) и родитель /dryer/history, /dryer/settings — та же ловушка express.static.
+  app.get("/dryer", (_req, res) => res.sendFile(path.join(publicDir, "dryer.html")));
 
   app.use(express.static(publicDir, { extensions: ["html"] }));
 
