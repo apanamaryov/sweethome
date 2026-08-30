@@ -10,6 +10,12 @@ export interface MockOptions {
   stepMs?: number;
   /** За сколько избыток падает в e раз; в бою ~3 ч, в тестах — секунды. */
   excessTauMs?: number;
+  /**
+   * За сколько шагов step() команда START/STOP доезжает до автомата. 0 (по умолчанию) —
+   * мгновенно, как раньше. Больше нуля — как настоящая нода: между публикацией `cmd/run`
+   * и сменой состояния проходит время, и всё это время view() показывает прежнее состояние.
+   */
+  lagSteps?: number;
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -36,6 +42,9 @@ export class MockNodeLink implements NodeLink {
   private offline = false;
   private handle: unknown = null;
   private readonly tau: number;
+  private readonly lagSteps: number;
+  private steps = 0;
+  private queued: { cmd: "START" | "STOP"; at: number }[] = [];
 
   constructor(private readonly o: MockOptions) {
     this.ambient = o.ambient ?? { temp: 22, rh: 50 };
@@ -43,6 +52,7 @@ export class MockNodeLink implements NodeLink {
     this.plateT = this.ambient.temp;
     this.bootAt = o.now();
     this.tau = o.excessTauMs ?? 3 * 3600_000;
+    this.lagSteps = o.lagSteps ?? 0;
   }
 
   start(): void {
@@ -65,6 +75,14 @@ export class MockNodeLink implements NodeLink {
   }
 
   sendRun(cmd: "START" | "STOP"): void {
+    if (this.lagSteps > 0) {
+      this.queued.push({ cmd, at: this.steps + this.lagSteps });
+      return;
+    }
+    this.applyRun(cmd);
+  }
+
+  private applyRun(cmd: "START" | "STOP"): void {
     if (cmd === "START") {
       if (this.state === "idle") this.begin();
     } else if (this.state === "heating" || this.state === "drying") {
@@ -74,13 +92,21 @@ export class MockNodeLink implements NodeLink {
     }
   }
 
+  /** Команды, доехавшие к этому шагу; порядок отправки сохраняется. */
+  private applyQueued(): void {
+    if (this.queued.length === 0) return;
+    const due = this.queued.filter((q) => q.at <= this.steps);
+    this.queued = this.queued.filter((q) => q.at > this.steps);
+    for (const q of due) this.applyRun(q.cmd);
+  }
+
   private begin(): void {
     this.state = "heating";
     this.runStartedAt = this.o.now();
     this.reached = false;
     this.integral = 0;
-    // выходы пересчитываются в step(): без этого view() сразу после START видит heaterDuty = 0
-    this.step(0);
+    // выходы пересчитываются в физике: без этого view() сразу после START видит heaterDuty = 0
+    this.physics(0);
   }
 
   private end(reason: StopReason): void {
@@ -89,7 +115,7 @@ export class MockNodeLink implements NodeLink {
     this.runStartedAt = null;
     this.heaterDuty = 0;
     // то же: вытяжка 50 % на остывании должна быть видна сразу после STOP
-    this.step(0);
+    this.physics(0);
   }
 
   private active(): boolean {
@@ -105,8 +131,14 @@ export class MockNodeLink implements NodeLink {
     return 30 * Math.exp(-(this.o.now() - (this.runStartedAt ?? this.o.now())) / this.tau);
   }
 
-  /** Один шаг физики и автомата. Публичный — тесты крутят его руками. */
+  /** Один шаг: сначала доехавшие команды, потом физика. Публичный — тесты крутят его руками. */
   step(dtMs: number): void {
+    this.steps++;
+    this.applyQueued();
+    this.physics(dtMs);
+  }
+
+  private physics(dtMs: number): void {
     const dt = dtMs / 1000;
     if (this.active()) {
       // ПИ-регулятор вместо PID: П даёт 100 % при недогреве ≥ 4 °C, И (только вблизи уставки,

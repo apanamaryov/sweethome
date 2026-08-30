@@ -216,3 +216,54 @@ describe("RunManager.tick", () => {
     });
   });
 });
+
+describe("нода с задержкой", () => {
+  // Настоящая нода не меняет состояние внутри sendRun: между публикацией `cmd/run` и сменой
+  // state проходит до одного интервала публикации. lagSteps: 2 воспроизводит это; синхронный
+  // мок из make() эту гонку прятал.
+  function makeLagging() {
+    const timers = new FakeTimers();
+    timers.now = Date.UTC(2026, 7, 30, 12, 0, 0);
+    const now = () => timers.now;
+    const store = new DryerStore(":memory:");
+    const link = new MockNodeLink({ now, timers, excessTauMs: 60_000, lagSteps: 2 });
+    const runs = new RunManager({ store, link, timers, now });
+    const view = () => link.view(timers.now, STALE);
+    /** Секунда: двигаем таймеры (это будит опрос внутри start()), шаг физики, тик менеджера. */
+    const tick = async (sec = 1) => {
+      for (let i = 0; i < sec; i++) {
+        await timers.advance(1000);
+        link.step(1000);
+        runs.tick(timers.now, view(), S);
+      }
+    };
+    const params = { setpoint: 60, maxMinutes: 60, autostop: true, presetName: "Яблоки", startedBy: "ui:alex" };
+    return { timers, store, link, runs, view, tick, params };
+  }
+
+  it("старт: START доезжает не сразу, но запись открывается ровно одна", async () => {
+    const { runs, store, view, params, tick, timers } = makeLagging();
+    const p = runs.start(params, S);
+    expect(view().state).toBe("idle"); // нода ещё не услышала команду
+    await tick(3);
+    await p;
+    expect(store.listRuns(0, timers.now + 1)).toHaveLength(1);
+    expect(store.currentRun()!.startedBy).toBe("ui:alex");
+  });
+
+  it("стоп: нода ещё сушит, а tick() уже не должен открывать «восстановленную» сушку", async () => {
+    const { runs, store, view, params, tick, timers } = makeLagging();
+    const p = runs.start(params, S);
+    await tick(3);
+    const run = await p;
+    await tick(5);
+    await runs.stop();
+    expect(["heating", "drying"]).toContain(view().state); // STOP ещё в пути
+    runs.tick(timers.now, view(), S); // ровно то, что делает Dryer.stopRun()
+    await tick(3);
+    const all = store.listRuns(0, timers.now + 1);
+    expect(all).toHaveLength(1);
+    expect(all[0]).toMatchObject({ id: run.id, endReason: "stopped" });
+    expect(store.currentRun()).toBeNull();
+  });
+});

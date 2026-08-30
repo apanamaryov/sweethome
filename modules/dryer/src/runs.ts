@@ -63,6 +63,14 @@ export class RunManager {
   private prev: { state: NodeState | null; uptime: number | null; online: boolean } = { state: null, uptime: null, online: false };
   /** Мы сами отправили START и ждём heating — переход не считать кнопкой. */
   private pendingStart: number | null = null;
+  /**
+   * Мы сами отправили STOP и ждём, пока нода выйдет из ACTIVE. Настоящая нода остаётся
+   * `heating`/`drying` ещё до одного интервала публикации после STOP, а Dryer.stopRun()
+   * зовёт tick() сразу же — без этого флага tick видел «сушка идёт, а записи нет» и
+   * открывал фантомную запись startedBy: "recovered" на каждый ручной стоп. Синхронный мок
+   * это прятал: он переводил ноду в cooldown прямо внутри sendRun (см. MockOptions.lagSteps).
+   */
+  private pendingStop: number | null = null;
   private offlineSince: number | null = null;
   private offlineAnnounced = false;
   private readonly maxRestarts: number;
@@ -113,6 +121,7 @@ export class RunManager {
   /** Стоп и одновременно сброс ошибки. Возвращает закрытую запись, если она была. */
   async stop(): Promise<Run | null> {
     this.d.link.sendRun("STOP");
+    this.pendingStop = this.d.now();
     const run = this.d.store.currentRun();
     if (run) this.d.store.closeRun(run.id, this.d.now(), "stopped");
     return run;
@@ -137,6 +146,7 @@ export class RunManager {
     // ACTIVE раньше, чем их продолжение доходит до store.openRun(); если tick() вклинится в
     // этот же промежуток, pendingStart ниже уже обнулится — запоминаем «было» до обнуления.
     const wasPending = this.pendingStart !== null;
+    const wasPendingStop = this.pendingStop !== null;
 
     // --- связь ---
     if (!view.online) {
@@ -166,6 +176,11 @@ export class RunManager {
     if (this.pendingStart !== null && ((state !== null && ACTIVE.has(state)) || now - this.pendingStart > 10_000)) {
       this.pendingStart = null;
     }
+    // Симметрично старту: наш STOP «отработал», как только нода вышла из ACTIVE; если она
+    // молчит — снимаем флаг через 10 с, иначе кнопка на корпусе перестала бы распознаваться.
+    if (this.pendingStop !== null && ((state !== null && !ACTIVE.has(state)) || now - this.pendingStop > 10_000)) {
+      this.pendingStop = null;
+    }
 
     if (run) {
       if (rebooted && state !== null && !ACTIVE.has(state)) {
@@ -173,7 +188,14 @@ export class RunManager {
       } else if (state !== null && !ACTIVE.has(state) && this.prev.state !== null && ACTIVE.has(this.prev.state) && this.pendingStart === null) {
         events.push(...this.closeBecauseNodeStopped(run, view, now));
       }
-    } else if (state !== null && ACTIVE.has(state) && this.pendingStart === null && !wasPending) {
+    } else if (
+      state !== null &&
+      ACTIVE.has(state) &&
+      this.pendingStart === null &&
+      !wasPending &&
+      this.pendingStop === null &&
+      !wasPendingStop
+    ) {
       // Сушка идёт, а записи нет: кнопка на корпусе (prev был idle/cooldown) либо сервис
       // поднялся посреди сушки (prev неизвестен) — тогда начало восстанавливаем из run_elapsed.
       const fromButton = this.prev.state !== null && !ACTIVE.has(this.prev.state);

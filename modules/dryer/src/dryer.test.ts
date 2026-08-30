@@ -5,12 +5,12 @@ import { MockNodeLink } from "./node/mock";
 import { DryerStore } from "./store";
 import { FakeTimers } from "./testing/fake-timers";
 
-function make() {
+function make(mock: { lagSteps?: number } = {}) {
   const timers = new FakeTimers();
   timers.now = Date.UTC(2026, 7, 30, 12, 0, 0);
   const now = () => timers.now;
   const store = new DryerStore(":memory:");
-  const link = new MockNodeLink({ now, timers, excessTauMs: 5 * 60_000 });
+  const link = new MockNodeLink({ now, timers, excessTauMs: 5 * 60_000, ...mock });
   const cfg = loadDryerConfig("/data", { DRYER_TRANSPORT: "mock", DRYER_TICK_MS: "10000" });
   const dryer = new Dryer({ cfg, store, link, timers, now, log: () => {} });
   dryer.start();
@@ -93,6 +93,19 @@ describe("Dryer", () => {
     const snap = await dryer.stopRun();
     expect(snap.run).toBeNull();
     expect(store.listRuns(0, snap.now + 1)[0].endReason).toBe("stopped");
+  });
+
+  it("нода с задержкой: stopRun закрывает ровно одну запись и не открывает фантомную", async () => {
+    const { store, dryer, timers } = make({ lagSteps: 2 });
+    const p = dryer.startRun({ setpoint: 60, maxMinutes: 600 }, "ui:alex");
+    await timers.advance(5000); // мок шагает раз в секунду — START доедет на втором шаге
+    await p;
+    expect(store.currentRun()).not.toBeNull();
+    const snap = await dryer.stopRun(); // нода в этот момент ещё сушит
+    expect(snap.run).toBeNull();
+    const all = store.listRuns(0, timers.now + 1);
+    expect(all).toHaveLength(1);
+    expect(all[0].endReason).toBe("stopped");
   });
 
   it("health: ok при брокере и ноде на связи; ok:false с причиной при потере ноды", () => {
