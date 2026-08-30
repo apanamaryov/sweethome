@@ -146,6 +146,30 @@ describe("страница сушилки — состояния экрана (�
     expect(screen.getAllByText(t.dryerViewerOnly).length).toBeGreaterThan(0);
   });
 
+  it("график остаётся после остановки — до следующего старта (спека §9)", async () => {
+    snapshot = buildDryerSnapshot({ node: buildNode({ state: "drying" }), run: buildRun() });
+    const { rerender } = render(<DryerPage />);
+    await act(async () => {});
+    expect(screen.getByTestId("chart")).toBeInTheDocument();
+    snapshot = buildDryerSnapshot({ node: buildNode({ state: "cooldown" }), run: null });
+    rerender(<DryerPage />);
+    await act(async () => {});
+    expect(screen.getByTestId("chart")).toBeInTheDocument();
+  });
+
+  it("viewer: поля «своих параметров» тоже заблокированы", async () => {
+    const { rerender } = render(<DryerPage />); // сначала админ — иначе панель не открыть
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name: t.dryerCustom }));
+    expect(screen.getByLabelText(t.dryerSetpoint)).toBeEnabled();
+    role = "viewer";
+    rerender(<DryerPage />);
+    await act(async () => {});
+    expect(screen.getByLabelText(t.dryerSetpoint)).toBeDisabled();
+    expect(screen.getByLabelText(t.dryerMaxHours)).toBeDisabled();
+    expect(screen.getByLabelText(t.dryerAutostop)).toBeDisabled();
+  });
+
   it("события: непрочитанные сверху, крестик зовёт markEventSeen и refresh", async () => {
     snapshot = buildDryerSnapshot({
       events: [{ id: 5, ts: NOW - 1000, runId: 1, kind: "run_done", text: "Сушка «Груши» завершена автостопом за 9 ч 40 м", seen: false }],

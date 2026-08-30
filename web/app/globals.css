@@ -695,6 +695,8 @@ select:disabled { border-style: dashed; border-color: var(--ink-faint); color: v
 .dryer-custom label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ink-soft); }
 .dryer-events { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
 .dryer-events li { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+/* крестик «прочитано» — по содержимому: базовый .ghost-btn растягивается на всю строку */
+.dryer-events button { width: auto; }
 .dryer-events time { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); }
 .dryer-table { width: 100%; border-collapse: collapse; }
 .dryer-table th, .dryer-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--ink-faint); }

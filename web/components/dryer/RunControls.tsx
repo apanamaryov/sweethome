@@ -96,9 +96,9 @@ export default function RunControls({
           </div>
           {custom && (
             <div className="dryer-custom">
-              <label>{t.dryerSetpoint}<input type="number" min={LIMITS.setpoint.min} max={LIMITS.setpoint.max} step={1} value={setpoint} onChange={(e) => setSetpoint(Number(e.target.value))} /></label>
-              <label>{t.dryerMaxHours}<input type="number" min={1} max={48} step={1} value={maxHours} onChange={(e) => setMaxHours(Number(e.target.value))} /></label>
-              <label>{t.dryerAutostop}<input type="checkbox" checked={autostop} onChange={(e) => setAutostop(e.target.checked)} /></label>
+              <label>{t.dryerSetpoint}<input type="number" disabled={!isAdmin} min={LIMITS.setpoint.min} max={LIMITS.setpoint.max} step={1} value={setpoint} onChange={(e) => setSetpoint(Number(e.target.value))} /></label>
+              <label>{t.dryerMaxHours}<input type="number" disabled={!isAdmin} min={1} max={48} step={1} value={maxHours} onChange={(e) => setMaxHours(Number(e.target.value))} /></label>
+              <label>{t.dryerAutostop}<input type="checkbox" disabled={!isAdmin} checked={autostop} onChange={(e) => setAutostop(e.target.checked)} /></label>
             </div>
           )}
           <div className="dryer-actions">

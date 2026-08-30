@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Preset } from "@sweethome/dryer-shared";
+import type { Preset, RunSnapshot } from "@sweethome/dryer-shared";
 import { useDryer } from "@/lib/dryer-state";
 import { useSession } from "@/lib/session";
 import { useT } from "@/lib/i18n";
@@ -17,10 +17,17 @@ export default function DryerPage() {
   const session = useSession();
   const isAdmin = session?.role === "admin"; // роль не загрузилась — считаем viewer
   const [presets, setPresets] = useState<Preset[]>([]);
+  // График последней сушки остаётся на экране после остановки — до следующего старта
+  // (спека §9): сразу после партии на кривую как раз и хотят посмотреть.
+  const [chartRun, setChartRun] = useState<RunSnapshot | null>(null);
 
   useEffect(() => {
     fetchPresets().then(setPresets).catch(() => setPresets([]));
   }, []);
+
+  useEffect(() => {
+    if (snapshot?.run) setChartRun(snapshot.run);
+  }, [snapshot?.run]);
 
   if (error && !snapshot) return <p className="banner">{`${t.dryerError}: ${error}`}</p>;
   if (!snapshot) return <p>{t.connecting}</p>;
@@ -29,7 +36,7 @@ export default function DryerPage() {
     <main className="grid">
       <DryerStatus snapshot={snapshot} />
       <RunControls snapshot={snapshot} isAdmin={isAdmin} presets={presets} onChanged={refresh} />
-      {snapshot.run && <RunChart run={snapshot.run} />}
+      {chartRun && <RunChart run={chartRun} />}
       <EventsList events={snapshot.events} onSeen={(id) => markEventSeen(id).then(refresh).catch(() => {})} />
     </main>
   );
