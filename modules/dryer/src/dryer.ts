@@ -88,7 +88,7 @@ export class Dryer {
 
     this.lastAutostop = null;
     if (run) {
-      const series = this.d.store.excessSeries(now - settings.autostop.holdMinutes * 60_000, now);
+      const series = this.d.store.excessSeries(now - settings.autostop.holdMinutes * 60_000, now, run.id);
       const decision = decideAutostop(
         { state: view.online ? view.state : null, runStartedAt: run.startedAt, now, enabled: run.autostopEnabled, series },
         settings.autostop,
@@ -107,6 +107,8 @@ export class Dryer {
     if (now - this.lastPrune >= PRUNE_EVERY_MS) {
       const n = this.d.store.pruneSamples(now - KEEP_SAMPLES_MS);
       if (n) this.log(`pruned ${n} samples`);
+      const ev = this.d.store.pruneEvents(now - KEEP_SAMPLES_MS);
+      if (ev) this.log(`pruned ${ev} events`);
       this.lastPrune = now;
     }
 

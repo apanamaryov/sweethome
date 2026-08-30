@@ -125,14 +125,42 @@ describe("Dryer", () => {
     expect(dryer.health()).toMatchObject({ ok: false, details: { broker: true, nodeOnline: false } });
   });
 
-  it("чистка: замеры старше года удаляются", async () => {
+  it("чистка: замеры и события старше года удаляются", async () => {
     const { store, dryer, timers } = make();
     store.addSample({
       ts: timers.now - 400 * 86_400_000, runId: null, chamberTemp: 20, chamberRh: 50, ambientTemp: 20, ambientRh: 50,
       plateTemp: 20, excess: 0, heaterDuty: 0, exhaustDuty: 0, exhaustRpm: 0, state: "idle",
     });
+    store.addEvent(timers.now - 400 * 86_400_000, "node_offline", "древнее", null);
+    store.addEvent(timers.now, "node_online", "свежее", null);
     dryer.tick(); // первый тик после старта — чистка
     expect(store.excessSeries(0, timers.now - 399 * 86_400_000)).toHaveLength(0);
+    expect(store.unseenEvents().map((e) => e.text)).toEqual(["свежее"]);
+  });
+
+  it("автостоп смотрит только на замеры своей сушки", async () => {
+    const { store, dryer, link, timers } = make();
+    store.updateSettings({ autostop: { excessThreshold: 3, holdMinutes: 5, minRunMinutes: 0 } });
+    // Прошлая партия досохла: её «сухие» замеры заполняют всё окно удержания.
+    const T0 = timers.now;
+    const prev = store.openRun({ startedAt: T0 - 30 * 60_000, presetName: null, setpoint: 60, maxMinutes: 600, startedBy: "ui:alex", autostopEnabled: true });
+    store.closeRun(prev.id, T0 - 10_000, "autostop");
+    for (let ts = T0 - 6 * 60_000; ts <= T0 - 10_000; ts += 10_000) {
+      store.addSample({
+        ts, runId: prev.id, chamberTemp: 58, chamberRh: 20, ambientTemp: 22, ambientRh: 50,
+        plateTemp: 80, excess: 0.5, heaterDuty: 50, exhaustDuty: 30, exhaustRpm: 1400, state: "drying",
+      });
+    }
+    // Новая мокрая партия: своих данных ещё почти нет, но нода уже отдаёт drying.
+    const run = store.openRun({ startedAt: T0 - 60_000, presetName: null, setpoint: 60, maxMinutes: 600, startedBy: "ui:alex", autostopEnabled: true });
+    const real = link.view.bind(link);
+    link.view = ((n: number, staleMs: number) => ({ ...real(n, staleMs), state: "drying" as const, excess: 0.4 })) as typeof link.view;
+    timers.now += 10_000;
+
+    const snap = dryer.tick();
+    expect(store.getRun(run.id)!.endReason).toBeNull();
+    expect(snap.run).not.toBeNull();
+    expect(snap.run!.autostop.gaps).toBe(true); // «ждём непрерывных данных», а не чужую сухую историю
   });
 
   it("подписчик, бросающий исключение, не мешает остальным и следующему тику", async () => {

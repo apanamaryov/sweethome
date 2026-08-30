@@ -111,6 +111,15 @@ describe("DryerStore", () => {
       expect(db.excessSeries(T, T + 1)).toHaveLength(1);
     });
 
+    it("ряд избытка можно ограничить одной сушкой — хвост прошлой партии не считается", () => {
+      db.addSample(sample(T, { runId: 1, excess: 0.5 }));
+      db.addSample(sample(T + 10_000, { runId: 1, excess: 0.5 }));
+      db.addSample(sample(T + 20_000, { runId: 2, excess: 9 }));
+      expect(db.excessSeries(T, T + 30_000)).toHaveLength(3);
+      expect(db.excessSeries(T, T + 30_000, 2)).toEqual([{ ts: T + 20_000, excess: 9 }]);
+      expect(db.excessSeries(T, T + 30_000, 1)).toHaveLength(2);
+    });
+
     it("pruneSamples удаляет старое и возвращает счётчик", () => {
       db.addSample(sample(T - 400 * 86_400_000));
       db.addSample(sample(T));
@@ -128,6 +137,21 @@ describe("DryerStore", () => {
       expect(db.markSeen(a.id)).toBe(true);
       expect(db.markSeen(a.id)).toBe(false);
       expect(db.unseenEvents().map((e) => e.id)).toEqual([b.id]);
+    });
+
+    it("непрочитанных отдаёт не больше 50, самые новые", () => {
+      for (let i = 1; i <= 51; i++) db.addEvent(T + i * 1000, "node_offline", `e${i}`, null);
+      const got = db.unseenEvents();
+      expect(got).toHaveLength(50);
+      expect(got[0].text).toBe("e51");
+      expect(got.at(-1)!.text).toBe("e2");
+    });
+
+    it("pruneEvents удаляет старые события и возвращает счётчик", () => {
+      db.addEvent(T - 400 * 86_400_000, "node_offline", "древнее", null);
+      db.addEvent(T, "node_online", "свежее", null);
+      expect(db.pruneEvents(T - 365 * 86_400_000)).toBe(1);
+      expect(db.unseenEvents().map((e) => e.text)).toEqual(["свежее"]);
     });
   });
 

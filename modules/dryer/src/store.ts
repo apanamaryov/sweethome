@@ -90,6 +90,9 @@ const toEvent = (r: EventSql): DryerEvent => ({
   id: r.id, ts: r.ts, runId: r.run_id, kind: r.kind as EventKind, text: r.text, seen: r.seen === 1,
 });
 
+/** Сколько непрочитанных событий уезжает в снапшот (спека §9: список короткий). */
+const MAX_UNSEEN_EVENTS = 50;
+
 const inRange = (v: unknown, r: { min: number; max: number }): v is number =>
   typeof v === "number" && Number.isFinite(v) && v >= r.min && v <= r.max;
 
@@ -100,8 +103,9 @@ export class DryerStore {
     updPreset: StatementSync; delPreset: StatementSync; countPresets: StatementSync;
     insRun: StatementSync; curRun: StatementSync; getRun: StatementSync; closeRun: StatementSync;
     bumpRestarts: StatementSync; listRuns: StatementSync;
-    insSample: StatementSync; samplesForRun: StatementSync; excessSeries: StatementSync; prune: StatementSync;
-    insEvent: StatementSync; getEvent: StatementSync; unseen: StatementSync; markSeen: StatementSync;
+    insSample: StatementSync; samplesForRun: StatementSync; excessSeries: StatementSync; excessSeriesRun: StatementSync;
+    prune: StatementSync;
+    insEvent: StatementSync; getEvent: StatementSync; unseen: StatementSync; markSeen: StatementSync; pruneEvents: StatementSync;
     getSetting: StatementSync; setSetting: StatementSync;
   };
 
@@ -200,11 +204,15 @@ export class DryerStore {
       ),
       samplesForRun: p("SELECT * FROM samples WHERE run_id = ? ORDER BY ts"),
       excessSeries: p("SELECT ts, excess FROM samples WHERE ts >= ? AND ts <= ? ORDER BY ts"),
+      excessSeriesRun: p("SELECT ts, excess FROM samples WHERE ts >= ? AND ts <= ? AND run_id = ? ORDER BY ts"),
       prune: p("DELETE FROM samples WHERE ts < ?"),
       insEvent: p("INSERT INTO events(ts, run_id, kind, text) VALUES (?, ?, ?, ?)"),
       getEvent: p("SELECT * FROM events WHERE id = ?"),
-      unseen: p("SELECT * FROM events WHERE seen = 0 ORDER BY ts DESC, id DESC"),
+      // LIMIT: непрочитанные уезжают в каждый снапшот и в каждый кадр WS — на мигающем
+      // Wi-Fi пары node_offline/node_online копятся, и без границы кадр рос бы без предела.
+      unseen: p(`SELECT * FROM events WHERE seen = 0 ORDER BY ts DESC, id DESC LIMIT ${MAX_UNSEEN_EVENTS}`),
       markSeen: p("UPDATE events SET seen = 1 WHERE id = ? AND seen = 0"),
+      pruneEvents: p("DELETE FROM events WHERE ts < ?"),
       getSetting: p("SELECT value FROM settings WHERE key = ?"),
       setSetting: p("INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)"),
     };
@@ -302,12 +310,16 @@ export class DryerStore {
     return (this.stmt.samplesForRun.all(runId) as unknown as SampleSql[]).map(toSample);
   }
 
-  /** Ряд избытка за [fromMs, toMs] — вход decideAutostop (Task 6). */
-  excessSeries(fromMs: number, toMs: number): { ts: number; excess: number | null }[] {
-    return (this.stmt.excessSeries.all(fromMs, toMs) as unknown as { ts: number; excess: number | null }[]).map((r) => ({
-      ts: r.ts,
-      excess: r.excess,
-    }));
+  /**
+   * Ряд избытка за [fromMs, toMs] — вход decideAutostop (Task 6). С runId — только замеры
+   * этой сушки: иначе в окно попадает сухой хвост прошлой партии и остывания, и молодая
+   * сушка останавливается по чужим данным.
+   */
+  excessSeries(fromMs: number, toMs: number, runId?: number): { ts: number; excess: number | null }[] {
+    const rows = (runId === undefined
+      ? this.stmt.excessSeries.all(fromMs, toMs)
+      : this.stmt.excessSeriesRun.all(fromMs, toMs, runId)) as unknown as { ts: number; excess: number | null }[];
+    return rows.map((r) => ({ ts: r.ts, excess: r.excess }));
   }
 
   pruneSamples(olderThanMs: number): number {
@@ -327,6 +339,10 @@ export class DryerStore {
 
   markSeen(id: number): boolean {
     return Number(this.stmt.markSeen.run(id).changes) > 0;
+  }
+
+  pruneEvents(olderThanMs: number): number {
+    return Number(this.stmt.pruneEvents.run(olderThanMs).changes);
   }
 
   // --- settings ---
