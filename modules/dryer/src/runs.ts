@@ -133,6 +133,10 @@ export class RunManager {
   tick(now: number, view: NodeSnapshot, settings: DryerSettings): RunEvent[] {
     const events: RunEvent[] = [];
     let run = this.d.store.currentRun();
+    // Гонка с реальной нодой: start()/afterReboot() опрашивают view() раз в pollMs и видят
+    // ACTIVE раньше, чем их продолжение доходит до store.openRun(); если tick() вклинится в
+    // этот же промежуток, pendingStart ниже уже обнулится — запоминаем «было» до обнуления.
+    const wasPending = this.pendingStart !== null;
 
     // --- связь ---
     if (!view.online) {
@@ -169,7 +173,7 @@ export class RunManager {
       } else if (state !== null && !ACTIVE.has(state) && this.prev.state !== null && ACTIVE.has(this.prev.state) && this.pendingStart === null) {
         events.push(...this.closeBecauseNodeStopped(run, view, now));
       }
-    } else if (state !== null && ACTIVE.has(state) && this.pendingStart === null) {
+    } else if (state !== null && ACTIVE.has(state) && this.pendingStart === null && !wasPending) {
       // Сушка идёт, а записи нет: кнопка на корпусе (prev был idle/cooldown) либо сервис
       // поднялся посреди сушки (prev неизвестен) — тогда начало восстанавливаем из run_elapsed.
       const fromButton = this.prev.state !== null && !ACTIVE.has(this.prev.state);

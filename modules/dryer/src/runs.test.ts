@@ -79,6 +79,18 @@ describe("RunManager.start / stop", () => {
     expect(await failed).toMatchObject({ code: "node_unresponsive", status: 504 });
     expect(store.currentRun()).toBeNull();
   });
+
+  it("гонка: tick() не открывает button/recovered run, пока наш собственный старт ещё не долетел до store.openRun()", async () => {
+    const { runs, store, view, params, timers } = make();
+    // Мок переводит ноду в heating синхронно внутри sendRun("START"), но продолжение
+    // start() после await всё равно уходит в микротаску — окно для гонки есть даже без
+    // задержки на стороне ноды.
+    const p = runs.start(params, S);
+    runs.tick(timers.now, view(), S); // не должен увидеть "свободный" pendingStart и открыть чужую запись
+    await p;
+    expect(store.listRuns(0, timers.now + 1)).toHaveLength(1);
+    expect(store.currentRun()!.startedBy).toBe("ui:alex");
+  });
 });
 
 describe("RunManager.tick", () => {
