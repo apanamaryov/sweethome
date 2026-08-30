@@ -1,0 +1,438 @@
+# Нода сушилки — спека docs/superpowers/specs/2026-08-30-dryer-design.md, §5–§7.
+# Распиновка — §6. Правила защиты зашиты и из веба не меняются намеренно.
+
+esphome:
+  name: dryer
+  on_boot:
+    priority: -100
+    then:
+      # PID-климат восстанавливает режим из флеша — после сброса он мог бы снова включить нагрев.
+      # Спека §7: после перезагрузки всегда idle, выходы выкл.
+      - climate.control:
+          id: pid_ctrl
+          mode: "OFF"
+      - lambda: |-
+          id(g_state) = 0;
+          id(g_run_started_ms) = 0;
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+logger:
+  level: INFO
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  fast_connect: true
+  reboot_timeout: 0s        # без сети досушиваем, а не перезагружаемся
+
+mqtt:
+  broker: !secret mqtt_host
+  port: 1883
+  username: !secret mqtt_user
+  password: !secret mqtt_password
+  topic_prefix: dryer
+  discovery: false
+  reboot_timeout: 0s
+  log_topic: dryer/debug
+  birth_message:
+    topic: dryer/status
+    payload: online
+    retain: true
+  will_message:
+    topic: dryer/status
+    payload: offline
+    retain: true
+  on_message:
+    - topic: dryer/cmd/run
+      then:
+        - lambda: |-
+            const int st = id(g_state);
+            if (x == "START") {
+              if (st == 0) id(start_run)->execute();
+            } else if (x == "STOP") {
+              if (st == 1 || st == 2) id(stop_run)->execute("command");
+              else if (st == 4) { id(g_state) = 3; id(state_text).update(); }   // сброс ошибки → остывание
+            }
+
+globals:
+  # --- кэш cfg/* во флеш: кнопка стартует с последней уставкой и без Pi ---
+  - { id: g_setpoint,     type: float, restore_value: true, initial_value: '60' }
+  - { id: g_max_minutes,  type: int,   restore_value: true, initial_value: '720' }
+  - { id: g_exhaust_min,  type: float, restore_value: true, initial_value: '25' }
+  - { id: g_exhaust_gain, type: float, restore_value: true, initial_value: '4' }
+  # --- автомат: 0 idle, 1 heating, 2 drying, 3 cooldown, 4 fault ---
+  - { id: g_state,          type: int,      initial_value: '0' }
+  - { id: g_run_started_ms, type: uint32_t, initial_value: '0' }
+  - { id: g_stop_reason,    type: std::string, initial_value: '"command"' }
+  # --- свежесть входов и счётчики защиты ---
+  - { id: g_chamber_last_ms,    type: uint32_t, initial_value: '0' }
+  - { id: g_plate_last_ms,      type: uint32_t, initial_value: '0' }
+  - { id: g_heater_duty,        type: float,    initial_value: '0' }
+  - { id: g_heat_hi_since_ms,   type: uint32_t, initial_value: '0' }
+  - { id: g_plate_at_hi,        type: float,    initial_value: '0' }
+  - { id: g_exhaust_duty,       type: float,    initial_value: '0' }   # 0..1
+  - { id: g_exhaust_hi_since_ms,type: uint32_t, initial_value: '0' }
+  - { id: g_rpm,                type: float,    initial_value: '0' }
+  - { id: g_led_phase,          type: int,      initial_value: '0' }
+
+i2c:
+  - id: bus_chamber
+    sda: GPIO21
+    scl: GPIO22
+    frequency: 100kHz
+  - id: bus_ambient
+    sda: GPIO25
+    scl: GPIO26
+    frequency: 100kHz
+
+output:
+  - platform: slow_pwm            # SSR коммутирует в нуле; период 2 с → разрешение ~1 %
+    id: heater_out
+    pin: GPIO27
+    period: 2s
+  - platform: ledc
+    id: exhaust_out
+    pin: GPIO33
+    frequency: 25000Hz
+  - platform: gpio
+    id: circ_out
+    pin: GPIO32
+  - platform: gpio
+    id: led_out
+    pin: GPIO16
+
+climate:
+  - platform: pid
+    id: pid_ctrl
+    name: thermostat
+    internal: true                # в MQTT не публикуем — контракт §5 без climate-топиков
+    sensor: chamber_t
+    default_target_temperature: 60°C
+    heat_output: heater_out
+    control_parameters:           # стартовые; после автотюнинга на корпусе (Task 19) — заменить
+      kp: 0.15
+      ki: 0.0015
+      kd: 0.0
+      output_averaging_samples: 3
+    visual:
+      min_temperature: 35
+      max_temperature: 75
+      temperature_step: 1
+
+sensor:
+  # --- cfg/* от Pi (retained) → глобальные с кэшем во флеш ---
+  - platform: mqtt_subscribe
+    id: cfg_setpoint
+    topic: dryer/cfg/setpoint
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            if (!std::isnan(x) && x >= 35 && x <= 75) {
+              id(g_setpoint) = x;
+              auto call = id(pid_ctrl).make_call();
+              call.set_target_temperature(x);
+              call.perform();
+            }
+  - platform: mqtt_subscribe
+    id: cfg_max_minutes
+    topic: dryer/cfg/max_minutes
+    internal: true
+    on_value:
+      then:
+        - lambda: 'if (!std::isnan(x) && x >= 30 && x <= 2880) id(g_max_minutes) = (int) x;'
+  - platform: mqtt_subscribe
+    id: cfg_exhaust_min
+    topic: dryer/cfg/exhaust_min
+    internal: true
+    on_value:
+      then:
+        - lambda: 'if (!std::isnan(x) && x >= 20 && x <= 100) id(g_exhaust_min) = x;'
+  - platform: mqtt_subscribe
+    id: cfg_exhaust_gain
+    topic: dryer/cfg/exhaust_gain
+    internal: true
+    on_value:
+      then:
+        - lambda: 'if (!std::isnan(x) && x >= 0 && x <= 20) id(g_exhaust_gain) = x;'
+
+  # --- датчики ---
+  - platform: sht4x
+    i2c_id: bus_chamber
+    update_interval: 10s
+    temperature:
+      name: chamber_temperature
+      id: chamber_t
+      on_value:
+        then:
+          - lambda: 'if (!std::isnan(x)) id(g_chamber_last_ms) = millis();'
+    humidity:
+      name: chamber_humidity
+      id: chamber_rh
+  - platform: sht4x
+    i2c_id: bus_ambient
+    update_interval: 10s
+    temperature:
+      name: ambient_temperature
+      id: ambient_t
+    humidity:
+      name: ambient_humidity
+      id: ambient_rh
+
+  # NTC пластины: 10 кОм на 3V3, NTC на GND (DOWNSTREAM), 100 нФ на землю. ADC1 — GPIO34.
+  - platform: adc
+    pin: GPIO34
+    id: plate_adc
+    attenuation: 12db
+    update_interval: 2s
+    internal: true
+    filters:
+      - median:
+          window_size: 5
+          send_every: 5           # → каждые 10 с
+  - platform: resistance
+    sensor: plate_adc
+    configuration: DOWNSTREAM
+    resistor: 10kOhm
+    reference_voltage: 3.3V
+    id: plate_r
+    internal: true
+  - platform: ntc
+    sensor: plate_r
+    name: plate_temperature
+    id: plate_t
+    calibration:
+      b_constant: 3950
+      reference_temperature: 25°C
+      reference_resistance: 100kOhm
+    on_value:
+      then:
+        - lambda: 'if (!std::isnan(x) && x > -20 && x < 150) id(g_plate_last_ms) = millis();'
+
+  # Тахометр вытяжки: 10 кОм подтяжка на 3V3, 10 кОм последовательно + стабилитрон 3.3 В (§6).
+  # При низовом ШИМе импульсы идут только во включённой фазе — поэтому правило «есть ли импульсы вообще».
+  - platform: pulse_counter
+    pin:
+      number: GPIO35
+      mode:
+        input: true
+    name: exhaust_rpm
+    id: exhaust_rpm
+    update_interval: 10s
+    filters:
+      - multiply: 0.5             # 2 импульса на оборот → об/мин
+    on_value:
+      then:
+        - lambda: 'id(g_rpm) = x;'
+
+  # --- вычисляемые, публикуются каждые 10 с независимо от изменения (пульс для Pi) ---
+  - platform: pid
+    climate_id: pid_ctrl
+    type: HEAT
+    name: heater_duty
+    id: heater_duty
+    on_value:
+      then:
+        - lambda: 'id(g_heater_duty) = x;'
+  - platform: template
+    name: humidity_excess
+    id: humidity_excess
+    unit_of_measurement: "pt"
+    accuracy_decimals: 1
+    update_interval: 10s
+    lambda: |-
+      // Та же формула Магнуса (Alduchov–Eskridge), что в modules/dryer/src/humidity.ts — менять парой.
+      const float tc = id(chamber_t).state, rc = id(chamber_rh).state;
+      const float ta = id(ambient_t).state, ra = id(ambient_rh).state;
+      if (std::isnan(tc) || std::isnan(rc) || std::isnan(ta) || std::isnan(ra)) return NAN;
+      auto es = [](float t) { return 6.1094f * expf(17.625f * t / (243.04f + t)); };
+      const float ah = 216.7f * (es(ta) * ra / 100.0f) / (273.15f + ta);
+      const float eb = ah * (273.15f + tc) / 216.7f;
+      float floor_rh = 100.0f * eb / es(tc);
+      floor_rh = std::max(0.0f, std::min(100.0f, floor_rh));
+      return rc - floor_rh;
+  - platform: template
+    name: exhaust_duty
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: 'return id(g_exhaust_duty) * 100.0f;'
+  - platform: template
+    name: run_elapsed
+    unit_of_measurement: "s"
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: |-
+      if (id(g_run_started_ms) == 0) return 0;
+      return (millis() - id(g_run_started_ms)) / 1000.0f;
+  - platform: template
+    name: setpoint
+    unit_of_measurement: "°C"
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: 'return id(g_setpoint);'
+  - platform: template
+    name: max_minutes
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: 'return id(g_max_minutes);'
+  - platform: uptime
+    name: uptime
+    update_interval: 10s
+
+text_sensor:
+  - platform: template
+    name: state
+    id: state_text
+    update_interval: 10s
+    lambda: |-
+      static const char* NAMES[] = {"idle", "heating", "drying", "cooldown", "fault"};
+      return {NAMES[id(g_state)]};
+  - platform: template
+    name: stop_reason
+    id: stop_reason_text
+    update_interval: 10s
+    lambda: 'return {id(g_stop_reason)};'
+
+binary_sensor:
+  - platform: gpio
+    id: button
+    internal: true
+    pin:
+      number: GPIO4
+      mode:
+        input: true
+        pullup: true
+      inverted: true
+    filters:
+      - delayed_on: 50ms
+    on_press:
+      then:
+        - lambda: |-
+            const int st = id(g_state);
+            if (st == 0) id(start_run)->execute();
+            else if (st == 4) { id(g_state) = 3; id(state_text).update(); }
+            else if (st == 1 || st == 2) id(stop_run)->execute("button");
+  - platform: template
+    name: heater
+    lambda: 'return id(g_heater_duty) > 0.5f;'
+  - platform: template
+    name: circulation
+    lambda: 'return id(g_state) != 0;'
+
+script:
+  - id: start_run
+    then:
+      - lambda: |-
+          if (id(g_state) != 0) return;
+          id(g_state) = 1;
+          id(g_run_started_ms) = millis();
+          id(g_heat_hi_since_ms) = 0;
+          id(g_exhaust_hi_since_ms) = 0;
+          auto call = id(pid_ctrl).make_call();
+          call.set_mode(climate::CLIMATE_MODE_HEAT);
+          call.set_target_temperature(id(g_setpoint));
+          call.perform();
+          id(circ_out).turn_on();
+      - component.update: state_text        # Pi ждёт heating до 5 с — не тянем до следующего 10-с тика
+  - id: stop_run
+    parameters:
+      reason: string
+    then:
+      - lambda: |-
+          id(g_stop_reason) = reason;
+          id(g_state) = (reason.rfind("fault:", 0) == 0) ? 4 : 3;
+          id(g_run_started_ms) = 0;
+          auto call = id(pid_ctrl).make_call();
+          call.set_mode(climate::CLIMATE_MODE_OFF);
+          call.perform();
+      - component.update: stop_reason_text
+      - component.update: state_text
+
+interval:
+  # --- автомат и защита, раз в секунду ---
+  - interval: 1s
+    then:
+      - lambda: |-
+          const uint32_t now = millis();
+          const int st = id(g_state);
+          const bool active = (st == 1 || st == 2);
+          const float chamber = id(chamber_t).state;
+          const float plate = id(plate_t).state;
+
+          if (active) {
+            // --- защита (§7) ---
+            const char* fault = nullptr;
+            if (!std::isnan(plate) && plate > 110.0f) fault = "fault:plate_overheat";
+            else if (!std::isnan(chamber) && chamber > 85.0f) fault = "fault:overheat";
+            else if (now - id(g_chamber_last_ms) > 30000 || now - id(g_plate_last_ms) > 30000) fault = "fault:sensor";
+            else {
+              if (id(g_heater_duty) >= 60.0f) {
+                if (id(g_heat_hi_since_ms) == 0) { id(g_heat_hi_since_ms) = now; id(g_plate_at_hi) = plate; }
+                else if (now - id(g_heat_hi_since_ms) > 300000 && plate - id(g_plate_at_hi) < 5.0f) fault = "fault:heater";
+              } else id(g_heat_hi_since_ms) = 0;
+              if (id(g_exhaust_duty) >= 0.30f) {
+                if (id(g_exhaust_hi_since_ms) == 0) id(g_exhaust_hi_since_ms) = now;
+                else if (now - id(g_exhaust_hi_since_ms) > 60000 && id(g_rpm) <= 0.0f) fault = "fault:exhaust";
+              } else id(g_exhaust_hi_since_ms) = 0;
+            }
+            if (fault != nullptr) { id(stop_run)->execute(std::string(fault)); return; }
+
+            // --- таймер ---
+            if (now - id(g_run_started_ms) >= (uint32_t) id(g_max_minutes) * 60000UL) { id(stop_run)->execute("timeout"); return; }
+
+            // --- heating → drying при первом достижении уставки ---
+            if (st == 1 && !std::isnan(chamber) && chamber >= id(g_setpoint) - 0.5f) { id(g_state) = 2; id(state_text).update(); }
+
+            // --- вытяжка по избытку; температура важнее продува ---
+            float target = id(g_exhaust_min) / 100.0f;
+            const float excess = id(humidity_excess).state;
+            if (!std::isnan(excess)) target = std::max(target, std::min(1.0f, (id(g_exhaust_min) + excess * id(g_exhaust_gain)) / 100.0f));
+            const bool starving = id(g_heater_duty) >= 99.0f && !std::isnan(chamber) && chamber < id(g_setpoint) - 2.0f;
+            if (starving) target = id(g_exhaust_min) / 100.0f;
+            float cur = id(g_exhaust_duty);
+            cur += std::max(-0.02f, std::min(0.02f, target - cur));   // плавно, ~1 мин на полный ход
+            id(g_exhaust_duty) = cur;
+            id(exhaust_out).set_level(cur);
+            id(circ_out).turn_on();
+          } else if (st == 3 || st == 4) {
+            // остывание; ошибка ведёт себя так же, но состояние остаётся fault до сброса
+            if (!std::isnan(plate) && plate < 50.0f) {
+              id(circ_out).turn_off();
+              id(g_exhaust_duty) = 0.0f;
+              id(exhaust_out).set_level(0.0f);
+              if (st == 3) { id(g_state) = 0; id(state_text).update(); }
+            } else {
+              id(circ_out).turn_on();
+              id(g_exhaust_duty) = 0.5f;
+              id(exhaust_out).set_level(0.5f);
+            }
+          } else {
+            id(g_exhaust_duty) = 0.0f;
+            id(exhaust_out).set_level(0.0f);
+            id(circ_out).turn_off();
+          }
+
+  # --- светодиод: idle выкл; heating 1 Гц; drying горит; cooldown 0.25 Гц; fault 4 Гц ---
+  - interval: 125ms
+    then:
+      - lambda: |-
+          id(g_led_phase) = (id(g_led_phase) + 1) % 32;   // цикл 4 с
+          const int p = id(g_led_phase);
+          bool on = false;
+          switch (id(g_state)) {
+            case 1: on = (p % 8) < 4; break;
+            case 2: on = true; break;
+            case 3: on = p < 4; break;
+            case 4: on = (p % 2) == 0; break;
+            default: on = false;
+          }
+          if (on) id(led_out).turn_on(); else id(led_out).turn_off();
