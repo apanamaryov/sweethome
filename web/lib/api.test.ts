@@ -1,4 +1,4 @@
-import { wsUrl, getJson, postJson } from "./api";
+import { wsUrl, getJson, postJson, sendJson } from "./api";
 
 const originalNodeEnv = process.env.NODE_ENV;
 const originalLocation = window.location;
@@ -152,5 +152,20 @@ describe("postJson", () => {
 
     await expect(postJson("/api/foo", {})).rejects.toThrow("Password change required");
     expect(window.location.href).toBe("/change-password");
+  });
+});
+
+describe("sendJson", () => {
+  it("PUT/DELETE с JSON-телом; 401 → /login", async () => {
+    const calls: [string, RequestInit][] = [];
+    global.fetch = jest.fn((url: string, init: RequestInit) => {
+      calls.push([url, init]);
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({}) } as Response);
+    }) as unknown as typeof fetch;
+    await sendJson("PUT", "/api/x", { a: 1 });
+    expect(calls[0][1]).toMatchObject({ method: "PUT", body: JSON.stringify({ a: 1 }) });
+    await sendJson("DELETE", "/api/x");
+    expect(calls[1][1]).toMatchObject({ method: "DELETE" });
+    expect(calls[1][1].body).toBeUndefined();
   });
 });

@@ -8,6 +8,7 @@ const config = {
   setupFilesAfterEnv: ["<rootDir>/jest.setup.ts"],
   moduleNameMapper: {
     "^@sweethome/inverter-shared$": "<rootDir>/../packages/inverter-shared/src/index.ts",
+    "^@sweethome/dryer-shared$": "<rootDir>/../packages/dryer-shared/src/index.ts",
     "^@sweethome/shared$": "<rootDir>/../packages/shared/src/index.ts",
     // next/jest только резолвит "@/*" через SWC-транспиляцию import-стейтментов;
     // строковый аргумент jest.mock("@/...") этой трансформации не подвергается,
