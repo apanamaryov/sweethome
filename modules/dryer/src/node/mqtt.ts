@@ -87,8 +87,9 @@ export class MqttNodeLink implements NodeLink {
     const [, kind, key] = m;
     this.lastMsgAt = this.o.now();
     if (kind === "sensor") {
-      const v = Number(s);
-      // ESPHome шлёт "nan" для отсутствующего значения — это null, не ноль.
+      // ESPHome шлёт "nan" для отсутствующего значения — это null, не ноль. Пустая нагрузка
+      // (mosquitto_pub -n, которым чистят retained-топики) — тоже «нет данных»: Number("") = 0.
+      const v = s === "" ? NaN : Number(s);
       if (Number.isFinite(v)) this.num.set(key, v);
       else this.num.delete(key);
     } else if (kind === "text_sensor") {

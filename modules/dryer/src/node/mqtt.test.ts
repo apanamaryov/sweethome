@@ -54,6 +54,19 @@ describe("MqttNodeLink", () => {
     expect(client.subs).toEqual(["dryer/#"]);
   });
 
+  it("пустая нагрузка — это «нет данных», а не ноль", () => {
+    const { client, link, online } = make();
+    online();
+    client.msg("dryer/sensor/chamber_temperature/state", "58.2");
+    expect(link.view(NOW, 60_000).chamber.temp).toBe(58.2);
+    // mosquitto_pub -n -r (так в docs/dryer/README.md чистят retained-топики) шлёт пустую строку.
+    client.msg("dryer/sensor/chamber_temperature/state", "");
+    client.msg("dryer/sensor/plate_temperature/state", "");
+    const v = link.view(NOW, 60_000);
+    expect(v.chamber.temp).toBeNull();
+    expect(v.plateTemp).toBeNull();
+  });
+
   it("собирает снапшот из сенсоров; nan → null; неизвестное состояние → null", () => {
     const { client, link, online } = make();
     online();
