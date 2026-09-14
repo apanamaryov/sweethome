@@ -5,7 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSnapshot } from "@/lib/snapshot";
 import { MetaProvider, useMeta } from "@/lib/meta";
-import { useT, useDocTitle, modeLabel, warnLabel } from "@/lib/i18n";
+import { useT, useDocTitle, modeLabel, warnLabel, seasonLabel } from "@/lib/i18n";
+import { detectSeasonProfile } from "@sweethome/inverter-shared";
 
 function TopBar() {
   const t = useT();
@@ -32,6 +33,9 @@ function TopBar() {
   // постарее или вкладка, оставленная открытой через деплой): payload никто не
   // валидирует, так что деградируем в прежнее поведение бейджа, а не в пустое «—».
   const source = snapshot?.powerSource ?? snapshot?.mode ?? "Unknown";
+  // Сезонный профиль показываем только когда настройки прочитаны: до этого
+  // «Своё» соврало бы — мы просто ещё не знаем, что стоит в инверторе.
+  const info = snapshot?.info ?? null;
 
   return (
     <header className="topbar">
@@ -41,6 +45,9 @@ function TopBar() {
       </div>
       <div className="topbar-row">
         <span className={pillClass}>{pillText}</span>
+        {info && (
+          <span className="pill pill-season">{t.seasonNow + seasonLabel(t, detectSeasonProfile(info))}</span>
+        )}
         {snapshot?.timestamp ? (
           // key = timestamp: ремоунт перезапускает CSS-анимацию «e-ink вспышки»
           <span key={snapshot.timestamp} className="updated flash">

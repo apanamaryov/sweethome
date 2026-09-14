@@ -30,6 +30,14 @@ const uk = {
     "(потребує розблокування керування). Карта регістрів — проєкт esphome-smg-ii.",
   ctlOsp: "Пріоритет джерела виходу", ctlCsp: "Пріоритет заряду батареї",
   ctlMcc: "Макс. струм заряду (А)", ctlMacc: "Макс. струм заряду від мережі (А)",
+  ctlSeason: "Сезонний профіль",
+  seasonWinter: "Зима", seasonSummer: "Літо", seasonCustom: "Своє",
+  seasonNow: "Сезон: ",
+  seasonHint:
+    "Зима — дім живиться від мережі, батарея стоїть зарядженою в резерві. " +
+    "Літо — дім від сонця і батареї, мережа підхоплює лише за перевантаження чи хмар.",
+  seasonConfirm: "Застосувати профіль «{label}»? Зміниться: {changes}",
+  toastSeasonOk: "Готово: профіль «{label}»", toastSeasonSame: "Цей профіль уже стоїть",
   apply: "Застосувати", send: "Надіслати",
   controlNote: "Типово запис заблоковано. Розблокуй, зміни один параметр — після запису блокування повернеться автоматично.",
   lockDisabledServer: "🔒 Запис вимкнено на сервері (лише читання)",
@@ -279,6 +287,14 @@ const ru: Dict = {
     "(требует разблокировки управления). Карта регистров — проект esphome-smg-ii.",
   ctlOsp: "Приоритет источника выхода", ctlCsp: "Приоритет заряда батареи",
   ctlMcc: "Макс. ток заряда (А)", ctlMacc: "Макс. ток заряда от сети (А)",
+  ctlSeason: "Сезонный профиль",
+  seasonWinter: "Зима", seasonSummer: "Лето", seasonCustom: "Своё",
+  seasonNow: "Сезон: ",
+  seasonHint:
+    "Зима — дом питается от сети, батарея стоит заряженной в резерве. " +
+    "Лето — дом от солнца и батареи, сеть подхватывает только при перегрузе или в пасмурную погоду.",
+  seasonConfirm: "Применить профиль «{label}»? Изменится: {changes}",
+  toastSeasonOk: "Готово: профиль «{label}»", toastSeasonSame: "Этот профиль уже стоит",
   apply: "Применить", send: "Отправить",
   controlNote: "По умолчанию запись заблокирована. Разблокируй, измени один параметр — после записи блокировка вернётся автоматически.",
   lockDisabledServer: "🔒 Запись отключена на сервере (только чтение)",
@@ -523,6 +539,14 @@ const en: Dict = {
     "(requires unlocking control). Register map: the esphome-smg-ii project.",
   ctlOsp: "Output source priority", ctlCsp: "Battery charging priority",
   ctlMcc: "Max charging current (A)", ctlMacc: "Max AC charging current (A)",
+  ctlSeason: "Season profile",
+  seasonWinter: "Winter", seasonSummer: "Summer", seasonCustom: "Custom",
+  seasonNow: "Season: ",
+  seasonHint:
+    "Winter — the house runs on the grid and the battery stays charged as a reserve. " +
+    "Summer — the house runs on PV and battery; the grid steps in only on overload or heavy cloud.",
+  seasonConfirm: "Apply the \u201c{label}\u201d profile? Changes: {changes}",
+  toastSeasonOk: "Done: \u201c{label}\u201d profile", toastSeasonSame: "That profile is already set",
   apply: "Apply", send: "Send",
   controlNote: "Writing is locked by default. Unlock, change one parameter — the lock re-engages automatically after writing.",
   lockDisabledServer: "🔒 Writing disabled on the server (read-only)",

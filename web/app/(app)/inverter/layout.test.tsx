@@ -6,6 +6,7 @@ import { SnapshotProvider } from "@/lib/snapshot";
 import type { ApiMeta, Snapshot } from "@sweethome/inverter-shared";
 import {
   buildMeta,
+  buildRatedInfo,
   buildSnapshot,
   flushMicrotasks,
   installFakeWebSocket,
@@ -50,6 +51,30 @@ async function renderLayout(
   });
   return utils;
 }
+
+describe("AppLayout (inverter) — season profile pill", () => {
+  it("names the season profile the inverter stands on", async () => {
+    await renderLayout(<div>child</div>, {
+      snapshot: buildSnapshot({ info: buildRatedInfo({ outputSourcePriority: 3, chargerSourcePriority: 0 }) }),
+    });
+
+    expect(screen.getByText(t.seasonNow + t.seasonWinter)).toHaveClass("pill", "pill-season");
+  });
+
+  it("says custom when the settings match neither profile", async () => {
+    await renderLayout(<div>child</div>, {
+      snapshot: buildSnapshot({ info: buildRatedInfo({ outputSourcePriority: 0, chargerSourcePriority: 1 }) }),
+    });
+
+    expect(screen.getByText(t.seasonNow + t.seasonCustom)).toBeInTheDocument();
+  });
+
+  it("shows no pill at all before the settings have been read", async () => {
+    const { container } = await renderLayout(<div>child</div>, { snapshot: buildSnapshot({ info: null }) });
+
+    expect(container.querySelector(".pill-season")).toBeNull();
+  });
+});
 
 describe("AppLayout (inverter) — TopBar connection pill", () => {
   it("shows 'connecting' before any snapshot has arrived", async () => {

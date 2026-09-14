@@ -29,6 +29,7 @@ your local network. No data ever leaves your LAN.
 - 📱 **Mobile-friendly web UI** (Next.js) with live updates over WebSocket and automatic reconnection, including a header badge that shows the *derived* power source (grid / battery / solar) — the inverter has no "solar" mode of its own, so "Solar" is inferred from telemetry (autonomous mode, PV output above a threshold, no battery discharge) with hysteresis to ignore passing clouds.
 - 🌍 **Three interface languages** — Ukrainian, Russian, English; switching without a page reload.
 - 🔒 **Safe control** — read-only by default; writes require an explicit unlock, a register whitelist, automatic re-locking, and an "as-found" settings baseline with drift highlighting.
+- 🌗 **Season profiles** — a one-click winter/summer switch that sets the output and charging priorities together (winter: grid-powered house with the battery held as a charged reserve; summer: PV and battery first, grid only as backup), with the profile the inverter currently stands on shown in the header.
 - 🏠 **Home Assistant integration** over MQTT with auto-discovery — entities appear in HA by themselves, no YAML needed.
 - 🔑 **Users & roles** — always-on login with two roles (admin / viewer), forced password change on first use, admin-managed accounts, scrypt-hashed passwords in SQLite, HttpOnly sessions and brute-force protection.
 - 📊 **Statistics & history** — SQLite telemetry log with a per-metric power chart set, daily kWh totals, energy bars, a "Solar today" window (start/end of stable PV output), and an event log (mode changes, grid loss, faults).
@@ -302,13 +303,13 @@ the same Bearer header.
 
 ## 🖥️ Web interface
 
-- **Header** — connection status (Connected / Demo data / No connection), the current power source (Grid / Solar / Battery / Bypass / Charging / …), last update time.
+- **Header** — connection status (Connected / Demo data / No connection), the current power source (Grid / Solar / Battery / Bypass / Charging / …), the season profile in effect (Winter / Summer / Custom), last update time.
 - **Battery** — state of charge (SoC ring), voltage, charge/discharge current, state.
 - **Solar (PV)** — power, voltage, current.
 - **Solar today** — start/end of today's stable solar window (idle / active / ended), backed by `GET /api/inverter/stats/solar-window`.
 - **Load** — active power, apparent power (VA), load %, voltage/frequency.
 - **Grid** — consumed power, voltage, frequency, inverter temperature.
-- **Settings** (`/inverter/settings`, admin only) — "Current / Baseline" table with drift highlighting (including SOC thresholds for lithium batteries), function switches, a "Re-read baseline" button; lock status and an Unlock/Lock button; output source priority, charging priority, max charging current, max AC charging current. Every change requires confirmation; the lock re-engages automatically after a write.
+- **Settings** (`/inverter/settings`, admin only) — "Current / Baseline" table with drift highlighting (including SOC thresholds for lithium batteries), function switches, a "Re-read baseline" button; lock status and an Unlock/Lock button; the **season profile** switch (Winter / Summer), output source priority, charging priority, max charging current, max AC charging current. Every change requires confirmation; the lock re-engages automatically after a write.
 - **Diagnostics** (`/inverter/diagnostics`, admin only) — read/write arbitrary Modbus registers (`R 201 10`, `W 331 1`).
 - **Statistics** (`/inverter/stats`) — a solar-window panel for the selected period, charts, daily totals with solar start/end columns, and the event log (see [Statistics](#-statistics)).
 
@@ -343,6 +344,7 @@ This module's endpoints, mounted by the host under `/api/inverter` and `/ws/inve
 | `GET` | `/api/inverter/snapshot` | Current snapshot (status, mode, settings, warnings) |
 | `GET` | `/api/inverter/meta` | Value maps for the controls |
 | `POST` | `/api/inverter/control` | `{type, value}` — write a setting (whitelist; rejected while locked). `{preview: true}` reports the register, raw value, current and baseline without writing |
+| `POST` | `/api/inverter/profile` | `{name}` — apply a season profile (`winter` / `summer`): both priorities in one action, steps that already match are skipped. `{preview: true}` reports what would change without writing |
 | `POST` | `/api/inverter/lock` | `{locked}` — engage/release the write lock |
 | `GET` | `/api/inverter/baseline` | The settings baseline captured on connect |
 | `POST` | `/api/inverter/baseline/recapture` | Re-read the settings and overwrite the baseline |
@@ -358,6 +360,11 @@ Every route above accepts either the session cookie or `Authorization: Bearer in
 `maxChargingCurrent` (332), `maxAcChargingCurrent` (333), `batteryRechargeVoltage` (327),
 `batteryRedischargeVoltage` (326).
 
+`/api/inverter/profile` names: `winter` — output priority SUB (register 301 = 3) plus charging
+from utility first (331 = 0); `summer` — output priority SBU (301 = 2) plus charging from PV
+first (331 = 1). One released lock covers the whole profile and the lock re-engages once at
+the end, so a two-step profile does not need two unlocks.
+
 ```bash
 curl -X POST http://<pi-address>:3000/api/inverter/control \
   -H 'Authorization: Bearer inv_…' -H 'Content-Type: application/json' \
@@ -367,6 +374,14 @@ curl -X POST http://<pi-address>:3000/api/inverter/control \
 curl -X POST http://<pi-address>:3000/api/inverter/control \
   -H 'Authorization: Bearer inv_…' -H 'Content-Type: application/json' \
   -d '{"type":"chargerSourcePriority","value":3,"preview":true}'
+
+# season profile — winter, with a dry run first:
+curl -X POST http://<pi-address>:3000/api/inverter/profile \
+  -H 'Authorization: Bearer inv_…' -H 'Content-Type: application/json' \
+  -d '{"name":"winter","preview":true}'
+curl -X POST http://<pi-address>:3000/api/inverter/profile \
+  -H 'Authorization: Bearer inv_…' -H 'Content-Type: application/json' \
+  -d '{"name":"winter"}'
 ```
 
 ---
@@ -479,8 +494,8 @@ http://<pi-address>:3000/mcp     header: Authorization: Bearer inv_…
 side by side), `get_settings_diff`, `get_alarms`, `get_meta`, `get_health`,
 `read_registers`. History: `get_series`, `get_daily`, `get_energy`,
 `get_events`, `get_solar_window`, `summarize_period`, `export_csv`. Writing (admin token
-with the `write` scope only): `set_control`, `set_lock`, `recapture_baseline`,
-`write_register`. Time arguments accept unix ms, ISO 8601, `now` or offsets like `-24h`;
+with the `write` scope only): `set_control`, `set_season_profile`, `set_lock`,
+`recapture_baseline`, `write_register`. Time arguments accept unix ms, ISO 8601, `now` or offsets like `-24h`;
 series are downsampled to a point cap and always say so.
 
 **Resources.** `inverter://snapshot` (subscribable — the client is notified as new polls
@@ -517,7 +532,11 @@ you need to"**:
 
 - **Nothing is ever written automatically.** Polling sends only register reads (fn 0x03). Writes happen exclusively on explicit action.
 - **The write lock is engaged by default** (`STARTUP_LOCKED=true`). Until you press "Unlock" (or call `POST /api/inverter/lock`), all writes are rejected — via the UI and the API alike (including `W` commands in `/api/inverter/raw`).
-- **Automatic re-locking** after every successful write (`AUTO_RELOCK=true`).
+- **Automatic re-locking** after every successful write (`AUTO_RELOCK=true`). A season profile is one
+  authorized action, not two: the lock is checked once before the profile starts and re-engaged once
+  after its last write, so the second step cannot be shut out by the first one's re-lock. A profile
+  that fails between steps still gives the lock back and says how far it got; only one profile is
+  applied at a time, so two of them cannot interleave into a half-winter, half-summer setup.
 - **Settings baseline** — on first connect, all current settings (registers 300–343) are read once and persisted to disk. The UI **highlights drift** from the baseline. When a different device connects, the baseline is captured anew.
 - **Reading is safe; writing is not.** Changing voltage thresholds, charging currents and priorities can harm the battery or the load. Change one parameter at a time.
 - All writes go through a **register whitelist** with value validation; a write failure = a Modbus exception from the inverter.

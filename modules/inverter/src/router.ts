@@ -5,6 +5,8 @@ import {
   ALLOWED_MAX_CHARGE_CURRENT,
   ALLOWED_MAX_AC_CHARGE_CURRENT,
   ControlType,
+  SEASON_PROFILE_NAMES,
+  isSeasonProfile,
 } from "@sweethome/inverter-shared";
 import { writeSource, denyWithoutWrite, requireAdmin } from "@sweethome/shared/module";
 import { Inverter } from "./inverter";
@@ -29,7 +31,7 @@ export function createInverterRouter(deps: {
   const { inverter, stats, cfg } = deps;
   const router = express.Router();
   // Admin-only зона модуля — тот же список путей, что был в server.ts, минус /api и минус users/tokens (они у хоста).
-  router.use(["/control", "/lock", "/raw", "/baseline"], requireAdmin);
+  router.use(["/control", "/profile", "/lock", "/raw", "/baseline"], requireAdmin);
 
   router.get("/snapshot", (_req, res) => res.json(inverter.getSnapshot()));
 
@@ -63,6 +65,28 @@ export function createInverterRouter(deps: {
       }
       if (denyWithoutWrite(req, res)) return;
       const result = await inverter.control(type as ControlType, numValue, { source: writeSource(req) });
+      res.json(result);
+    } catch (e) {
+      res.status(400).json({ ok: false, error: (e as Error).message });
+    }
+  });
+
+  // Сезонный профиль — несколько команд одним действием (см. profiles.ts в inverter-shared).
+  router.post("/profile", async (req, res) => {
+    try {
+      const { name, preview } = req.body ?? {};
+      if (!isSeasonProfile(name)) {
+        return res
+          .status(400)
+          .json({ ok: false, error: `Unknown profile: ${name}. Known: ${SEASON_PROFILE_NAMES.join(", ")}` });
+      }
+      if (preview === true) {
+        // Предпросмотр — это чтение: доступен и при блокировке, и без скоупа write.
+        const p = await inverter.previewProfile(name);
+        return res.json({ ok: true, preview: true, ...p });
+      }
+      if (denyWithoutWrite(req, res)) return;
+      const result = await inverter.applyProfile(name, { source: writeSource(req) });
       res.json(result);
     } catch (e) {
       res.status(400).json({ ok: false, error: (e as Error).message });

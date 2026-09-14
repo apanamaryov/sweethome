@@ -157,6 +157,45 @@ describe("createInverterRouter", () => {
     });
   });
 
+  describe("POST /profile — сезонные профили", () => {
+    it("403s a viewer, like every other write route", async () => {
+      const app = appWith({ inverter, stats: null, cfg }, viewer(), sessionAuth);
+
+      const res = await request(app).post("/api/inverter/profile").send({ name: "winter" });
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual({ ok: false, code: "forbidden", error: "Admins only" });
+    });
+
+    it("rejects an unknown profile name", async () => {
+      const app = appWith({ inverter, stats: null, cfg }, admin(), sessionAuth);
+
+      const res = await request(app).post("/api/inverter/profile").send({ name: "autumn" });
+      expect(res.status).toBe(400);
+      expect(res.body.ok).toBe(false);
+      expect(res.body.error).toMatch(/autumn/);
+    });
+
+    it("previews without the write scope, listing both steps of the profile", async () => {
+      const app = appWith({ inverter, stats: null, cfg }, admin(), readToken);
+
+      const res = await request(app).post("/api/inverter/profile").send({ name: "winter", preview: true });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ ok: true, preview: true, profile: "winter" });
+      expect(res.body.steps).toEqual([
+        expect.objectContaining({ type: "outputSourcePriority", register: 301, rawValue: 3 }),
+        expect.objectContaining({ type: "chargerSourcePriority", register: 331, rawValue: 0 }),
+      ]);
+    });
+
+    it("denies the actual apply without the write scope", async () => {
+      const app = appWith({ inverter, stats: null, cfg }, admin(), readToken);
+
+      const res = await request(app).post("/api/inverter/profile").send({ name: "summer" });
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("scope_required");
+    });
+  });
+
   describe("statistics routes without a recorder", () => {
     it("503s when stats is null", async () => {
       const app = appWith({ inverter, stats: null, cfg }, admin(), sessionAuth);

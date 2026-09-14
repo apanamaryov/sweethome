@@ -5,7 +5,7 @@ import {
   CHARGER_SOURCE_PRIORITY,
   OUTPUT_SOURCE_PRIORITY,
 } from "@sweethome/inverter-shared";
-import type { ControlType, Snapshot } from "@sweethome/inverter-shared";
+import type { ControlType, SeasonProfile, Snapshot } from "@sweethome/inverter-shared";
 import type { Inverter } from "../inverter";
 import type { InverterConfig } from "../config";
 import type { StatsRecorder } from "../stats/recorder";
@@ -97,6 +97,12 @@ export function createLocalGateway(
     },
     async previewControl(type: ControlType, value: number) {
       return inverter.previewControl(type, value);
+    },
+    async applyProfile(profile: SeasonProfile) {
+      return inverter.applyProfile(profile, { source });
+    },
+    async previewProfile(profile: SeasonProfile) {
+      return inverter.previewProfile(profile);
     },
     async setLock(locked: boolean) {
       return inverter.setLock(locked);

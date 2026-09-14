@@ -57,6 +57,13 @@
  *     `buildControlWrite()`, writes it, re-reads SETTINGS_BLOCKS (6 more
  *     enqueue()'d reads, so ~5*120ms of pacing) to refresh the snapshot, and
  *     — unless `opts.bypassLock` — re-locks when `cfg.autoRelock` is true.
+ *   - `applyProfile(name, opts)`: a season profile (inverter-shared's
+ *     `SEASON_PROFILES`) applied as several `control()` writes. The gates are
+ *     checked ONCE up front, then each step runs with `bypassLock: true` —
+ *     otherwise AUTO_RELOCK would re-lock after step 1 and step 2 would throw.
+ *     Steps whose register already holds the wanted value are skipped (read via
+ *     `previewProfile()` → `previewControl()`), and the lock is re-engaged once
+ *     at the end, only if something was actually written.
  *   - `rawQuery(cmd)`: `"R <addr> [count]"` is always allowed (read-only, no
  *     gates, no post-op refresh); `"W <addr> <value>"` is gated by the exact
  *     same two checks as `control()` (allowControl, then locked), and — unlike
@@ -572,6 +579,187 @@ describe("write gates", () => {
     await p;
 
     expect(inv.isLocked()).toBe(false);
+  });
+});
+
+describe("сезонные профили — applyProfile/previewProfile", () => {
+  it("applies both priorities of the summer profile", async () => {
+    const t = new FakeTransport({ regs: fullRegs() });
+    detectTransportsMock.mockResolvedValue([t]);
+    const inv = makeInverter({ allowControl: true, startupLocked: false });
+    await connectAndFreeze(inv);
+
+    const p = inv.applyProfile("summer", { source: "ui:admin" });
+    await adv(5000);
+    const result = await p;
+
+    expect(result.ok).toBe(true);
+    expect(result.profile).toBe("summer");
+    expect(result.applied.map((s) => s.type)).toEqual(["outputSourcePriority", "chargerSourcePriority"]);
+    expect(result.skipped).toEqual([]);
+    expect(t.regs.get(301)).toBe(2); // SBU
+    expect(t.regs.get(331)).toBe(1); // PV first
+  });
+
+  it("skips a step whose register already holds the wanted value", async () => {
+    const t = new FakeTransport({ regs: fullRegs({ 301: 0, 331: 0 }) });
+    detectTransportsMock.mockResolvedValue([t]);
+    const inv = makeInverter({ allowControl: true, startupLocked: false });
+    await connectAndFreeze(inv);
+
+    const seen: Array<{ register: number }> = [];
+    inv.on("write", (e) => seen.push(e));
+
+    const p = inv.applyProfile("winter"); // 301 := 3, 331 := 0 (уже стоит)
+    await adv(5000);
+    const result = await p;
+
+    expect(result.applied.map((s) => s.type)).toEqual(["outputSourcePriority"]);
+    expect(result.skipped.map((s) => s.type)).toEqual(["chargerSourcePriority"]);
+    expect(seen.map((e) => e.register)).toEqual([301]);
+  });
+
+  it("writes nothing and keeps the lock as it was when the profile already stands", async () => {
+    const t = new FakeTransport({ regs: fullRegs({ 301: 2, 331: 1 }) });
+    detectTransportsMock.mockResolvedValue([t]);
+    const inv = makeInverter({ allowControl: true, startupLocked: true, autoRelock: true });
+    await connectAndFreeze(inv);
+    inv.setLock(false);
+
+    const seen: unknown[] = [];
+    inv.on("write", (e) => seen.push(e));
+
+    const p = inv.applyProfile("summer");
+    await adv(5000);
+    const result = await p;
+
+    expect(result.applied).toEqual([]);
+    expect(seen).toEqual([]);
+    expect(inv.isLocked()).toBe(false);
+  });
+
+  it("refuses while locked, exactly like control()", async () => {
+    const t = new FakeTransport({ regs: fullRegs() });
+    detectTransportsMock.mockResolvedValue([t]);
+    const inv = makeInverter({ allowControl: true, startupLocked: true });
+    await connectAndFreeze(inv);
+
+    await expect(inv.applyProfile("summer")).rejects.toThrow(/locked/i);
+    expect(t.regs.get(301)).toBe(0);
+  });
+
+  it("refuses under ALLOW_CONTROL=false", async () => {
+    const inv = makeInverter({ allowControl: false });
+
+    await expect(inv.applyProfile("winter")).rejects.toThrow(/ALLOW_CONTROL=false/);
+  });
+
+  it("re-locks once at the end, so every step gets through on one unlock", async () => {
+    const t = new FakeTransport({ regs: fullRegs() });
+    detectTransportsMock.mockResolvedValue([t]);
+    const inv = makeInverter({ allowControl: true, startupLocked: true, autoRelock: true });
+    await connectAndFreeze(inv);
+    inv.setLock(false);
+
+    const p = inv.applyProfile("summer");
+    await adv(5000);
+    await p;
+
+    expect(t.regs.get(301)).toBe(2);
+    expect(t.regs.get(331)).toBe(1);
+    expect(inv.isLocked()).toBe(true);
+  });
+
+  it("logs every step of the profile with its source", async () => {
+    const t = new FakeTransport({ regs: fullRegs() });
+    detectTransportsMock.mockResolvedValue([t]);
+    const inv = makeInverter({ allowControl: true, startupLocked: false });
+    await connectAndFreeze(inv);
+
+    const seen: Array<{ source: string; type: string; value: number }> = [];
+    inv.on("write", (e) => seen.push(e));
+
+    const p = inv.applyProfile("summer", { source: "token:mcp" });
+    await adv(5000);
+    await p;
+
+    expect(seen).toEqual([
+      expect.objectContaining({ source: "token:mcp", type: "outputSourcePriority", value: 2 }),
+      expect.objectContaining({ source: "token:mcp", type: "chargerSourcePriority", value: 1 }),
+    ]);
+  });
+
+  it("reports how far it got when the link dies mid-profile", async () => {
+    const t = new FakeTransport({ regs: fullRegs() });
+    detectTransportsMock.mockResolvedValue([t]);
+    const inv = makeInverter({ allowControl: true, startupLocked: false });
+    await connectAndFreeze(inv);
+    // Связь отваливается сразу после первой записи профиля.
+    inv.on("write", () => {
+      t.failAll = true;
+    });
+
+    const p = inv.applyProfile("summer");
+    const rejection = expect(p).rejects.toThrow(/outputSourcePriority/);
+    await adv(5000);
+    await rejection;
+
+    expect(t.regs.get(301)).toBe(2); // первый шаг записан
+    expect(t.regs.get(331)).toBe(0); // второй — нет
+  });
+
+  it("re-locks even when a step fails after a successful write", async () => {
+    const t = new FakeTransport({ regs: fullRegs() });
+    detectTransportsMock.mockResolvedValue([t]);
+    const inv = makeInverter({ allowControl: true, startupLocked: true, autoRelock: true });
+    await connectAndFreeze(inv);
+    inv.setLock(false);
+    inv.on("write", () => {
+      t.failAll = true;
+    });
+
+    const p = inv.applyProfile("summer");
+    const rejection = expect(p).rejects.toThrow();
+    await adv(5000);
+    await rejection;
+
+    // Разблокировка — разрешение на один профиль; сорвался он или нет, оно израсходовано.
+    expect(inv.isLocked()).toBe(true);
+  });
+
+  it("refuses a second profile while one is still being applied", async () => {
+    const t = new FakeTransport({ regs: fullRegs() });
+    detectTransportsMock.mockResolvedValue([t]);
+    const inv = makeInverter({ allowControl: true, startupLocked: false });
+    await connectAndFreeze(inv);
+
+    const first = inv.applyProfile("summer");
+    const second = inv.applyProfile("winter");
+    const rejection = expect(second).rejects.toThrow(/already being applied/i);
+    await adv(5000);
+    await rejection;
+    await first;
+
+    expect(t.regs.get(301)).toBe(2); // остался летний, без примеси зимнего
+    expect(t.regs.get(331)).toBe(1);
+  });
+
+  it("previewProfile reports what would change and writes nothing, even while locked", async () => {
+    const t = new FakeTransport({ regs: fullRegs({ 301: 0, 331: 0 }) });
+    detectTransportsMock.mockResolvedValue([t]);
+    const inv = makeInverter({ allowControl: true, startupLocked: true });
+    await connectAndFreeze(inv);
+
+    const p = inv.previewProfile("winter");
+    await adv(1000);
+    const preview = await p;
+
+    expect(preview.profile).toBe("winter");
+    expect(preview.steps).toEqual([
+      expect.objectContaining({ type: "outputSourcePriority", register: 301, rawValue: 3, currentValue: 0, alreadyApplied: false }),
+      expect.objectContaining({ type: "chargerSourcePriority", register: 331, rawValue: 0, currentValue: 0, alreadyApplied: true }),
+    ]);
+    expect(t.regs.get(301)).toBe(0);
   });
 });
 

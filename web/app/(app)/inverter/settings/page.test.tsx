@@ -176,6 +176,94 @@ describe("SettingsPage — control panel (lock bar)", () => {
     expect(await screen.findByText(t.toastRejected + "NAK")).toBeInTheDocument();
   });
 
+  it("marks the season profile the inverter currently stands on", async () => {
+    const { container } = await renderWithProviders(<SettingsPage />, {
+      snapshot: buildSnapshot({
+        info: buildRatedInfo({ outputSourcePriority: 2, chargerSourcePriority: 1 }), // SBU + PV first = лето
+        control: { allowControl: true, locked: false },
+      }),
+    });
+
+    expect(screen.getByRole("button", { name: t.seasonSummer })).toHaveClass("active");
+    expect(screen.getByRole("button", { name: t.seasonWinter })).not.toHaveClass("active");
+    expect(container.querySelector(".season-now")).toHaveTextContent(t.seasonSummer);
+  });
+
+  it("reports a custom setup when the settings match neither profile", async () => {
+    const { container } = await renderWithProviders(<SettingsPage />, {
+      snapshot: buildSnapshot({
+        info: buildRatedInfo({ outputSourcePriority: 0, chargerSourcePriority: 1 }),
+        control: { allowControl: true, locked: false },
+      }),
+    });
+
+    expect(container.querySelector(".season-now")).toHaveTextContent(t.seasonCustom);
+    expect(screen.getByRole("button", { name: t.seasonWinter })).not.toHaveClass("active");
+    expect(screen.getByRole("button", { name: t.seasonSummer })).not.toHaveClass("active");
+  });
+
+  it("does not call the season profile custom before the settings have been read", async () => {
+    const { container } = await renderWithProviders(<SettingsPage />, {
+      snapshot: buildSnapshot({ info: null, control: { allowControl: true, locked: false } }),
+    });
+
+    const now = container.querySelector(".season-now")!;
+    expect(now).toHaveTextContent("—");
+    expect(now).not.toHaveTextContent(t.seasonCustom);
+  });
+
+  it("disables the season buttons while the write lock is engaged", async () => {
+    await renderWithProviders(<SettingsPage />, {
+      snapshot: buildSnapshot({ control: { allowControl: true, locked: true } }),
+    });
+
+    expect(screen.getByRole("button", { name: t.seasonWinter })).toBeDisabled();
+    expect(screen.getByRole("button", { name: t.seasonSummer })).toBeDisabled();
+  });
+
+  it("confirms a season switch with the list of changes, then POSTs /api/inverter/profile", async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue({ ok: true, json: async () => ({ ok: true, profile: "winter", applied: [{}, {}], skipped: [] }) });
+    const user = userEvent.setup();
+    const { container } = await renderWithProviders(<SettingsPage />, {
+      snapshot: buildSnapshot({
+        info: buildRatedInfo({ outputSourcePriority: 2, chargerSourcePriority: 1 }),
+        control: { allowControl: true, locked: false },
+      }),
+    });
+
+    await user.click(screen.getByRole("button", { name: t.seasonWinter }));
+
+    const box = container.querySelector(".modal-box")!;
+    expect(box).toHaveTextContent(t.osp[3]); // станет SUB
+    expect(box).toHaveTextContent(t.csp[0]); // и зарядка от сети
+    await user.click(screen.getByRole("button", { name: t.modalOk }));
+
+    expect(await screen.findByText(t.toastSeasonOk.replace("{label}", t.seasonWinter))).toBeInTheDocument();
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/inverter/profile",
+      expect.objectContaining({ body: JSON.stringify({ name: "winter" }) })
+    );
+  });
+
+  it("does not ask for confirmation when the profile already stands", async () => {
+    global.fetch = jest.fn();
+    const user = userEvent.setup();
+    const { container } = await renderWithProviders(<SettingsPage />, {
+      snapshot: buildSnapshot({
+        info: buildRatedInfo({ outputSourcePriority: 2, chargerSourcePriority: 1 }),
+        control: { allowControl: true, locked: false },
+      }),
+    });
+
+    await user.click(screen.getByRole("button", { name: t.seasonSummer }));
+
+    expect(container.querySelector(".modal-box")).toBeNull();
+    expect(await screen.findByText(t.toastSeasonSame)).toBeInTheDocument();
+    expect(global.fetch).not.toHaveBeenCalledWith("/api/inverter/profile", expect.anything());
+  });
+
   it("renders the max-charging-current selects from meta's allowed values, pre-filled from info", async () => {
     const { container } = await renderWithProviders(<SettingsPage />, {
       snapshot: buildSnapshot({

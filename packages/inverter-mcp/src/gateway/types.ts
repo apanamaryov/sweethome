@@ -3,7 +3,10 @@ import type {
   Baseline,
   ControlResponse,
   ControlType,
+  ProfileApplyResult,
+  ProfilePreview,
   Role,
+  SeasonProfile,
   Snapshot,
   TokenScope,
 } from "@sweethome/inverter-shared";
@@ -63,6 +66,8 @@ export interface InverterGateway {
   baseline(): Promise<Baseline | null>;
   control(type: ControlType, value: number): Promise<ControlResponse>;
   previewControl(type: ControlType, value: number): Promise<ControlPreview>;
+  applyProfile(profile: SeasonProfile): Promise<ProfileApplyResult>;
+  previewProfile(profile: SeasonProfile): Promise<ProfilePreview>;
   setLock(locked: boolean): Promise<{ locked: boolean }>;
   recaptureBaseline(): Promise<Baseline>;
   raw(command: string): Promise<string>;

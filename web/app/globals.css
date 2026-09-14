@@ -146,6 +146,9 @@ body.stale .topbar { opacity: 0.45; filter: contrast(0.75); transition: opacity 
 .pill-bad::before { background: var(--paper-0); }
 .pill-muted { border-color: var(--ink-faint); color: var(--ink-faint); }
 .pill-muted::before { background: var(--ink-faint); }
+/* Сезонный профиль — справка о настройках, а не статус связи: тоном мягче соседей. */
+.pill-season { border-color: var(--ink-soft); color: var(--ink-soft); }
+.pill-season::before { background: var(--ink-soft); }
 
 /* ---------- баннер предупреждений ---------- */
 .banner {
@@ -390,6 +393,8 @@ body.stale .topbar { opacity: 0.45; filter: contrast(0.75); transition: opacity 
   cursor: pointer;
 }
 .segmented button.active { background: var(--ink); color: var(--paper-0); }
+/* Какой сезонный профиль стоит сейчас — выделено в общей серой подписи. */
+.season-now { color: var(--ink); }
 .segmented button:disabled { border-color: var(--ink-faint); color: var(--ink-faint); border-style: dashed; cursor: not-allowed; }
 .segmented button:disabled.active { background: var(--ink-faint); color: var(--paper-0); border-style: solid; }
 

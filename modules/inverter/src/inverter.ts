@@ -30,6 +30,12 @@ import {
   initialSourceState,
   instantSource,
   stepSource,
+  SEASON_PROFILES,
+  SeasonProfile,
+  ProfileStep,
+  ProfilePreview,
+  ProfilePreviewStep,
+  ProfileApplyResult,
 } from "@sweethome/inverter-shared";
 import { Store } from "./store";
 
@@ -68,6 +74,8 @@ export class Inverter extends EventEmitter {
   /** Режим предыдущего замера: по его смене состояние гистерезиса пересевается. */
   private lastMode: DeviceMode | null = null;
   private baseline: Baseline | null = null;
+  /** Профиль применяется целиком: второй заход, пока идёт первый, смешал бы два сезона. */
+  private profileInFlight: SeasonProfile | null = null;
 
   private snapshot: Snapshot = {
     timestamp: 0,
@@ -370,9 +378,14 @@ export class Inverter extends EventEmitter {
 
   /**
    * Apply a whitelisted control command. Returns { ok, command, reply }.
-   * opts.bypassLock is used only by the MQTT/HA path when MQTT control is
-   * explicitly enabled — that flag is itself the deliberate authorization, so
-   * it neither requires the UI unlock nor toggles the UI lock afterwards.
+   *
+   * opts.bypassLock has exactly two callers, both deliberate — do not add a third
+   * without reading the write-safety section of modules/inverter/CLAUDE.md:
+   *   - the MQTT/HA path when MQTT control is explicitly enabled (that flag is
+   *     itself the authorization, so it neither needs the UI unlock nor touches it);
+   *   - `applyProfile`, which checks the lock once for the whole profile and
+   *     re-engages it at the end, because AUTO_RELOCK would otherwise shut the
+   *     lock after the profile's first step.
    */
   async control(
     type: ControlType,
@@ -445,6 +458,90 @@ export class Inverter extends EventEmitter {
       currentValue,
       baselineValue: base && typeof base[type] === "number" ? base[type] : null,
     };
+  }
+
+  /**
+   * Предпросмотр сезонного профиля: что стоит в регистрах сейчас и что станет.
+   * Только чтение, поэтому доступен и при включённой блокировке.
+   */
+  async previewProfile(profile: SeasonProfile): Promise<ProfilePreview> {
+    const steps: ProfilePreviewStep[] = [];
+    for (const step of SEASON_PROFILES[profile]) {
+      const p = await this.previewControl(step.type, step.value);
+      // Сравниваем сырое с сырым: currentValue из readBlock — значение регистра, и
+      // rawValue — тоже. Для шкалированных команд (токи, напряжения) это НЕ то же
+      // самое, что сравнение в profileChanges (человеческие единицы из снапшота),
+      // так что профиль из такой команды потребует привести обе проверки к одной.
+      steps.push({
+        type: step.type,
+        value: step.value,
+        register: p.register,
+        rawValue: p.rawValue,
+        label: p.label,
+        currentValue: p.currentValue,
+        // Связи нет (currentValue === null) — считаем, что значение неизвестно, и пишем.
+        alreadyApplied: p.currentValue !== null && p.currentValue === p.rawValue,
+      });
+    }
+    return { profile, steps };
+  }
+
+  /**
+   * Применение сезонного профиля — несколько команд одним действием. Профиль идёт
+   * целиком и по одному за раз: параллельный заход отклоняется, иначе два сезона
+   * перемешались бы в общей очереди команд.
+   *
+   * Права и блокировка проверяются один раз на весь профиль: одна разблокировка =
+   * один осознанно применённый профиль. Дальше шаги идут с bypassLock, иначе
+   * AUTO_RELOCK защёлкнул бы замок после первой же записи и вторая упала бы.
+   * Замок возвращается на место в конце — и только если что-то реально записали.
+   * Каждый шаг остаётся обычной записью control(): та же валидация, то же событие
+   * "write" в журнале.
+   */
+  async applyProfile(
+    profile: SeasonProfile,
+    opts: { bypassLock?: boolean; source?: string } = {}
+  ): Promise<ProfileApplyResult> {
+    if (!this.cfg.allowControl) {
+      throw new Error("Control is disabled (ALLOW_CONTROL=false)");
+    }
+    if (this.locked && !opts.bypassLock) {
+      throw new Error("Settings are locked (read-only). Unlock control before writing.");
+    }
+    if (this.profileInFlight) {
+      throw new Error(`Profile ${this.profileInFlight} is already being applied; wait for it to finish.`);
+    }
+    this.profileInFlight = profile;
+    const applied: ProfileApplyResult["applied"] = [];
+    const skipped: ProfileStep[] = [];
+    try {
+      const { steps } = await this.previewProfile(profile);
+      for (const step of steps) {
+        if (step.alreadyApplied) {
+          skipped.push({ type: step.type, value: step.value });
+          continue;
+        }
+        try {
+          const r = await this.control(step.type, step.value, { bypassLock: true, source: opts.source });
+          applied.push({ type: step.type, value: step.value, command: r.command });
+        } catch (e) {
+          // Полпрофиля хуже, чем ничего: ошибка обязана сказать, что успело записаться,
+          // иначе по одному «no response» не понять, в каком состоянии стоит дом.
+          const done = applied.length ? applied.map((s) => s.type).join(", ") : "nothing";
+          throw new Error(
+            `Profile ${profile} stopped at ${step.type} after ${applied.length} of ${steps.length} ` +
+              `steps (applied: ${done}): ${(e as Error).message}`
+          );
+        }
+      }
+      return { ok: true, profile, applied, skipped };
+    } finally {
+      // Разблокировка — разрешение на один профиль: возвращаем замок и после срыва на
+      // середине, иначе одна неудачная попытка оставила бы запись открытой насовсем.
+      // Если не записали ничего, разрешение не потрачено — замок трогать незачем.
+      if (applied.length > 0 && !opts.bypassLock && this.cfg.autoRelock) this.setLock(true);
+      this.profileInFlight = null;
+    }
   }
 
   /**

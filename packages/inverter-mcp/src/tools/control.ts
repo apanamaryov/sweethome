@@ -1,7 +1,8 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import type { ControlType } from "@sweethome/inverter-shared";
+import type { ControlType, SeasonProfile } from "@sweethome/inverter-shared";
+import { SEASON_PROFILE_NAMES } from "@sweethome/inverter-shared";
 import { canWrite, type McpContext } from "../server";
 import { NOOP_LOGGER, type Logger } from "../logging";
 
@@ -77,6 +78,52 @@ export function registerControlTools(server: McpServer, ctx: McpContext, logger:
         return {
           structuredContent: { preview: false, ok: r.ok, command: r.command ?? null, reply: r.reply ?? null },
           text: `Wrote ${type} = ${value}. ${r.command ?? ""} ${r.reply ?? ""}`.trim(),
+        };
+      })
+  );
+
+  server.registerTool(
+    "set_season_profile",
+    {
+      title: "Apply a season profile",
+      description:
+        "Switch the inverter between the two season profiles in one action. 'winter' keeps the house on the grid " +
+        "(SUB) with the battery charged from utility as a reserve; 'summer' runs the house from PV and battery " +
+        "(SBU) and charges from PV first, falling back to the grid only when the sun is not enough. Each profile " +
+        "writes the output source priority (register 301) and the charger source priority (register 331); a " +
+        "setting that already matches is left alone. Use preview=true first to see what would change.",
+      inputSchema: {
+        profile: z
+          .enum(SEASON_PROFILE_NAMES as unknown as [SeasonProfile, ...SeasonProfile[]])
+          .describe("Which season profile to apply"),
+        preview: z.boolean().default(false).describe("Show what would change without writing"),
+      },
+      annotations: WRITE_ANNOTATIONS,
+    },
+    async ({ profile, preview }) =>
+      run(async () => {
+        if (preview) {
+          const p = await gw.previewProfile(profile as SeasonProfile);
+          const pending = p.steps.filter((s) => !s.alreadyApplied);
+          const lines = p.steps.map((s) =>
+            s.alreadyApplied
+              ? `- ${s.label}: register ${s.register} already holds ${s.rawValue}`
+              : `- ${s.label}: register ${s.register} ${s.currentValue ?? "?"} -> ${s.rawValue}`
+          );
+          return {
+            structuredContent: { preview: true, ...p } as unknown as Record<string, unknown>,
+            text:
+              `Profile ${p.profile}: ${pending.length} of ${p.steps.length} settings would change.\n` +
+              `${lines.join("\n")}\nNothing was written.`,
+          };
+        }
+        const r = await gw.applyProfile(profile as SeasonProfile);
+        const wrote = r.applied.map((s) => s.command).join("; ");
+        return {
+          structuredContent: { preview: false, ...r } as unknown as Record<string, unknown>,
+          text:
+            `Applied the ${r.profile} profile: wrote ${r.applied.length}, ` +
+            `left ${r.skipped.length} already matching.${wrote ? " " + wrote : ""}`,
         };
       })
   );

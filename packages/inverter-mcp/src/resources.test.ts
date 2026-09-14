@@ -56,6 +56,14 @@ describe("resources", () => {
     expect(text).toMatch(/battery/i);
   });
 
+  it("documents the season profiles in the control contract", async () => {
+    const { client } = await connect(createFakeGateway());
+    const text = String((await client.readResource({ uri: "inverter://docs/control-contract" })).contents[0].text);
+    expect(text).toContain("set_season_profile");
+    expect(text).toContain("winter");
+    expect(text).toContain("summer");
+  });
+
   it("omits stats-backed resources when statistics are disabled", async () => {
     const { client } = await connect(createFakeGateway({ stats: null, caps: { statsEnabled: false } }));
     const uris = (await client.listResources()).resources.map((r) => r.uri);

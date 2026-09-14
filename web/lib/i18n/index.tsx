@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { DICTS, Dict, Lang, LANGS } from "./dict";
+import type { SeasonProfile } from "@sweethome/inverter-shared";
 
 interface I18nCtx {
   lang: Lang;
@@ -60,6 +61,13 @@ export function modeLabel(dict: Dict, mode: string): string {
 
 export function warnLabel(dict: Dict, name: string): string {
   return dict.warnings[name] || name;
+}
+
+/** Подпись сезонного профиля; null — настройки не совпали ни с одним («Своё»). */
+export function seasonLabel(dict: Dict, profile: SeasonProfile | null): string {
+  if (profile === "winter") return dict.seasonWinter;
+  if (profile === "summer") return dict.seasonSummer;
+  return dict.seasonCustom;
 }
 
 export function flagLabel(dict: Dict, key: string, fallback?: string): string {
