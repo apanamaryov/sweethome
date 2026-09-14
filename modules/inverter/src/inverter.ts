@@ -30,6 +30,12 @@ import {
   initialSourceState,
   instantSource,
   stepSource,
+  SEASON_PROFILES,
+  SeasonProfile,
+  ProfileStep,
+  ProfilePreview,
+  ProfilePreviewStep,
+  ProfileApplyResult,
 } from "@sweethome/inverter-shared";
 import { Store } from "./store";
 
@@ -445,6 +451,74 @@ export class Inverter extends EventEmitter {
       currentValue,
       baselineValue: base && typeof base[type] === "number" ? base[type] : null,
     };
+  }
+
+
+  /**
+   * Предпросмотр сезонного профиля: что стоит в регистрах сейчас и что станет.
+   * Только чтение, поэтому доступен и при включённой блокировке.
+   */
+  async previewProfile(profile: SeasonProfile): Promise<ProfilePreview> {
+    const steps: ProfilePreviewStep[] = [];
+    for (const step of SEASON_PROFILES[profile]) {
+      const p = await this.previewControl(step.type, step.value);
+      steps.push({
+        type: step.type,
+        value: step.value,
+        register: p.register,
+        rawValue: p.rawValue,
+        label: p.label,
+        currentValue: p.currentValue,
+        // Связи нет (currentValue === null) — считаем, что значение неизвестно, и пишем.
+        alreadyApplied: p.currentValue !== null && p.currentValue === p.rawValue,
+      });
+    }
+    return { profile, steps };
+  }
+
+  /**
+   * Применение сезонного профиля — несколько команд одним действием.
+   *
+   * Права и блокировка проверяются один раз на весь профиль: одна разблокировка =
+   * один осознанно применённый профиль. Дальше шаги идут с bypassLock, иначе
+   * AUTO_RELOCK защёлкнул бы замок после первой же записи и вторая упала бы.
+   * Замок возвращается на место в конце — и только если что-то реально записали.
+   * Каждый шаг остаётся обычной записью control(): та же валидация, то же событие
+   * "write" в журнале.
+   */
+  async applyProfile(
+    profile: SeasonProfile,
+    opts: { bypassLock?: boolean; source?: string } = {}
+  ): Promise<ProfileApplyResult> {
+    if (!this.cfg.allowControl) {
+      throw new Error("Control is disabled (ALLOW_CONTROL=false)");
+    }
+    if (this.locked && !opts.bypassLock) {
+      throw new Error("Settings are locked (read-only). Unlock control before writing.");
+    }
+    const { steps } = await this.previewProfile(profile);
+    const applied: ProfileApplyResult["applied"] = [];
+    const skipped: ProfileStep[] = [];
+    for (const step of steps) {
+      if (step.alreadyApplied) {
+        skipped.push({ type: step.type, value: step.value });
+        continue;
+      }
+      try {
+        const r = await this.control(step.type, step.value, { bypassLock: true, source: opts.source });
+        applied.push({ type: step.type, value: step.value, command: r.command });
+      } catch (e) {
+        // Полпрофиля хуже, чем ничего: ошибка обязана сказать, что успело записаться,
+        // иначе по одному «no response» не понять, в каком состоянии стоит дом.
+        const done = applied.length ? applied.map((s) => s.type).join(", ") : "nothing";
+        throw new Error(
+          `Profile ${profile} stopped at ${step.type} after ${applied.length} of ${steps.length} ` +
+            `steps (applied: ${done}): ${(e as Error).message}`
+        );
+      }
+    }
+    if (applied.length > 0 && !opts.bypassLock && this.cfg.autoRelock) this.setLock(true);
+    return { ok: true, profile, applied, skipped };
   }
 
   /**

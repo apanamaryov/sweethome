@@ -1,5 +1,9 @@
-import type { ApiMeta, Baseline, ControlResponse, ControlType, Snapshot } from "@sweethome/inverter-shared";
+import type { ApiMeta, Baseline, ControlResponse, ControlType, SeasonProfile, Snapshot } from "@sweethome/inverter-shared";
+import { SEASON_PROFILES } from "@sweethome/inverter-shared";
 import type { ControlPreview, GatewayCapabilities, InverterGateway, StatsGateway } from "../gateway/types";
+
+/** Регистры шагов профиля — как их отдаёт настоящий buildControlWrite. */
+const PROFILE_REGISTERS: Record<string, number> = { outputSourcePriority: 301, chargerSourcePriority: 331 };
 
 /** Ин-мемори шлюз для тестов ядра: пишет все вызовы в `calls`. */
 
@@ -145,6 +149,32 @@ export function createFakeGateway(overrides: FakeOverrides = {}): FakeGateway {
         currentValue: 1,
         baselineValue: 1,
       } as ControlPreview;
+    },
+    async previewProfile(profile: SeasonProfile) {
+      record("previewProfile", profile);
+      return {
+        profile,
+        steps: SEASON_PROFILES[profile].map((s) => ({
+          ...s,
+          register: PROFILE_REGISTERS[s.type],
+          rawValue: s.value,
+          label: `${s.type} = ${s.value}`,
+          currentValue: 0,
+          alreadyApplied: s.value === 0,
+        })),
+      };
+    },
+    async applyProfile(profile: SeasonProfile) {
+      record("applyProfile", profile);
+      const steps = SEASON_PROFILES[profile];
+      return {
+        ok: true,
+        profile,
+        applied: steps
+          .filter((s) => s.value !== 0)
+          .map((s) => ({ ...s, command: `reg ${PROFILE_REGISTERS[s.type]} := ${s.value}` })),
+        skipped: steps.filter((s) => s.value === 0),
+      };
     },
     async setLock(locked: boolean) {
       record("setLock", locked);

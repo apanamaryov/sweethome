@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { ControlType, InverterRatedInfo, Snapshot } from "@sweethome/inverter-shared";
+import type { ControlType, InverterRatedInfo, SeasonProfile, Snapshot } from "@sweethome/inverter-shared";
+import { SEASON_PROFILE_NAMES, detectSeasonProfile, profileChanges } from "@sweethome/inverter-shared";
 import { useT } from "@/lib/i18n";
-import { flagLabel } from "@/lib/i18n";
+import { flagLabel, seasonLabel } from "@/lib/i18n";
 import type { Dict } from "@/lib/i18n/dict";
 import { useSnapshot } from "@/lib/snapshot";
 import { useMeta } from "@/lib/meta";
@@ -160,8 +161,14 @@ function ControlPanel() {
   const allowControl = !!control?.allowControl;
   const locked = !control || control.locked || !allowControl;
   const info = snapshot?.info ?? null;
+  const activeProfile = detectSeasonProfile(info);
 
-  const [pending, setPending] = useState<{ type: ControlType; value: number; label: string } | null>(null);
+  // Одно окно подтверждения на две разные записи: одиночную настройку и сезонный профиль.
+  type Pending =
+    | { kind: "control"; type: ControlType; value: number; text: string }
+    | { kind: "profile"; profile: SeasonProfile; label: string; text: string };
+
+  const [pending, setPending] = useState<Pending | null>(null);
   const [mcc, setMcc] = useState("");
   const [macc, setMacc] = useState("");
 
@@ -173,13 +180,42 @@ function ControlPanel() {
     if (Number.isFinite(info.maxAcChargingCurrent)) setMacc(String(info.maxAcChargingCurrent));
   }, [info, locked]);
 
-  const request = (type: ControlType, value: number, label: string) => {
-    if (!allowControl) return;
+  /** Общий гейт для любой записи: сервер тоже проверит, но кликать впустую незачем. */
+  const guard = (): boolean => {
+    if (!allowControl) return false;
     if (control?.locked) {
       toast(t.toastLockFirst, "bad");
+      return false;
+    }
+    return true;
+  };
+
+  const request = (type: ControlType, value: number, label: string) => {
+    if (!guard()) return;
+    setPending({ kind: "control", type, value, text: t.modalConfirm.replace("{label}", label) });
+  };
+
+  const requestProfile = (profile: SeasonProfile) => {
+    if (!guard()) return;
+    const changes = profileChanges(info, profile);
+    const label = seasonLabel(t, profile);
+    if (info && changes.length === 0) {
+      toast(t.toastSeasonSame, "");
       return;
     }
-    setPending({ type, value, label });
+    const list = changes
+      .map((c) => {
+        const coded = c.type === "outputSourcePriority" ? "osp" : "csp";
+        const name = c.type === "outputSourcePriority" ? t.ctlOsp : t.ctlCsp;
+        return `${name} → ${codedValue(t, meta, coded, c.value)}`;
+      })
+      .join("; ");
+    setPending({
+      kind: "profile",
+      profile,
+      label,
+      text: t.seasonConfirm.replace("{label}", label).replace("{changes}", list),
+    });
   };
 
   const send = async () => {
@@ -187,6 +223,12 @@ function ControlPanel() {
     setPending(null);
     if (!a) return;
     try {
+      if (a.kind === "profile") {
+        const data = await (await postJson("/api/inverter/profile", { name: a.profile })).json();
+        if (data.ok) toast(t.toastSeasonOk.replace("{label}", a.label), "ok");
+        else toast(t.toastRejected + (data.error || "NAK"), "bad");
+        return;
+      }
       const data = await (await postJson("/api/inverter/control", { type: a.type, value: a.value })).json();
       if (data.ok) toast(t.toastDone + data.command + " → ACK", "ok");
       else toast(t.toastRejected + (data.error || data.reply || "NAK"), "bad");
@@ -249,6 +291,26 @@ function ControlPanel() {
       <p className="note">{t.controlNote}</p>
 
       <div className="control">
+        <label>{t.ctlSeason}</label>
+        <div className="segmented">
+          {SEASON_PROFILE_NAMES.map((name) => (
+            <button
+              key={name}
+              disabled={locked}
+              className={activeProfile === name ? "active" : ""}
+              onClick={() => requestProfile(name)}
+            >
+              {seasonLabel(t, name)}
+            </button>
+          ))}
+        </div>
+        <p className="note">
+          <span className="season-now">{t.seasonNow + seasonLabel(t, activeProfile)}</span>
+          {" · " + t.seasonHint}
+        </p>
+      </div>
+
+      <div className="control">
         <label>{t.ctlOsp}</label>
         {meta && segment("osp", "outputSourcePriority", info?.outputSourcePriority, meta.outputSourcePriority)}
       </div>
@@ -298,7 +360,7 @@ function ControlPanel() {
 
       {pending && (
         <ConfirmDialog
-          text={t.modalConfirm.replace("{label}", pending.label)}
+          text={pending.text}
           okLabel={t.modalOk}
           cancelLabel={t.modalCancel}
           onOk={send}

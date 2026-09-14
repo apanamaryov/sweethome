@@ -1,5 +1,15 @@
 import { WebSocket } from "ws";
-import type { ApiMeta, Baseline, ControlResponse, ControlType, Snapshot, TokenScope } from "@sweethome/inverter-shared";
+import type {
+  ApiMeta,
+  Baseline,
+  ControlResponse,
+  ControlType,
+  ProfileApplyResult,
+  ProfilePreview,
+  SeasonProfile,
+  Snapshot,
+  TokenScope,
+} from "@sweethome/inverter-shared";
 import {
   ControlPreview,
   CSV_LIMIT_BYTES,
@@ -127,6 +137,21 @@ class HttpGateway implements InverterGateway {
       currentValue: r.currentValue,
       baselineValue: r.baselineValue,
     };
+  }
+
+  applyProfile(profile: SeasonProfile): Promise<ProfileApplyResult> {
+    return this.request<ProfileApplyResult>("/api/inverter/profile", {
+      method: "POST",
+      body: JSON.stringify({ name: profile }),
+    });
+  }
+
+  async previewProfile(profile: SeasonProfile): Promise<ProfilePreview> {
+    const r = await this.request<ProfilePreview & { ok: boolean; preview: boolean }>("/api/inverter/profile", {
+      method: "POST",
+      body: JSON.stringify({ name: profile, preview: true }),
+    });
+    return { profile: r.profile, steps: r.steps };
   }
 
   async setLock(locked: boolean): Promise<{ locked: boolean }> {

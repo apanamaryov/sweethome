@@ -4,7 +4,7 @@ import { buildMcpServer } from "../server";
 import { createFakeGateway } from "../testing/fake-gateway";
 import type { InverterGateway } from "../gateway/types";
 
-const WRITE_TOOLS = ["set_control", "set_lock", "recapture_baseline", "write_register"];
+const WRITE_TOOLS = ["set_control", "set_season_profile", "set_lock", "recapture_baseline", "write_register"];
 
 async function connect(gateway: InverterGateway, readOnly = false) {
   const server = buildMcpServer({ gateway, version: "test", readOnly });
@@ -79,6 +79,37 @@ describe("control tools behaviour", () => {
     });
     const client = await connect(gw);
     const r = await client.callTool({ name: "set_control", arguments: { type: "chargerSourcePriority", value: 3 } });
+    expect(r.isError).toBe(true);
+    expect(textOf(r)).toContain("set_lock");
+  });
+
+  it("set_season_profile with preview does not apply anything", async () => {
+    const gw = createFakeGateway();
+    const client = await connect(gw);
+    const r = await client.callTool({ name: "set_season_profile", arguments: { profile: "winter", preview: true } });
+    expect(gw.calls).toContainEqual({ method: "previewProfile", args: ["winter"] });
+    expect(gw.calls.some((c) => c.method === "applyProfile")).toBe(false);
+    expect((r.structuredContent as { profile: string }).profile).toBe("winter");
+    expect(textOf(r)).toContain("Nothing was written");
+  });
+
+  it("set_season_profile applies the profile when not previewing", async () => {
+    const gw = createFakeGateway();
+    const client = await connect(gw);
+    const r = await client.callTool({ name: "set_season_profile", arguments: { profile: "summer" } });
+    expect(gw.calls).toContainEqual({ method: "applyProfile", args: ["summer"] });
+    expect((r.structuredContent as { ok: boolean }).ok).toBe(true);
+    expect(textOf(r)).toContain("summer");
+  });
+
+  it("set_season_profile turns a locked-inverter error into a hint about set_lock", async () => {
+    const gw = createFakeGateway({
+      applyProfile: async () => {
+        throw new Error("Settings are locked (read-only). Unlock control before writing.");
+      },
+    });
+    const client = await connect(gw);
+    const r = await client.callTool({ name: "set_season_profile", arguments: { profile: "summer" } });
     expect(r.isError).toBe(true);
     expect(textOf(r)).toContain("set_lock");
   });
