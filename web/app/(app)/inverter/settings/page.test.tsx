@@ -202,6 +202,16 @@ describe("SettingsPage — control panel (lock bar)", () => {
     expect(screen.getByRole("button", { name: t.seasonSummer })).not.toHaveClass("active");
   });
 
+  it("does not call the season profile custom before the settings have been read", async () => {
+    const { container } = await renderWithProviders(<SettingsPage />, {
+      snapshot: buildSnapshot({ info: null, control: { allowControl: true, locked: false } }),
+    });
+
+    const now = container.querySelector(".season-now")!;
+    expect(now).toHaveTextContent("—");
+    expect(now).not.toHaveTextContent(t.seasonCustom);
+  });
+
   it("disables the season buttons while the write lock is engaged", async () => {
     await renderWithProviders(<SettingsPage />, {
       snapshot: buildSnapshot({ control: { allowControl: true, locked: true } }),

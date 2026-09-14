@@ -115,6 +115,51 @@ describe("HttpGateway", () => {
     gw.close();
   });
 
+  it("asks /api/inverter/profile to apply a season profile by name", async () => {
+    const applied = {
+      ok: true,
+      profile: "winter",
+      applied: [{ type: "outputSourcePriority", value: 3, command: "reg 301 := 3" }],
+      skipped: [{ type: "chargerSourcePriority", value: 0 }],
+    };
+    const f = fetchMock({ ...BASE_ROUTES, "/api/inverter/profile": () => res(applied) });
+    const gw = await createHttpGateway({ ...OPTS, fetchImpl: f as unknown as typeof fetch });
+
+    await expect(gw.applyProfile("winter")).resolves.toEqual(applied);
+    const [url, init] = f.mock.calls.at(-1)!;
+    expect(new URL(String(url)).pathname).toBe("/api/inverter/profile");
+    expect((init as RequestInit).method).toBe("POST");
+    // Тело — {name}, а не {profile}: интерфейс шлюза типизирует аргумент, но не JSON.
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ name: "winter" });
+    gw.close();
+  });
+
+  it("passes preview through to /api/inverter/profile and keeps only the steps", async () => {
+    const steps = [
+      {
+        type: "outputSourcePriority",
+        value: 3,
+        register: 301,
+        rawValue: 3,
+        label: "output priority = PV → Utility → Battery (SUB)",
+        currentValue: 2,
+        alreadyApplied: false,
+      },
+    ];
+    const f = fetchMock({
+      ...BASE_ROUTES,
+      "/api/inverter/profile": () => res({ ok: true, preview: true, profile: "winter", steps }),
+    });
+    const gw = await createHttpGateway({ ...OPTS, fetchImpl: f as unknown as typeof fetch });
+
+    await expect(gw.previewProfile("winter")).resolves.toEqual({ profile: "winter", steps });
+    expect(JSON.parse((f.mock.calls.at(-1)![1] as RequestInit).body as string)).toEqual({
+      name: "winter",
+      preview: true,
+    });
+    gw.close();
+  });
+
   it("builds stats queries with the expected query string", async () => {
     const f = fetchMock({ ...BASE_ROUTES, "/api/inverter/stats/series": () => res([{ t: 1, pvPower: 100 }]) });
     const gw = await createHttpGateway({ ...OPTS, fetchImpl: f as unknown as typeof fetch });

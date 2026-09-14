@@ -305,7 +305,8 @@ function ControlPanel() {
           ))}
         </div>
         <p className="note">
-          <span className="season-now">{t.seasonNow + seasonLabel(t, activeProfile)}</span>
+          {/* Пока настройки не прочитаны, «Своё» было бы враньём — мы просто не знаем. */}
+          <span className="season-now">{t.seasonNow + (info ? seasonLabel(t, activeProfile) : "—")}</span>
           {" · " + t.seasonHint}
         </p>
       </div>

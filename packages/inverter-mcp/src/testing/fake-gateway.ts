@@ -2,7 +2,10 @@ import type { ApiMeta, Baseline, ControlResponse, ControlType, SeasonProfile, Sn
 import { SEASON_PROFILES } from "@sweethome/inverter-shared";
 import type { ControlPreview, GatewayCapabilities, InverterGateway, StatsGateway } from "../gateway/types";
 
-/** Регистры шагов профиля — как их отдаёт настоящий buildControlWrite. */
+/**
+ * Регистры шагов профиля — как их отдаёт настоящий buildControlWrite (protocol/smg.ts,
+ * другой воркспейс, отсюда недоступен). Меняются адреса — править и здесь.
+ */
 const PROFILE_REGISTERS: Record<string, number> = { outputSourcePriority: 301, chargerSourcePriority: 331 };
 
 /** Ин-мемори шлюз для тестов ядра: пишет все вызовы в `calls`. */

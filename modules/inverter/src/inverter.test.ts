@@ -582,7 +582,6 @@ describe("write gates", () => {
   });
 });
 
-
 describe("сезонные профили — applyProfile/previewProfile", () => {
   it("applies both priorities of the summer profile", async () => {
     const t = new FakeTransport({ regs: fullRegs() });
@@ -707,6 +706,42 @@ describe("сезонные профили — applyProfile/previewProfile", () =
 
     expect(t.regs.get(301)).toBe(2); // первый шаг записан
     expect(t.regs.get(331)).toBe(0); // второй — нет
+  });
+
+  it("re-locks even when a step fails after a successful write", async () => {
+    const t = new FakeTransport({ regs: fullRegs() });
+    detectTransportsMock.mockResolvedValue([t]);
+    const inv = makeInverter({ allowControl: true, startupLocked: true, autoRelock: true });
+    await connectAndFreeze(inv);
+    inv.setLock(false);
+    inv.on("write", () => {
+      t.failAll = true;
+    });
+
+    const p = inv.applyProfile("summer");
+    const rejection = expect(p).rejects.toThrow();
+    await adv(5000);
+    await rejection;
+
+    // Разблокировка — разрешение на один профиль; сорвался он или нет, оно израсходовано.
+    expect(inv.isLocked()).toBe(true);
+  });
+
+  it("refuses a second profile while one is still being applied", async () => {
+    const t = new FakeTransport({ regs: fullRegs() });
+    detectTransportsMock.mockResolvedValue([t]);
+    const inv = makeInverter({ allowControl: true, startupLocked: false });
+    await connectAndFreeze(inv);
+
+    const first = inv.applyProfile("summer");
+    const second = inv.applyProfile("winter");
+    const rejection = expect(second).rejects.toThrow(/already being applied/i);
+    await adv(5000);
+    await rejection;
+    await first;
+
+    expect(t.regs.get(301)).toBe(2); // остался летний, без примеси зимнего
+    expect(t.regs.get(331)).toBe(1);
   });
 
   it("previewProfile reports what would change and writes nothing, even while locked", async () => {

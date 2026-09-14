@@ -24,7 +24,8 @@ export function canWrite(ctx: McpContext): boolean {
 export const INVERTER_INSTRUCTIONS =
   "Inverter: monitoring and control of an ISolar/EASUN SMG II hybrid inverter (SK-5500P-48L) " +
   "over Modbus RTU. Reads are always safe. Writes change battery and charging behaviour: " +
-  "preview first, keep one change at a time, and read inverter://docs/control-contract before writing.";
+  "preview first, keep one change at a time (a season profile is the one exception — it is meant " +
+  "to be applied as a whole), and read inverter://docs/control-contract before writing.";
 
 /**
  * Инструменты, подсказки и ресурсы инвертора в уже готовом сервере MCP.

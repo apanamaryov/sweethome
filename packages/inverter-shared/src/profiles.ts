@@ -16,9 +16,13 @@ export type SeasonProfile = "winter" | "summer";
 
 export const SEASON_PROFILE_NAMES: readonly SeasonProfile[] = ["winter", "summer"];
 
-/** Один шаг профиля — та же пара (команда, значение), что принимает POST /api/inverter/control. */
+/**
+ * Один шаг профиля — та же пара (команда, значение), что принимает POST /api/inverter/control.
+ * Тип сужен до команд, которые видны и в прочитанных настройках: иначе `profileChanges`
+ * не смогло бы сказать, применён шаг или нет, и молча считало бы его неприменённым.
+ */
 export interface ProfileStep {
-  type: ControlType;
+  type: ControlType & keyof InverterRatedInfo;
   value: number;
 }
 
@@ -44,8 +48,11 @@ export function isSeasonProfile(value: unknown): value is SeasonProfile {
 
 /** Шаги профиля, которые ещё не применены; пустой список — профиль уже стоит. */
 export function profileChanges(info: InverterRatedInfo | null, profile: SeasonProfile): ProfileChange[] {
+  // Сравнение в человеческих единицах, как их отдаёт снапшот. У нынешних шагов профиля
+  // (коды регистров 301/331) шкалы нет, поэтому оно совпадает с сырым сравнением в
+  // Inverter.previewProfile; шаг со шкалой (ток, напряжение) развёл бы эти две проверки.
   return SEASON_PROFILES[profile]
-    .map((step) => ({ ...step, current: info ? (info[step.type as keyof InverterRatedInfo] as number) : null }))
+    .map((step) => ({ ...step, current: info ? info[step.type] : null }))
     .filter((change) => change.current !== change.value);
 }
 

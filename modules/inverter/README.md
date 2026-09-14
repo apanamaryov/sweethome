@@ -534,7 +534,9 @@ you need to"**:
 - **The write lock is engaged by default** (`STARTUP_LOCKED=true`). Until you press "Unlock" (or call `POST /api/inverter/lock`), all writes are rejected — via the UI and the API alike (including `W` commands in `/api/inverter/raw`).
 - **Automatic re-locking** after every successful write (`AUTO_RELOCK=true`). A season profile is one
   authorized action, not two: the lock is checked once before the profile starts and re-engaged once
-  after its last write, so the second step cannot be shut out by the first one's re-lock.
+  after its last write, so the second step cannot be shut out by the first one's re-lock. A profile
+  that fails between steps still gives the lock back and says how far it got; only one profile is
+  applied at a time, so two of them cannot interleave into a half-winter, half-summer setup.
 - **Settings baseline** — on first connect, all current settings (registers 300–343) are read once and persisted to disk. The UI **highlights drift** from the baseline. When a different device connects, the baseline is captured anew.
 - **Reading is safe; writing is not.** Changing voltage thresholds, charging currents and priorities can harm the battery or the load. Change one parameter at a time.
 - All writes go through a **register whitelist** with value validation; a write failure = a Modbus exception from the inverter.
