@@ -44,6 +44,7 @@ const uk = {
     "сонця. Якщо вдень заряд впаде до 30%, мережа дозарядить до 50%. Ручна зміна пріоритетів або інший профіль це вимкне. " +
     "Зараз зміниться: {changes}",
   seasonNoChanges: "нічого",
+  nightPhaseShort: { night: "ніч", day: "день", backup: "дозаряд" } as Record<string, string>,
   nightPhase: { night: "зараз ніч — дім і заряд від мережі", day: "зараз день — дім від сонця і батареї", backup: "зараз дозаряд від мережі (заряд низький)" } as Record<string, string>,
   toastSeasonOk: "Готово: профіль «{label}»", toastSeasonSame: "Цей профіль уже стоїть",
   apply: "Застосувати", send: "Надіслати",
@@ -309,6 +310,7 @@ const ru: Dict = {
     "солнца. Если днём заряд упадёт до 30%, сеть дозарядит до 50%. Ручная смена приоритетов или другой профиль это выключат. " +
     "Сейчас изменится: {changes}",
   seasonNoChanges: "ничего",
+  nightPhaseShort: { night: "ночь", day: "день", backup: "дозаряд" },
   nightPhase: { night: "сейчас ночь — дом и заряд от сети", day: "сейчас день — дом от солнца и батареи", backup: "сейчас дозаряд от сети (заряд низкий)" },
   toastSeasonOk: "Готово: профиль «{label}»", toastSeasonSame: "Этот профиль уже стоит",
   apply: "Применить", send: "Отправить",
@@ -569,6 +571,7 @@ const en: Dict = {
     "threshold) and only PV charges. If the charge drops to 30% during the day, the grid tops it up to 50%. A manual " +
     "priority change or another profile turns it off. Changing now: {changes}",
   seasonNoChanges: "nothing",
+  nightPhaseShort: { night: "night", day: "day", backup: "top-up" },
   nightPhase: { night: "night now \u2014 house and charging on the grid", day: "day now \u2014 house on PV and battery", backup: "topping up from the grid now (charge is low)" },
   toastSeasonOk: "Done: \u201c{label}\u201d profile", toastSeasonSame: "That profile is already set",
   apply: "Apply", send: "Send",

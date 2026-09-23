@@ -55,6 +55,30 @@ describe("HomePage — overview", () => {
     expect(document.querySelector(".mode-badge")).not.toBeInTheDocument(); // бейджа больше нет
   });
 
+  it("shows the season profile in the card header", async () => {
+    await renderWithProviders(<HomePage />, {
+      snapshot: buildSnapshot({ info: { ...buildSnapshot().info!, outputSourcePriority: 2, chargerSourcePriority: 1 } }),
+      withMeta: true,
+    });
+
+    expect(document.querySelector(".card-season")).toHaveTextContent(t.seasonSummer);
+  });
+
+  it("shows the night tariff with its current phase", async () => {
+    await renderWithProviders(<HomePage />, {
+      snapshot: buildSnapshot({ nightTariff: { enabled: true, phase: "night" } }),
+      withMeta: true,
+    });
+
+    expect(document.querySelector(".card-season")).toHaveTextContent(`${t.seasonNight} · ${t.nightPhaseShort.night}`);
+  });
+
+  it("hides the season until the settings are read", async () => {
+    await renderWithProviders(<HomePage />, { snapshot: buildSnapshot({ info: null }), withMeta: true });
+
+    expect(document.querySelector(".card-season")).not.toBeInTheDocument();
+  });
+
   it("whole card is a link to /inverter (no separate 'open' link)", async () => {
     await renderWithProviders(<HomePage />, { snapshot: buildSnapshot(), withMeta: true });
 

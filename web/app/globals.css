@@ -247,6 +247,8 @@ body.stale .topbar { opacity: 0.45; filter: contrast(0.75); transition: opacity 
 .warnchip.amber { color: var(--sun-deep); border: 1px solid var(--sun); background: #f0e7d6; }
 .warnchip.brick { color: var(--brick-deep); border: 1px solid var(--brick); background: #f1e4e0; }
 .card-head .warnchip { order: 1; } /* hairline (::after, order 0) остаётся перед чипом */
+.card-head .card-season { order: 1; font-size: 10px; padding: 1px 7px; gap: 5px; }
+.card-head .card-season::before { width: 5px; height: 5px; }
 
 .card {
   background: var(--card);
