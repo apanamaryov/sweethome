@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# Деплой sweethome на Raspberry Pi.
+# Деплой sweethome на домашний хост (Raspberry Pi или любой Linux с systemd).
 # Использование: [PI_HOST=pi@raspberrypi.local] [SSH_KEY=~/.ssh/pi_key] ./deploy.sh
+# Каталог и пользователь сервиса берутся из SSH-пользователя: ~/sweethome на хосте.
 set -euo pipefail
 cd "$(dirname "$0")"
 
 PI_HOST="${PI_HOST:-pi@raspberrypi.local}"
-PI_DIR="/home/pi/sweethome"
-OLD_DIR="/home/pi/inverter-monitor"
 
 SSH=(ssh)
 RSYNC_SSH="ssh"
@@ -14,6 +13,12 @@ if [ -n "${SSH_KEY:-}" ]; then
   SSH=(ssh -i "$SSH_KEY")
   RSYNC_SSH="ssh -i $SSH_KEY"
 fi
+
+# Пользователь и домашний каталог — у самого хоста: не зашиты под `pi`, чтобы тот же
+# скрипт выкладывал и на малину, и на обычный сервер с другим пользователем.
+read -r REMOTE_USER REMOTE_HOME < <("${SSH[@]}" "$PI_HOST" 'echo "$(id -un) $HOME"')
+PI_DIR="$REMOTE_HOME/sweethome"
+OLD_DIR="$REMOTE_HOME/inverter-monitor"
 
 echo "==> Сборка (packages + modules + server + web)"
 npm run build
@@ -65,7 +70,9 @@ if ! systemctl is-active --quiet mosquitto; then
 fi
 rm -rf shared mcp   # каталоги старой раскладки, если остались
 npm ci -w server -w modules/inverter -w packages/inverter-mcp -w modules/cctv -w packages/cctv-shared -w packages/home-mcp -w modules/dryer -w packages/dryer-shared --omit=dev
-sudo cp server/systemd/sweethome.service /etc/systemd/system/sweethome.service
+# Юнит в репозитории написан под pi@/home/pi — подставляем пользователя и каталог хоста.
+sed -e "s#^User=.*#User=$REMOTE_USER#" -e "s#/home/pi/sweethome#$PI_DIR#g" \
+  server/systemd/sweethome.service | sudo tee /etc/systemd/system/sweethome.service >/dev/null
 sudo systemctl daemon-reload
 sudo systemctl enable sweethome >/dev/null 2>&1 || true
 sudo systemctl restart sweethome

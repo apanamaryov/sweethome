@@ -244,7 +244,9 @@ write-safety model.
   on first start; `deploy.sh` does not touch the `data/` directory except for the one-time
   migration above.
 - The systemd unit is `sweethome.service` (`server/systemd/sweethome.service`,
-  `WorkingDirectory=…/server`).
+  `WorkingDirectory=…/server`). The file in the repo is written for `pi`/`/home/pi`;
+  `deploy.sh` asks the host for its SSH user and `$HOME` and substitutes them on install,
+  so the same script deploys to any Linux host with systemd (`~/sweethome` of that user).
 - **`deploy.sh` enables autostart itself** (`systemctl enable`) as part of every deploy —
   this is not a separate manual step.
 
