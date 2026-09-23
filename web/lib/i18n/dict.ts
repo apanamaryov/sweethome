@@ -31,19 +31,20 @@ const uk = {
   ctlOsp: "Пріоритет джерела виходу", ctlCsp: "Пріоритет заряду батареї",
   ctlMcc: "Макс. струм заряду (А)", ctlMacc: "Макс. струм заряду від мережі (А)",
   ctlSeason: "Сезонний профіль",
-  seasonWinter: "Зима", seasonNight: "Зима · нічний заряд", seasonSummer: "Літо", seasonCustom: "Своє",
+  seasonWinter: "Зима", seasonNight: "Нічний тариф", seasonSummer: "Літо", seasonCustom: "Своє",
   seasonNow: "Сезон: ",
   seasonHint:
     "Зима — дім живиться від мережі, батарея стоїть зарядженою в резерві. " +
-    "Нічний заряд — як зима, але мережа заряджає батарею лише з 23:00 до 7:00 (дешевий тариф). " +
+    "Нічний тариф — з 23:00 до 7:00 дім і заряд батареї від дешевої мережі, вдень дім від сонця і батареї. " +
     "Літо — дім від сонця і батареї, мережа підхоплює лише за перевантаження чи хмар.",
   seasonConfirm: "Застосувати профіль «{label}»? Зміниться: {changes}",
   seasonConfirmNight:
-    "Увімкнути «{label}»? Сервер сам перемикатиме заряд: з 23:00 до 7:00 — від мережі, вдень — лише від сонця " +
-    "(якщо заряд впаде до 30%, мережа дозарядить до 50%). Ручна зміна пріоритетів або інший профіль це вимкне. " +
+    "Увімкнути «{label}»? Сервер сам перемикатиме інвертор: з 23:00 до 7:00 дім живиться від мережі і вона " +
+    "заряджає батарею; вдень дім від сонця і батареї (до порогу повернення на мережу в інверторі), заряд лише від " +
+    "сонця. Якщо вдень заряд впаде до 30%, мережа дозарядить до 50%. Ручна зміна пріоритетів або інший профіль це вимкне. " +
     "Зараз зміниться: {changes}",
   seasonNoChanges: "нічого",
-  nightPhase: { night: "зараз ніч — заряд від мережі", day: "зараз день — заряд лише від сонця", backup: "зараз дозаряд від мережі (заряд низький)" } as Record<string, string>,
+  nightPhase: { night: "зараз ніч — дім і заряд від мережі", day: "зараз день — дім від сонця і батареї", backup: "зараз дозаряд від мережі (заряд низький)" } as Record<string, string>,
   toastSeasonOk: "Готово: профіль «{label}»", toastSeasonSame: "Цей профіль уже стоїть",
   apply: "Застосувати", send: "Надіслати",
   controlNote: "Типово запис заблоковано. Розблокуй, зміни один параметр — після запису блокування повернеться автоматично.",
@@ -295,19 +296,20 @@ const ru: Dict = {
   ctlOsp: "Приоритет источника выхода", ctlCsp: "Приоритет заряда батареи",
   ctlMcc: "Макс. ток заряда (А)", ctlMacc: "Макс. ток заряда от сети (А)",
   ctlSeason: "Сезонный профиль",
-  seasonWinter: "Зима", seasonNight: "Зима · ночной заряд", seasonSummer: "Лето", seasonCustom: "Своё",
+  seasonWinter: "Зима", seasonNight: "Ночной тариф", seasonSummer: "Лето", seasonCustom: "Своё",
   seasonNow: "Сезон: ",
   seasonHint:
     "Зима — дом питается от сети, батарея стоит заряженной в резерве. " +
-    "Ночной заряд — как зима, но сеть заряжает батарею только с 23:00 до 7:00 (дешёвый тариф). " +
+    "Ночной тариф — с 23:00 до 7:00 дом и заряд батареи от дешёвой сети, днём дом от солнца и батареи. " +
     "Лето — дом от солнца и батареи, сеть подхватывает только при перегрузе или в пасмурную погоду.",
   seasonConfirm: "Применить профиль «{label}»? Изменится: {changes}",
   seasonConfirmNight:
-    "Включить «{label}»? Сервер сам будет переключать заряд: с 23:00 до 7:00 — от сети, днём — только от солнца " +
-    "(если заряд упадёт до 30%, сеть дозарядит до 50%). Ручная смена приоритетов или другой профиль это выключат. " +
+    "Включить «{label}»? Сервер сам будет переключать инвертор: с 23:00 до 7:00 дом питается от сети и она " +
+    "заряжает батарею; днём дом от солнца и батареи (до порога возврата на сеть в инверторе), заряд только от " +
+    "солнца. Если днём заряд упадёт до 30%, сеть дозарядит до 50%. Ручная смена приоритетов или другой профиль это выключат. " +
     "Сейчас изменится: {changes}",
   seasonNoChanges: "ничего",
-  nightPhase: { night: "сейчас ночь — заряд от сети", day: "сейчас день — заряд только от солнца", backup: "сейчас дозаряд от сети (заряд низкий)" },
+  nightPhase: { night: "сейчас ночь — дом и заряд от сети", day: "сейчас день — дом от солнца и батареи", backup: "сейчас дозаряд от сети (заряд низкий)" },
   toastSeasonOk: "Готово: профиль «{label}»", toastSeasonSame: "Этот профиль уже стоит",
   apply: "Применить", send: "Отправить",
   controlNote: "По умолчанию запись заблокирована. Разблокируй, измени один параметр — после записи блокировка вернётся автоматически.",
@@ -554,19 +556,20 @@ const en: Dict = {
   ctlOsp: "Output source priority", ctlCsp: "Battery charging priority",
   ctlMcc: "Max charging current (A)", ctlMacc: "Max AC charging current (A)",
   ctlSeason: "Season profile",
-  seasonWinter: "Winter", seasonNight: "Winter · night charging", seasonSummer: "Summer", seasonCustom: "Custom",
+  seasonWinter: "Winter", seasonNight: "Night tariff", seasonSummer: "Summer", seasonCustom: "Custom",
   seasonNow: "Season: ",
   seasonHint:
     "Winter — the house runs on the grid and the battery stays charged as a reserve. " +
-    "Night charging — like winter, but the grid charges the battery only from 23:00 to 07:00 (the cheap rate). " +
+    "Night tariff — from 23:00 to 07:00 the cheap grid runs the house and charges the battery; during the day PV and battery run the house. " +
     "Summer — the house runs on PV and battery; the grid steps in only on overload or heavy cloud.",
   seasonConfirm: "Apply the \u201c{label}\u201d profile? Changes: {changes}",
   seasonConfirmNight:
-    "Turn on \u201c{label}\u201d? The server will switch charging by itself: from the grid 23:00\u201307:00, only " +
-    "from PV during the day (if the charge drops to 30%, the grid tops it up to 50%). A manual priority change or " +
-    "another profile turns it off. Changing now: {changes}",
+    "Turn on \u201c{label}\u201d? The server will switch the inverter by itself: 23:00\u201307:00 the grid runs the " +
+    "house and charges the battery; during the day PV and battery run the house (down to the inverter's back-to-grid " +
+    "threshold) and only PV charges. If the charge drops to 30% during the day, the grid tops it up to 50%. A manual " +
+    "priority change or another profile turns it off. Changing now: {changes}",
   seasonNoChanges: "nothing",
-  nightPhase: { night: "night now \u2014 charging from the grid", day: "day now \u2014 charging from PV only", backup: "topping up from the grid now (charge is low)" },
+  nightPhase: { night: "night now \u2014 house and charging on the grid", day: "day now \u2014 house on PV and battery", backup: "topping up from the grid now (charge is low)" },
   toastSeasonOk: "Done: \u201c{label}\u201d profile", toastSeasonSame: "That profile is already set",
   apply: "Apply", send: "Send",
   controlNote: "Writing is locked by default. Unlock, change one parameter — the lock re-engages automatically after writing.",

@@ -88,10 +88,11 @@ export function registerControlTools(server: McpServer, ctx: McpContext, logger:
       title: "Apply a season profile",
       description:
         "Switch the inverter between the season profiles in one action. 'winter' keeps the house on the grid " +
-        "(SUB) with the battery charged from utility as a reserve; 'night' is winter on a two-rate meter: the " +
-        "grid charges the battery only in the cheap hours 23:00-07:00 (and during the day only if the charge " +
-        "drops to 30%, up to 50%), otherwise only PV charges it — the server keeps switching the charger " +
-        "priority on schedule until another profile or a manual priority change turns it off; 'summer' runs " +
+        "(SUB) with the battery charged from utility as a reserve; 'night' is for a two-rate meter: in the " +
+        "cheap hours 23:00-07:00 the grid runs the house and charges the battery (SUB + utility first), during " +
+        "the day PV and battery run the house and only PV charges (SBU + only PV); if the charge drops to 30% " +
+        "during the day the grid tops it up to 50% — the server keeps switching both priorities on schedule " +
+        "until another profile or a manual priority change turns it off; 'summer' runs " +
         "the house from PV and battery (SBU) and charges from PV first, falling back to the grid only when the " +
         "sun is not enough. Each profile writes the output source priority (register 301) and the charger " +
         "source priority (register 331); a setting that already matches is left alone. Use preview=true " +

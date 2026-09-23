@@ -285,7 +285,7 @@ describe("SettingsPage — control panel (lock bar)", () => {
     const { container } = await renderWithProviders(<SettingsPage />, {
       snapshot: buildSnapshot({
         // Совпадает с дневной фазой ночного тарифа, но сам режим не включён.
-        info: buildRatedInfo({ outputSourcePriority: 3, chargerSourcePriority: 3 }),
+        info: buildRatedInfo({ outputSourcePriority: 2, chargerSourcePriority: 3 }),
         control: { allowControl: true, locked: false },
       }),
     });

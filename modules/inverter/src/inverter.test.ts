@@ -790,7 +790,7 @@ describe("ночной тариф — профиль night и планировщ
     expect(JSON.parse(fs.readFileSync(path.join(tmp, "schedule.json"), "utf8"))).toEqual({ nightTariff: true });
   });
 
-  it("applying night in the day stops grid charging right away", async () => {
+  it("applying night in the day moves the house to PV and battery right away", async () => {
     const t = new FakeTransport({ regs: fullRegs({ 301: 3, 331: 0 }) });
     detectTransportsMock.mockResolvedValue([t]);
     const inv = makeInverter({ allowControl: true, startupLocked: false });
@@ -801,14 +801,15 @@ describe("ночной тариф — профиль night и планировщ
     await adv(5000);
     await p;
 
+    expect(t.regs.get(301)).toBe(2); // SBU
     expect(t.regs.get(331)).toBe(3); // Only PV
     expect(inv.getSnapshot().nightTariff?.enabled).toBe(true);
   });
 
-  it("the scheduler lets the grid charge after 23:00, even while the UI is locked, and logs it", async () => {
+  it("the scheduler hands the house and charging to the grid after 23:00, even while locked, and logs it", async () => {
     enableOnDisk();
     jest.setSystemTime(at(23, 0));
-    const t = new FakeTransport({ regs: fullRegs({ 301: 3, 331: 3, 229: 90 }) });
+    const t = new FakeTransport({ regs: fullRegs({ 301: 2, 331: 3, 229: 90 }) });
     detectTransportsMock.mockResolvedValue([t]);
     const inv = makeInverter({ allowControl: true, startupLocked: true, pollIntervalMs: 60_000 });
     const seen: Array<{ source: string; register: number; rawValue: number }> = [];
@@ -816,13 +817,17 @@ describe("ночной тариф — профиль night и планировщ
 
     await pollOnce(inv);
 
+    expect(t.regs.get(301)).toBe(3); // SUB
     expect(t.regs.get(331)).toBe(0); // Utility first
-    expect(seen).toEqual([expect.objectContaining({ source: "schedule:night-tariff", register: 331, rawValue: 0 })]);
+    expect(seen).toEqual([
+      expect.objectContaining({ source: "schedule:night-tariff", register: 301, rawValue: 3 }),
+      expect.objectContaining({ source: "schedule:night-tariff", register: 331, rawValue: 0 }),
+    ]);
     expect(inv.isLocked()).toBe(true);
     expect(inv.getSnapshot().nightTariff).toEqual({ enabled: true, phase: "night" });
   });
 
-  it("the scheduler stops grid charging at 07:00", async () => {
+  it("the scheduler switches to PV and battery at 07:00", async () => {
     enableOnDisk();
     jest.setSystemTime(at(7, 0));
     const t = new FakeTransport({ regs: fullRegs({ 301: 3, 331: 0, 229: 95 }) });
@@ -831,6 +836,7 @@ describe("ночной тариф — профиль night и планировщ
 
     await pollOnce(inv);
 
+    expect(t.regs.get(301)).toBe(2);
     expect(t.regs.get(331)).toBe(3);
     expect(inv.getSnapshot().nightTariff?.phase).toBe("day");
   });
@@ -838,12 +844,13 @@ describe("ночной тариф — профиль night и планировщ
   it("a battery at 30% or below gets topped up from the grid during the day", async () => {
     enableOnDisk();
     jest.setSystemTime(at(14));
-    const t = new FakeTransport({ regs: fullRegs({ 301: 3, 331: 3, 229: 25 }) });
+    const t = new FakeTransport({ regs: fullRegs({ 301: 2, 331: 3, 229: 25 }) });
     detectTransportsMock.mockResolvedValue([t]);
     const inv = makeInverter({ allowControl: true, pollIntervalMs: 60_000 });
 
     await pollOnce(inv);
 
+    expect(t.regs.get(301)).toBe(3);
     expect(t.regs.get(331)).toBe(0);
     expect(inv.getSnapshot().nightTariff?.phase).toBe("backup");
   });

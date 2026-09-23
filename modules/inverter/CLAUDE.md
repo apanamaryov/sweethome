@@ -45,7 +45,7 @@ UI all iterate `SEASON_PROFILE_NAMES` / `SEASON_PROFILES`. A profile may only us
 
 `packages/inverter-shared/src/profiles.ts` holds the **season profiles** — the pure data
 (`SEASON_PROFILES`: winter = SUB + utility-first charging, summer = SBU + PV-first charging,
-night = SUB + charging that follows the clock — see `NIGHT_TARIFF`, `nightTariffPhase`,
+night = SUB + utility-first at night, SBU + only-PV by day — see `NIGHT_TARIFF`, `nightTariffPhase`,
 `profileSteps`), `profileChanges` (which steps of a profile are not applied yet, for a given
 night-tariff phase) and `detectSeasonProfile` (which profile the current settings match,
 `null` = neither; `night` cannot be told from the registers — at night it equals winter — so

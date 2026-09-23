@@ -94,7 +94,7 @@ describe("detectSeasonProfile", () => {
     expect(detectSeasonProfile(winterLike, true)).toBe("night");
     expect(detectSeasonProfile(null, true)).toBe("night");
     // Дневные регистры ночного тарифа без флага — это не профиль, а ручная настройка.
-    expect(detectSeasonProfile(info({ outputSourcePriority: 3, chargerSourcePriority: 3 }))).toBeNull();
+    expect(detectSeasonProfile(info({ outputSourcePriority: 2, chargerSourcePriority: 3 }))).toBeNull();
   });
 });
 
@@ -107,13 +107,13 @@ describe("ночной тариф", () => {
     expect(isNightTariffTime(at(7, 0))).toBe(false);
   });
 
-  test("the grid charges at night, only PV during the day; output stays SUB", () => {
+  test("the grid powers the house and charges at night; PV and battery run it during the day", () => {
     expect(nightTariffSteps("night")).toEqual([
       { type: "outputSourcePriority", value: 3 },
       { type: "chargerSourcePriority", value: 0 },
     ]);
     expect(nightTariffSteps("day")).toEqual([
-      { type: "outputSourcePriority", value: 3 },
+      { type: "outputSourcePriority", value: 2 },
       { type: "chargerSourcePriority", value: 3 },
     ]);
     expect(nightTariffSteps("backup")).toEqual(nightTariffSteps("night"));
@@ -144,7 +144,10 @@ describe("ночной тариф", () => {
   test("profileChanges follows the phase", () => {
     const winter = info({ outputSourcePriority: 3, chargerSourcePriority: 0 });
     expect(profileChanges(winter, "night", "night")).toEqual([]);
-    expect(profileChanges(winter, "night", "day")).toEqual([{ type: "chargerSourcePriority", value: 3, current: 0 }]);
+    expect(profileChanges(winter, "night", "day")).toEqual([
+      { type: "outputSourcePriority", value: 2, current: 3 },
+      { type: "chargerSourcePriority", value: 3, current: 0 },
+    ]);
   });
 });
 

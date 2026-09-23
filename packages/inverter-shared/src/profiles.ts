@@ -7,9 +7,10 @@ import type { InverterRatedInfo, NightTariffPhase } from "./types";
  * Зима: дом питается от сети (SUB), батарея стоит заряженной в резерве, дозаряжает её сеть.
  * Лето: дом питается от солнца и батареи (SBU), сеть подхватывает только при перегрузе
  * или в пасмурную погоду; заряжает батарею в первую очередь солнце.
- * Ночной тариф ("night"): зима, но сеть заряжает батарею только в дешёвые часы
- * (23:00–07:00); днём — только солнце. Это единственный профиль, который зависит от
- * времени: его держит в силе планировщик в `Inverter` (см. `nightTariffPhase`).
+ * Ночной тариф ("night"): в дешёвые часы (23:00–07:00) дом питается от сети (SUB) и сеть
+ * заряжает батарею; днём дом живёт от солнца и батареи (SBU), а заряжает батарею только
+ * солнце. Это единственный профиль, который зависит от времени: его держит в силе
+ * планировщик в `Inverter` (см. `nightTariffPhase`).
  *
  * Значения — коды регистров 301 и 331 (см. OUTPUT_SOURCE_PRIORITY / CHARGER_SOURCE_PRIORITY).
  * Само применение живёт в `Inverter.applyProfile`: здесь только чистые данные и сравнение.
@@ -41,7 +42,7 @@ export const SEASON_PROFILES: Record<SeasonProfile, ProfileStep[]> = {
   ],
   // Дневная фаза ночного тарифа; ночью и при низком заряде см. nightTariffSteps.
   night: [
-    { type: "outputSourcePriority", value: 3 }, // SUB, как зимой
+    { type: "outputSourcePriority", value: 2 }, // SBU: днём дом от солнца и батареи
     { type: "chargerSourcePriority", value: 3 }, // Only PV: днём сеть батарею не заряжает
   ],
   summer: [
@@ -80,11 +81,17 @@ export function nightTariffPhase(now: Date, soc: number | null, prev: NightTarif
   return "day";
 }
 
-/** Шаги профиля "night" для фазы: сеть заряжает (Utility first) ночью и при подстраховке. */
+/**
+ * Шаги профиля "night" для фазы. Ночью и при подстраховке — SUB + Utility first: сеть
+ * питает дом и заряжает батарею (в SBU инвертор ночью сидел бы на батарее и от сети её
+ * не заряжал). Днём — SBU + Only PV: дом тратит солнце и батарею до порога инвертора
+ * `socBackToUtility` (регистр 341), дорогая сеть — только когда их не хватает.
+ */
 export function nightTariffSteps(phase: NightTariffPhase): ProfileStep[] {
+  const grid = phase !== "day";
   return [
-    { type: "outputSourcePriority", value: 3 },
-    { type: "chargerSourcePriority", value: phase === "day" ? 3 : 0 },
+    { type: "outputSourcePriority", value: grid ? 3 : 2 },
+    { type: "chargerSourcePriority", value: grid ? 0 : 3 },
   ];
 }
 
