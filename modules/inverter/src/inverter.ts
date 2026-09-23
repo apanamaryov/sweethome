@@ -30,8 +30,12 @@ import {
   initialSourceState,
   instantSource,
   stepSource,
-  SEASON_PROFILES,
   SeasonProfile,
+  NightTariffPhase,
+  NightTariffState,
+  nightTariffPhase,
+  profileSteps,
+  profileChanges,
   ProfileStep,
   ProfilePreview,
   ProfilePreviewStep,
@@ -47,10 +51,16 @@ const INTER_COMMAND_MS = 120;
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/** Источник записей планировщика ночного тарифа в журнале событий. */
+export const NIGHT_TARIFF_SOURCE = "schedule:night-tariff";
+
+/** Пауза планировщика после сбоя записи — чтобы не долбить инвертор каждый цикл опроса. */
+const SCHEDULE_RETRY_MS = 60_000;
+
 /** Факт записи в инвертор — для журнала событий (кто и что изменил). */
 export interface WriteEvent {
   ts: number;
-  /** "ui:<user>" | "token:<name>" | "mqtt" */
+  /** "ui:<user>" | "token:<name>" | "mqtt" | "schedule:night-tariff" */
   source: string;
   kind: "control" | "raw";
   type?: ControlType;
@@ -76,6 +86,15 @@ export class Inverter extends EventEmitter {
   private baseline: Baseline | null = null;
   /** Профиль применяется целиком: второй заход, пока идёт первый, смешал бы два сезона. */
   private profileInFlight: SeasonProfile | null = null;
+  /**
+   * Ночной тариф включён (профиль "night"): планировщик сам переключает приоритет
+   * заряда по часам. Хранится на диске — включение переживает перезапуск.
+   */
+  private nightTariff: boolean;
+  private tariffPhase: NightTariffPhase | null = null;
+  /** Идущая запись планировщика: профиль дожидается её, чтобы не перемешать записи. */
+  private scheduleRun: Promise<void> | null = null;
+  private scheduleRetryAt = 0;
 
   private snapshot: Snapshot = {
     timestamp: 0,
@@ -97,8 +116,28 @@ export class Inverter extends EventEmitter {
     // If control is disabled entirely, we are permanently locked.
     this.locked = cfg.allowControl ? cfg.startupLocked : true;
     this.baseline = this.store.loadBaseline();
+    this.nightTariff = this.store.loadNightTariff();
     this.snapshot.control = { allowControl: cfg.allowControl, locked: this.locked };
     this.snapshot.baseline = this.baseline;
+    this.snapshot.nightTariff = this.nightTariffState();
+  }
+
+  private nightTariffState(): NightTariffState {
+    return { enabled: this.nightTariff, phase: this.nightTariff ? this.tariffPhase : null };
+  }
+
+  /** Включить/выключить ночной тариф: флаг на диск и в снапшот. Сам ничего не пишет в инвертор. */
+  private setNightTariff(enabled: boolean, phase: NightTariffPhase | null = null): void {
+    this.nightTariff = enabled;
+    this.tariffPhase = enabled ? phase : null;
+    this.scheduleRetryAt = 0;
+    try {
+      this.store.saveNightTariff(enabled);
+    } catch (e) {
+      console.error("[inverter] failed to persist the night tariff flag:", (e as Error).message);
+    }
+    this.snapshot = { ...this.snapshot, nightTariff: this.nightTariffState(), timestamp: Date.now() };
+    this.emit("snapshot", this.snapshot);
   }
 
   isLocked(): boolean {
@@ -361,8 +400,10 @@ export class Inverter extends EventEmitter {
         flags,
         warnings,
         baseline: this.baseline,
+        nightTariff: this.nightTariffState(),
       };
       this.emit("snapshot", this.snapshot);
+      await this.reconcileNightTariff();
     } catch (e) {
       this.consecutiveFailures++;
       this.setConnection(false, this.transport, (e as Error).message);
@@ -379,18 +420,25 @@ export class Inverter extends EventEmitter {
   /**
    * Apply a whitelisted control command. Returns { ok, command, reply }.
    *
-   * opts.bypassLock has exactly two callers, both deliberate — do not add a third
+   * opts.bypassLock has exactly three callers, all deliberate — do not add a fourth
    * without reading the write-safety section of modules/inverter/CLAUDE.md:
    *   - the MQTT/HA path when MQTT control is explicitly enabled (that flag is
    *     itself the authorization, so it neither needs the UI unlock nor touches it);
    *   - `applyProfile`, which checks the lock once for the whole profile and
    *     re-engages it at the end, because AUTO_RELOCK would otherwise shut the
-   *     lock after the profile's first step.
+   *     lock after the profile's first step;
+   *   - the night tariff scheduler (`reconcileNightTariff`): applying the "night"
+   *     profile — unlocked, by an admin — is the authorization for its timed writes,
+   *     until another profile or a manual priority change switches it off.
+   *
+   * opts.origin marks the writes made on behalf of a profile or the scheduler. A write
+   * of either priority WITHOUT it is a manual change, and it switches the night tariff
+   * off — otherwise the scheduler would silently undo it on the next cycle.
    */
   async control(
     type: ControlType,
     value: number,
-    opts: { bypassLock?: boolean; source?: string } = {}
+    opts: { bypassLock?: boolean; source?: string; origin?: "profile" | "schedule" } = {}
   ): Promise<{ ok: boolean; command: string; reply: string }> {
     if (!this.cfg.allowControl) {
       throw new Error("Control is disabled (ALLOW_CONTROL=false)");
@@ -422,6 +470,13 @@ export class Inverter extends EventEmitter {
       this.emit("snapshot", this.snapshot);
     } catch {
       /* ignore */
+    }
+    if (
+      this.nightTariff &&
+      !opts.origin &&
+      (type === "outputSourcePriority" || type === "chargerSourcePriority")
+    ) {
+      this.setNightTariff(false);
     }
     // Re-engage the UI lock after a UI-originated write (not for MQTT).
     if (!opts.bypassLock && this.cfg.autoRelock) this.setLock(true);
@@ -464,9 +519,9 @@ export class Inverter extends EventEmitter {
    * Предпросмотр сезонного профиля: что стоит в регистрах сейчас и что станет.
    * Только чтение, поэтому доступен и при включённой блокировке.
    */
-  async previewProfile(profile: SeasonProfile): Promise<ProfilePreview> {
+  async previewProfile(profile: SeasonProfile, phase?: NightTariffPhase): Promise<ProfilePreview> {
     const steps: ProfilePreviewStep[] = [];
-    for (const step of SEASON_PROFILES[profile]) {
+    for (const step of profileSteps(profile, phase ?? this.phaseNow())) {
       const p = await this.previewControl(step.type, step.value);
       // Сравниваем сырое с сырым: currentValue из readBlock — значение регистра, и
       // rawValue — тоже. Для шкалированных команд (токи, напряжения) это НЕ то же
@@ -514,15 +569,26 @@ export class Inverter extends EventEmitter {
     this.profileInFlight = profile;
     const applied: ProfileApplyResult["applied"] = [];
     const skipped: ProfileStep[] = [];
+    // Другой профиль выключает ночной тариф сразу, до записей: иначе планировщик
+    // поспорил бы с ним, а после сбоя на середине — молча вернул бы ночные настройки.
+    if (profile !== "night" && this.nightTariff) this.setNightTariff(false);
     try {
-      const { steps } = await this.previewProfile(profile);
+      // Планировщик мог начать запись до нас: дожидаемся её, иначе его шаг лёг бы
+      // между чтением и записью профиля. Новый он не начнёт — profileInFlight уже стоит.
+      if (this.scheduleRun) await this.scheduleRun;
+      const phase = this.phaseNow();
+      const { steps } = await this.previewProfile(profile, phase);
       for (const step of steps) {
         if (step.alreadyApplied) {
           skipped.push({ type: step.type, value: step.value });
           continue;
         }
         try {
-          const r = await this.control(step.type, step.value, { bypassLock: true, source: opts.source });
+          const r = await this.control(step.type, step.value, {
+            bypassLock: true,
+            source: opts.source,
+            origin: "profile",
+          });
           applied.push({ type: step.type, value: step.value, command: r.command });
         } catch (e) {
           // Полпрофиля хуже, чем ничего: ошибка обязана сказать, что успело записаться,
@@ -534,6 +600,9 @@ export class Inverter extends EventEmitter {
           );
         }
       }
+      // Ночной тариф включается только целиком применённым профилем — даже если ничего
+      // писать не пришлось (ночью его регистры совпадают с зимними).
+      if (profile === "night") this.setNightTariff(true, phase);
       return { ok: true, profile, applied, skipped };
     } finally {
       // Разблокировка — разрешение на один профиль: возвращаем замок и после срыва на
@@ -542,6 +611,58 @@ export class Inverter extends EventEmitter {
       if (applied.length > 0 && !opts.bypassLock && this.cfg.autoRelock) this.setLock(true);
       this.profileInFlight = null;
     }
+  }
+
+  /** Фаза ночного тарифа на текущий момент — по часам и последнему известному заряду. */
+  private phaseNow(): NightTariffPhase {
+    const soc = this.snapshot.status?.batteryCapacity;
+    const known = typeof soc === "number" && Number.isFinite(soc) && this.snapshot.connection.connected;
+    return nightTariffPhase(new Date(), known ? soc : null, this.tariffPhase);
+  }
+
+  /**
+   * Планировщик ночного тарифа: раз в цикл опроса сверяет приоритеты с фазой и, если
+   * нужно, переписывает их. Сверка, а не будильник на 23:00/07:00: пропущенное время
+   * (сервис лежал, не было связи) догоняется на первом же удачном цикле.
+   *
+   * Каждая запись — обычный control(): тот же белый список и событие "write" с
+   * источником "schedule:night-tariff". Замок обходится (см. комментарий у control()),
+   * но ALLOW_CONTROL=false сильнее всего — тогда планировщик молчит.
+   */
+  async reconcileNightTariff(): Promise<void> {
+    if (!this.nightTariff || !this.cfg.allowControl) return;
+    if (this.profileInFlight || this.scheduleRun) return;
+    const info = this.snapshot.info;
+    if (!this.snapshot.connection.connected || !info) return;
+
+    const phase = this.phaseNow();
+    if (phase !== this.tariffPhase) {
+      this.tariffPhase = phase;
+      this.snapshot = { ...this.snapshot, nightTariff: this.nightTariffState() };
+      this.emit("snapshot", this.snapshot);
+    }
+    if (Date.now() < this.scheduleRetryAt) return;
+    const pending = profileChanges(info, "night", phase);
+    if (!pending.length) return;
+
+    this.scheduleRun = (async () => {
+      try {
+        for (const step of pending) {
+          if (!this.nightTariff) return; // выключили между шагами — дальше не пишем
+          await this.control(step.type, step.value, {
+            bypassLock: true,
+            source: NIGHT_TARIFF_SOURCE,
+            origin: "schedule",
+          });
+        }
+      } catch (e) {
+        this.scheduleRetryAt = Date.now() + SCHEDULE_RETRY_MS;
+        console.warn(`[inverter] night tariff: write failed, retrying in 60 s: ${(e as Error).message}`);
+      } finally {
+        this.scheduleRun = null;
+      }
+    })();
+    await this.scheduleRun;
   }
 
   /**

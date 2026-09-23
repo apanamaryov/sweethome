@@ -127,4 +127,21 @@ export interface Snapshot {
   flags: InverterFlags | null;
   warnings: InverterWarnings | null;
   baseline: Baseline | null;
+  /**
+   * Ночной тариф (профиль "night"): включён ли и в какой фазе сейчас. Поле необязательное,
+   * чтобы старые снапшоты и тестовые фикстуры оставались валидными; отсутствие = выключен.
+   */
+  nightTariff?: NightTariffState;
+}
+
+/**
+ * Фаза ночного тарифа: "night" — дешёвые часы, сеть заряжает батарею; "day" — дорогие
+ * часы, заряд только от солнца; "backup" — днём, но заряд упал низко и сеть дозаряжает.
+ */
+export type NightTariffPhase = "night" | "day" | "backup";
+
+export interface NightTariffState {
+  enabled: boolean;
+  /** null — выключен или ещё не посчитан (нет связи/настроек). */
+  phase: NightTariffPhase | null;
 }

@@ -2,7 +2,12 @@
 
 import { useEffect, useState } from "react";
 import type { ControlType, InverterRatedInfo, SeasonProfile, Snapshot } from "@sweethome/inverter-shared";
-import { SEASON_PROFILE_NAMES, detectSeasonProfile, profileChanges } from "@sweethome/inverter-shared";
+import {
+  SEASON_PROFILE_NAMES,
+  detectSeasonProfile,
+  nightTariffPhase,
+  profileChanges,
+} from "@sweethome/inverter-shared";
 import { useT } from "@/lib/i18n";
 import { flagLabel, seasonLabel } from "@/lib/i18n";
 import type { Dict } from "@/lib/i18n/dict";
@@ -161,7 +166,8 @@ function ControlPanel() {
   const allowControl = !!control?.allowControl;
   const locked = !control || control.locked || !allowControl;
   const info = snapshot?.info ?? null;
-  const activeProfile = detectSeasonProfile(info);
+  const nightTariff = snapshot?.nightTariff ?? null;
+  const activeProfile = detectSeasonProfile(info, !!nightTariff?.enabled);
 
   // Одно окно подтверждения на две разные записи: одиночную настройку и сезонный профиль.
   type Pending =
@@ -197,9 +203,15 @@ function ControlPanel() {
 
   const requestProfile = (profile: SeasonProfile) => {
     if (!guard()) return;
-    const changes = profileChanges(info, profile);
     const label = seasonLabel(t, profile);
-    if (info && changes.length === 0) {
+    // Ночной тариф: что изменится прямо сейчас, зависит от часов и заряда — считаем так же,
+    // как сервер. Совпавшие регистры ещё не значат, что режим включён: его держит флаг.
+    const soc = snapshot?.status?.batteryCapacity;
+    const phase = profile === "night" ? nightTariffPhase(new Date(), Number.isFinite(soc) ? soc! : null, null) : "day";
+    const changes = profileChanges(info, profile, phase);
+    // Зима поверх включённого ночного тарифа — не «уже стоит», даже когда регистры совпали:
+    // применить её значит выключить планировщик.
+    if (activeProfile === profile && (profile === "night" || changes.length === 0)) {
       toast(t.toastSeasonSame, "");
       return;
     }
@@ -210,11 +222,12 @@ function ControlPanel() {
         return `${name} → ${codedValue(t, meta, coded, c.value)}`;
       })
       .join("; ");
+    const template = profile === "night" ? t.seasonConfirmNight : t.seasonConfirm;
     setPending({
       kind: "profile",
       profile,
       label,
-      text: t.seasonConfirm.replace("{label}", label).replace("{changes}", list),
+      text: template.replace("{label}", label).replace("{changes}", list || t.seasonNoChanges),
     });
   };
 
@@ -306,7 +319,10 @@ function ControlPanel() {
         </div>
         <p className="note">
           {/* Пока настройки не прочитаны, «Своё» было бы враньём — мы просто не знаем. */}
-          <span className="season-now">{t.seasonNow + (info ? seasonLabel(t, activeProfile) : "—")}</span>
+          <span className="season-now">
+            {t.seasonNow + (info || nightTariff?.enabled ? seasonLabel(t, activeProfile) : "—")}
+            {nightTariff?.enabled && nightTariff.phase ? " (" + t.nightPhase[nightTariff.phase] + ")" : ""}
+          </span>
           {" · " + t.seasonHint}
         </p>
       </div>

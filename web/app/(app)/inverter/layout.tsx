@@ -46,7 +46,7 @@ function TopBar() {
       <div className="topbar-row">
         <span className={pillClass}>{pillText}</span>
         {info && (
-          <span className="pill pill-season">{t.seasonNow + seasonLabel(t, detectSeasonProfile(info))}</span>
+          <span className="pill pill-season">{t.seasonNow + seasonLabel(t, detectSeasonProfile(info, !!snapshot?.nightTariff?.enabled))}</span>
         )}
         {snapshot?.timestamp ? (
           // key = timestamp: ремоунт перезапускает CSS-анимацию «e-ink вспышки»

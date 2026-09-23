@@ -763,6 +763,174 @@ describe("сезонные профили — applyProfile/previewProfile", () =
   });
 });
 
+describe("ночной тариф — профиль night и планировщик", () => {
+  /** Местное время: 23 сентября 2026. */
+  const at = (h: number, m = 0) => new Date(2026, 8, 23, h, m).getTime();
+  const enableOnDisk = () => fs.writeFileSync(path.join(tmp, "schedule.json"), JSON.stringify({ nightTariff: true }));
+
+  /** Один цикл опроса (с чтением настроек) и сверка планировщика после него. */
+  async function pollOnce(inv: Inverter): Promise<void> {
+    await inv.start();
+    await adv(10_000);
+  }
+
+  it("applying night at night writes nothing over winter settings but switches the tariff on", async () => {
+    const t = new FakeTransport({ regs: fullRegs({ 301: 3, 331: 0, 229: 80 }) });
+    detectTransportsMock.mockResolvedValue([t]);
+    const inv = makeInverter({ allowControl: true, startupLocked: false });
+    await connectAndFreeze(inv);
+    jest.setSystemTime(at(23, 30)); // clearAllTimers() сбрасывает подменённые часы
+
+    const p = inv.applyProfile("night", { source: "ui:admin" });
+    await adv(5000);
+    const result = await p;
+
+    expect(result.applied).toEqual([]);
+    expect(inv.getSnapshot().nightTariff).toEqual({ enabled: true, phase: "night" });
+    expect(JSON.parse(fs.readFileSync(path.join(tmp, "schedule.json"), "utf8"))).toEqual({ nightTariff: true });
+  });
+
+  it("applying night in the day stops grid charging right away", async () => {
+    const t = new FakeTransport({ regs: fullRegs({ 301: 3, 331: 0 }) });
+    detectTransportsMock.mockResolvedValue([t]);
+    const inv = makeInverter({ allowControl: true, startupLocked: false });
+    await connectAndFreeze(inv);
+    jest.setSystemTime(at(12)); // clearAllTimers() сбрасывает подменённые часы
+
+    const p = inv.applyProfile("night");
+    await adv(5000);
+    await p;
+
+    expect(t.regs.get(331)).toBe(3); // Only PV
+    expect(inv.getSnapshot().nightTariff?.enabled).toBe(true);
+  });
+
+  it("the scheduler lets the grid charge after 23:00, even while the UI is locked, and logs it", async () => {
+    enableOnDisk();
+    jest.setSystemTime(at(23, 0));
+    const t = new FakeTransport({ regs: fullRegs({ 301: 3, 331: 3, 229: 90 }) });
+    detectTransportsMock.mockResolvedValue([t]);
+    const inv = makeInverter({ allowControl: true, startupLocked: true, pollIntervalMs: 60_000 });
+    const seen: Array<{ source: string; register: number; rawValue: number }> = [];
+    inv.on("write", (e) => seen.push(e));
+
+    await pollOnce(inv);
+
+    expect(t.regs.get(331)).toBe(0); // Utility first
+    expect(seen).toEqual([expect.objectContaining({ source: "schedule:night-tariff", register: 331, rawValue: 0 })]);
+    expect(inv.isLocked()).toBe(true);
+    expect(inv.getSnapshot().nightTariff).toEqual({ enabled: true, phase: "night" });
+  });
+
+  it("the scheduler stops grid charging at 07:00", async () => {
+    enableOnDisk();
+    jest.setSystemTime(at(7, 0));
+    const t = new FakeTransport({ regs: fullRegs({ 301: 3, 331: 0, 229: 95 }) });
+    detectTransportsMock.mockResolvedValue([t]);
+    const inv = makeInverter({ allowControl: true, pollIntervalMs: 60_000 });
+
+    await pollOnce(inv);
+
+    expect(t.regs.get(331)).toBe(3);
+    expect(inv.getSnapshot().nightTariff?.phase).toBe("day");
+  });
+
+  it("a battery at 30% or below gets topped up from the grid during the day", async () => {
+    enableOnDisk();
+    jest.setSystemTime(at(14));
+    const t = new FakeTransport({ regs: fullRegs({ 301: 3, 331: 3, 229: 25 }) });
+    detectTransportsMock.mockResolvedValue([t]);
+    const inv = makeInverter({ allowControl: true, pollIntervalMs: 60_000 });
+
+    await pollOnce(inv);
+
+    expect(t.regs.get(331)).toBe(0);
+    expect(inv.getSnapshot().nightTariff?.phase).toBe("backup");
+  });
+
+  it("stays silent under ALLOW_CONTROL=false", async () => {
+    enableOnDisk();
+    jest.setSystemTime(at(23, 30));
+    const t = new FakeTransport({ regs: fullRegs({ 301: 3, 331: 3 }) });
+    detectTransportsMock.mockResolvedValue([t]);
+    const inv = makeInverter({ allowControl: false, pollIntervalMs: 60_000 });
+
+    await pollOnce(inv);
+
+    expect(t.regs.get(331)).toBe(3);
+    expect(t.calls.some((c) => c.fn === 0x10)).toBe(false);
+  });
+
+  it("does nothing while the tariff is off", async () => {
+    jest.setSystemTime(at(23, 30));
+    const t = new FakeTransport({ regs: fullRegs({ 301: 3, 331: 3 }) });
+    detectTransportsMock.mockResolvedValue([t]);
+    const inv = makeInverter({ allowControl: true, pollIntervalMs: 60_000 });
+
+    await pollOnce(inv);
+
+    expect(t.calls.some((c) => c.fn === 0x10)).toBe(false);
+    expect(inv.getSnapshot().nightTariff).toEqual({ enabled: false, phase: null });
+  });
+
+  it("another season profile switches the tariff off", async () => {
+    enableOnDisk();
+    const t = new FakeTransport({ regs: fullRegs({ 301: 3, 331: 3 }) });
+    detectTransportsMock.mockResolvedValue([t]);
+    const inv = makeInverter({ allowControl: true, startupLocked: false });
+    await connectAndFreeze(inv);
+    jest.setSystemTime(at(12)); // clearAllTimers() сбрасывает подменённые часы
+
+    const p = inv.applyProfile("winter");
+    await adv(5000);
+    await p;
+
+    expect(t.regs.get(331)).toBe(0);
+    expect(inv.getSnapshot().nightTariff?.enabled).toBe(false);
+    expect(JSON.parse(fs.readFileSync(path.join(tmp, "schedule.json"), "utf8"))).toEqual({ nightTariff: false });
+  });
+
+  it("a profile applied mid-way through a scheduler write waits for it and wins", async () => {
+    enableOnDisk();
+    jest.setSystemTime(at(23, 0));
+    // Планировщику нужно два шага (301 → 3, 331 → 0); лето врезается после первого.
+    const t = new FakeTransport({ regs: fullRegs({ 301: 2, 331: 1, 229: 90 }) });
+    detectTransportsMock.mockResolvedValue([t]);
+    const inv = makeInverter({ allowControl: true, startupLocked: false, pollIntervalMs: 60_000 });
+    let summer: Promise<unknown> | null = null;
+    inv.once("write", () => {
+      summer = inv.applyProfile("summer");
+    });
+
+    await pollOnce(inv);
+    await summer;
+
+    expect(summer).not.toBeNull();
+    expect(t.regs.get(301)).toBe(2);
+    expect(t.regs.get(331)).toBe(1);
+    expect(inv.getSnapshot().nightTariff?.enabled).toBe(false);
+  });
+
+  it("a manual priority change switches the tariff off, other settings do not", async () => {
+    enableOnDisk();
+    const t = new FakeTransport({ regs: fullRegs({ 301: 3, 331: 3 }) });
+    detectTransportsMock.mockResolvedValue([t]);
+    const inv = makeInverter({ allowControl: true, startupLocked: false, autoRelock: false });
+    await connectAndFreeze(inv);
+    jest.setSystemTime(at(12)); // clearAllTimers() сбрасывает подменённые часы
+
+    const current = inv.control("maxAcChargingCurrent", 30);
+    await adv(5000);
+    await current;
+    expect(inv.getSnapshot().nightTariff?.enabled).toBe(true);
+
+    const csp = inv.control("chargerSourcePriority", 1);
+    await adv(5000);
+    await csp;
+    expect(inv.getSnapshot().nightTariff?.enabled).toBe(false);
+  });
+});
+
 describe("rawQuery — R always allowed, W gated exactly like control()", () => {
   it('"R <addr> [count]" works even when ALLOW_CONTROL=false', async () => {
     const t = new FakeTransport({ regs: fullRegs({ 201: 2 }) });

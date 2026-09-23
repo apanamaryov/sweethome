@@ -44,9 +44,12 @@ UI all iterate `SEASON_PROFILE_NAMES` / `SEASON_PROFILES`. A profile may only us
 `packages/inverter-shared` holds the data types (`Snapshot`, `InverterStatus`, `InverterRatedInfo`, `Baseline`, etc. in `types.ts`), the **control whitelist contract** (`api.ts`: the `ControlType` type, the `OUTPUT_SOURCE_PRIORITY`/`CHARGER_SOURCE_PRIORITY` maps, the arrays of allowed currents, `ApiMeta`), the **register map** (`registers.ts`: `REGISTER_DOCS` + `registerDocsMarkdown()`) and the **pure `diffSettings`** (`settings.ts`) — both consumed by MCP; consistency between the map and the decoders is checked by `modules/inverter/src/protocol/registers.test.ts`.
 
 `packages/inverter-shared/src/profiles.ts` holds the **season profiles** — the pure data
-(`SEASON_PROFILES`: winter = SUB + utility-first charging, summer = SBU + PV-first charging),
-`profileChanges` (which steps of a profile are not applied yet) and `detectSeasonProfile`
-(which profile the current settings match, `null` = neither). Web uses it to light up the
+(`SEASON_PROFILES`: winter = SUB + utility-first charging, summer = SBU + PV-first charging,
+night = SUB + charging that follows the clock — see `NIGHT_TARIFF`, `nightTariffPhase`,
+`profileSteps`), `profileChanges` (which steps of a profile are not applied yet, for a given
+night-tariff phase) and `detectSeasonProfile` (which profile the current settings match,
+`null` = neither; `night` cannot be told from the registers — at night it equals winter — so
+it comes only from the server flag `Snapshot.nightTariff.enabled`). Web uses it to light up the
 active profile and to spell out the confirmation dialog; `Inverter.applyProfile` uses it to
 know which writes a profile is made of. A profile is a *composition of existing control
 commands*, not a new register — so a renamed `ControlType` has to be renamed here too.
@@ -117,7 +120,7 @@ summary, CSV link), `tools/control.ts` (writes, including `set_season_profile`).
 
 ## The write-safety model (the key design intent — do not break it)
 The principle is "read, but never overwrite until asked". When changing the control paths, preserve every gate:
-- Polling/connecting send **reads only (fn 0x03)**. Nothing is written automatically.
+- Polling/connecting send **reads only (fn 0x03)**. Nothing is written automatically — except by the **night tariff scheduler** (`Inverter.reconcileNightTariff`, run after each successful poll), the one sanctioned automatic writer. It only runs while the `night` season profile is on (`schedule.json` in the data dir); applying that profile — gated like any profile — is the standing authorization. It writes through ordinary `control()` with `bypassLock` and `origin: "schedule"`, source `schedule:night-tariff`, never under `ALLOW_CONTROL=false`, and backs off 60 s after a failed write. It is switched off by applying another profile (before that profile's writes, so the two never fight) or by any write of either priority without `opts.origin` (a manual change — UI, API, MCP, MQTT), which the scheduler would otherwise silently undo. Keep all three of those exits.
 - `ALLOW_CONTROL=false` is an irreversible read-only mode (it cannot be unlocked). `STARTUP_LOCKED` starts locked. `AUTO_RELOCK` re-arms the lock after every successful write.
 - **`applyProfile` (season profiles) is the one multi-write path, and it is deliberately gated once, not per step.** It checks `allowControl` and the lock itself, up front, and then calls `control()` with `bypassLock: true` for each step — otherwise `AUTO_RELOCK` would slam the lock shut after the first write and the second step would fail. The lock is re-engaged in a `finally`, so a profile that dies between its steps also gives the lock back — an unlock is authorization for one profile, successful or not; if *nothing* was written the authorization was not spent and the lock is left as it was. Only one profile runs at a time (`profileInFlight`): a second call is rejected rather than allowed to interleave its steps with the first through the shared command queue, which would leave the house mixed between two seasons. Do not "simplify" this into per-step gating, and do not let anything else reach for `bypassLock` to escape the lock: the one released lock is the user's authorization for the whole profile. Every step is still an ordinary `control()` write — same whitelist, same validation, same `write` event in the log; a step that fails reports how far the profile got.
 - `/api/inverter/raw`: `R` commands always work, `W` commands are gated by the same checks as `control()` — otherwise it would be a hole around the lock.

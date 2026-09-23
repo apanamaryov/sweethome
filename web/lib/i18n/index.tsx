@@ -66,6 +66,7 @@ export function warnLabel(dict: Dict, name: string): string {
 /** Подпись сезонного профиля; null — настройки не совпали ни с одним («Своё»). */
 export function seasonLabel(dict: Dict, profile: SeasonProfile | null): string {
   if (profile === "winter") return dict.seasonWinter;
+  if (profile === "night") return dict.seasonNight;
   if (profile === "summer") return dict.seasonSummer;
   return dict.seasonCustom;
 }

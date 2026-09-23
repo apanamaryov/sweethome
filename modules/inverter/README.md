@@ -29,7 +29,7 @@ your local network. No data ever leaves your LAN.
 - 📱 **Mobile-friendly web UI** (Next.js) with live updates over WebSocket and automatic reconnection, including a header badge that shows the *derived* power source (grid / battery / solar) — the inverter has no "solar" mode of its own, so "Solar" is inferred from telemetry (autonomous mode, PV output above a threshold, no battery discharge) with hysteresis to ignore passing clouds.
 - 🌍 **Three interface languages** — Ukrainian, Russian, English; switching without a page reload.
 - 🔒 **Safe control** — read-only by default; writes require an explicit unlock, a register whitelist, automatic re-locking, and an "as-found" settings baseline with drift highlighting.
-- 🌗 **Season profiles** — a one-click winter/summer switch that sets the output and charging priorities together (winter: grid-powered house with the battery held as a charged reserve; summer: PV and battery first, grid only as backup), with the profile the inverter currently stands on shown in the header.
+- 🌗 **Season profiles** — a one-click winter / winter · night charging / summer switch that sets the output and charging priorities together (winter: grid-powered house with the battery held as a charged reserve; night charging: the same, but the grid charges the battery only in the cheap hours of a two-rate meter; summer: PV and battery first, grid only as backup), with the profile the inverter currently stands on shown in the header.
 - 🏠 **Home Assistant integration** over MQTT with auto-discovery — entities appear in HA by themselves, no YAML needed.
 - 🔑 **Users & roles** — always-on login with two roles (admin / viewer), forced password change on first use, admin-managed accounts, scrypt-hashed passwords in SQLite, HttpOnly sessions and brute-force protection.
 - 📊 **Statistics & history** — SQLite telemetry log with a per-metric power chart set, daily kWh totals, energy bars, a "Solar today" window (start/end of stable PV output), and an event log (mode changes, grid loss, faults).
@@ -303,13 +303,13 @@ the same Bearer header.
 
 ## 🖥️ Web interface
 
-- **Header** — connection status (Connected / Demo data / No connection), the current power source (Grid / Solar / Battery / Bypass / Charging / …), the season profile in effect (Winter / Summer / Custom), last update time.
+- **Header** — connection status (Connected / Demo data / No connection), the current power source (Grid / Solar / Battery / Bypass / Charging / …), the season profile in effect (Winter / Winter · night charging / Summer / Custom), last update time.
 - **Battery** — state of charge (SoC ring), voltage, charge/discharge current, state.
 - **Solar (PV)** — power, voltage, current.
 - **Solar today** — start/end of today's stable solar window (idle / active / ended), backed by `GET /api/inverter/stats/solar-window`.
 - **Load** — active power, apparent power (VA), load %, voltage/frequency.
 - **Grid** — consumed power, voltage, frequency, inverter temperature.
-- **Settings** (`/inverter/settings`, admin only) — "Current / Baseline" table with drift highlighting (including SOC thresholds for lithium batteries), function switches, a "Re-read baseline" button; lock status and an Unlock/Lock button; the **season profile** switch (Winter / Summer), output source priority, charging priority, max charging current, max AC charging current. Every change requires confirmation; the lock re-engages automatically after a write.
+- **Settings** (`/inverter/settings`, admin only) — "Current / Baseline" table with drift highlighting (including SOC thresholds for lithium batteries), function switches, a "Re-read baseline" button; lock status and an Unlock/Lock button; the **season profile** switch (Winter / Winter · night charging / Summer; for night charging also the current phase), output source priority, charging priority, max charging current, max AC charging current. Every change requires confirmation; the lock re-engages automatically after a write.
 - **Diagnostics** (`/inverter/diagnostics`, admin only) — read/write arbitrary Modbus registers (`R 201 10`, `W 331 1`).
 - **Statistics** (`/inverter/stats`) — a solar-window panel for the selected period, charts, daily totals with solar start/end columns, and the event log (see [Statistics](#-statistics)).
 
@@ -344,7 +344,7 @@ This module's endpoints, mounted by the host under `/api/inverter` and `/ws/inve
 | `GET` | `/api/inverter/snapshot` | Current snapshot (status, mode, settings, warnings) |
 | `GET` | `/api/inverter/meta` | Value maps for the controls |
 | `POST` | `/api/inverter/control` | `{type, value}` — write a setting (whitelist; rejected while locked). `{preview: true}` reports the register, raw value, current and baseline without writing |
-| `POST` | `/api/inverter/profile` | `{name}` — apply a season profile (`winter` / `summer`): both priorities in one action, steps that already match are skipped. `{preview: true}` reports what would change without writing |
+| `POST` | `/api/inverter/profile` | `{name}` — apply a season profile (`winter` / `night` / `summer`): both priorities in one action, steps that already match are skipped. `{preview: true}` reports what would change without writing |
 | `POST` | `/api/inverter/lock` | `{locked}` — engage/release the write lock |
 | `GET` | `/api/inverter/baseline` | The settings baseline captured on connect |
 | `POST` | `/api/inverter/baseline/recapture` | Re-read the settings and overwrite the baseline |
@@ -364,6 +364,17 @@ Every route above accepts either the session cookie or `Authorization: Bearer in
 from utility first (331 = 0); `summer` — output priority SBU (301 = 2) plus charging from PV
 first (331 = 1). One released lock covers the whole profile and the lock re-engages once at
 the end, so a two-step profile does not need two unlocks.
+
+`night` — night charging for a two-rate meter: output priority SUB (301 = 3) like winter, but
+the charging priority follows the clock (the server's local time): utility first (331 = 0)
+from 23:00 to 07:00, only PV (331 = 3) during the day. If the battery drops to 30% during the
+day (say, after an outage), the grid tops it up to 50% without waiting for the night. Unlike
+the other two, this profile is kept in force by the server: once per poll cycle it compares
+the priorities with the current phase and rewrites them if needed (the writes land in the
+event log as `schedule:night-tariff`). It stays on across restarts (`data/inverter/schedule.json`)
+until another profile is applied or either priority is changed by hand (UI, API, MCP or MQTT).
+The snapshot reports it in `nightTariff: { enabled, phase: "night" | "day" | "backup" }`.
+Hours and thresholds live in `NIGHT_TARIFF` (`packages/inverter-shared/src/profiles.ts`).
 
 ```bash
 curl -X POST http://<pi-address>:3000/api/inverter/control \
@@ -530,7 +541,7 @@ its source (`token:<name>`, `ui:<user>` or `mqtt`) — visible on the **Statisti
 The application is designed around the principle of **"read, but never overwrite until
 you need to"**:
 
-- **Nothing is ever written automatically.** Polling sends only register reads (fn 0x03). Writes happen exclusively on explicit action.
+- **Nothing is ever written automatically** — with one opt-in exception. Polling sends only register reads (fn 0x03). Writes happen exclusively on explicit action; the exception is the `night` season profile, whose scheduler flips the two priorities by the clock. Applying that profile (unlocked, as an admin) is the authorization, and it lasts until another profile or a manual priority change turns it off; `ALLOW_CONTROL=false` silences it.
 - **The write lock is engaged by default** (`STARTUP_LOCKED=true`). Until you press "Unlock" (or call `POST /api/inverter/lock`), all writes are rejected — via the UI and the API alike (including `W` commands in `/api/inverter/raw`).
 - **Automatic re-locking** after every successful write (`AUTO_RELOCK=true`). A season profile is one
   authorized action, not two: the lock is checked once before the profile starts and re-engaged once

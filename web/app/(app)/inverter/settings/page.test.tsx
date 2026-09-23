@@ -264,6 +264,63 @@ describe("SettingsPage — control panel (lock bar)", () => {
     expect(global.fetch).not.toHaveBeenCalledWith("/api/inverter/profile", expect.anything());
   });
 
+  it("marks night charging from the server flag, with the current phase", async () => {
+    const { container } = await renderWithProviders(<SettingsPage />, {
+      snapshot: buildSnapshot({
+        info: buildRatedInfo({ outputSourcePriority: 3, chargerSourcePriority: 0 }), // ночью = как зима
+        control: { allowControl: true, locked: false },
+        nightTariff: { enabled: true, phase: "night" },
+      }),
+    });
+
+    expect(screen.getByRole("button", { name: t.seasonNight })).toHaveClass("active");
+    expect(screen.getByRole("button", { name: t.seasonWinter })).not.toHaveClass("active");
+    expect(container.querySelector(".season-now")).toHaveTextContent(t.seasonNight);
+    expect(container.querySelector(".season-now")).toHaveTextContent(t.nightPhase.night);
+  });
+
+  it("turns night charging on with a confirmation, even when nothing needs rewriting", async () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true, profile: "night", applied: [], skipped: [] }) });
+    const user = userEvent.setup();
+    const { container } = await renderWithProviders(<SettingsPage />, {
+      snapshot: buildSnapshot({
+        // Совпадает с дневной фазой ночного тарифа, но сам режим не включён.
+        info: buildRatedInfo({ outputSourcePriority: 3, chargerSourcePriority: 3 }),
+        control: { allowControl: true, locked: false },
+      }),
+    });
+
+    await user.click(screen.getByRole("button", { name: t.seasonNight }));
+
+    expect(container.querySelector(".modal-box")).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: t.modalOk }));
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/inverter/profile",
+      expect.objectContaining({ body: JSON.stringify({ name: "night" }) })
+    );
+  });
+
+  it("lets winter be picked over night charging even when the registers coincide", async () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true, profile: "winter", applied: [], skipped: [] }) });
+    const user = userEvent.setup();
+    const { container } = await renderWithProviders(<SettingsPage />, {
+      snapshot: buildSnapshot({
+        info: buildRatedInfo({ outputSourcePriority: 3, chargerSourcePriority: 0 }),
+        control: { allowControl: true, locked: false },
+        nightTariff: { enabled: true, phase: "night" },
+      }),
+    });
+
+    await user.click(screen.getByRole("button", { name: t.seasonWinter }));
+
+    expect(container.querySelector(".modal-box")).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: t.modalOk }));
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/inverter/profile",
+      expect.objectContaining({ body: JSON.stringify({ name: "winter" }) })
+    );
+  });
+
   it("renders the max-charging-current selects from meta's allowed values, pre-filled from info", async () => {
     const { container } = await renderWithProviders(<SettingsPage />, {
       snapshot: buildSnapshot({
