@@ -18,7 +18,10 @@ function InverterCard() {
   // Режим работы (сезонный профиль): пока настройки не прочитаны, его не знаем — не показываем.
   const season =
     snapshot?.info || night?.enabled ? seasonLabel(t, detectSeasonProfile(snapshot?.info ?? null, !!night?.enabled)) : null;
-  const phase = night?.enabled && night.phase ? t.nightPhaseShort[night.phase] : null;
+  const phase =
+    night?.enabled && night.phase
+      ? t.nightPhaseShort[night.phase] + (night.held ? ` · ${t.nightHeldShort}` : "")
+      : null;
 
   // Обзор = статус с одного взгляда: карточка всегда видна, вся её площадь —
   // ссылка в раздел инвертора; бейджа источника нет — активные источники

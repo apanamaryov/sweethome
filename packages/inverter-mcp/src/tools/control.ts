@@ -92,7 +92,8 @@ export function registerControlTools(server: McpServer, ctx: McpContext, logger:
         "cheap hours 23:00-07:00 the grid runs the house and charges the battery (SUB + utility first), during " +
         "the day PV and battery run the house and only PV charges (SBU + only PV); if the charge drops to 30% " +
         "during the day the grid tops it up to 50% — the server keeps switching both priorities on schedule " +
-        "until another profile or a manual priority change turns it off; 'summer' runs " +
+        "until another profile turns it off (a manual priority change only pauses it until the next " +
+        "switch at 23:00 or 07:00); 'summer' runs " +
         "the house from PV and battery (SBU) and charges from PV first, falling back to the grid only when the " +
         "sun is not enough. Each profile writes the output source priority (register 301) and the charger " +
         "source priority (register 331); a setting that already matches is left alone. Use preview=true " +

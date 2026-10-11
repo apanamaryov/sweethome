@@ -92,6 +92,11 @@ export class Inverter extends EventEmitter {
    */
   private nightTariff: boolean;
   private tariffPhase: NightTariffPhase | null = null;
+  /**
+   * Фаза, в которой приоритеты сменили вручную: пока она длится, планировщик молчит.
+   * Только в памяти — после перезапуска сервиса планировщик снова ведёт сам.
+   */
+  private manualHold: NightTariffPhase | null = null;
   /** Идущая запись планировщика: профиль дожидается её, чтобы не перемешать записи. */
   private scheduleRun: Promise<void> | null = null;
   private scheduleRetryAt = 0;
@@ -123,13 +128,15 @@ export class Inverter extends EventEmitter {
   }
 
   private nightTariffState(): NightTariffState {
-    return { enabled: this.nightTariff, phase: this.nightTariff ? this.tariffPhase : null };
+    const state: NightTariffState = { enabled: this.nightTariff, phase: this.nightTariff ? this.tariffPhase : null };
+    return this.nightTariff && this.manualHold ? { ...state, held: true } : state;
   }
 
   /** Включить/выключить ночной тариф: флаг на диск и в снапшот. Сам ничего не пишет в инвертор. */
   private setNightTariff(enabled: boolean, phase: NightTariffPhase | null = null): void {
     this.nightTariff = enabled;
     this.tariffPhase = enabled ? phase : null;
+    this.manualHold = null;
     this.scheduleRetryAt = 0;
     try {
       this.store.saveNightTariff(enabled);
@@ -429,11 +436,14 @@ export class Inverter extends EventEmitter {
    *     lock after the profile's first step;
    *   - the night tariff scheduler (`reconcileNightTariff`): applying the "night"
    *     profile — unlocked, by an admin — is the authorization for its timed writes,
-   *     until another profile or a manual priority change switches it off.
+   *     until another profile switches it off.
    *
    * opts.origin marks the writes made on behalf of a profile or the scheduler. A write
-   * of either priority WITHOUT it is a manual change, and it switches the night tariff
-   * off — otherwise the scheduler would silently undo it on the next cycle.
+   * of either priority WITHOUT it is a manual change: it pauses the night tariff until
+   * the next phase change (otherwise the scheduler would undo it on the next cycle),
+   * and the tariff carries on by itself after that. It used to switch the tariff off
+   * for good, and a short manual switch on 2026-10-07 silently cost four nights of
+   * grid charging.
    */
   async control(
     type: ControlType,
@@ -476,7 +486,9 @@ export class Inverter extends EventEmitter {
       !opts.origin &&
       (type === "outputSourcePriority" || type === "chargerSourcePriority")
     ) {
-      this.setNightTariff(false);
+      this.tariffPhase = this.manualHold = this.tariffPhase ?? this.phaseNow();
+      this.snapshot = { ...this.snapshot, nightTariff: this.nightTariffState() };
+      this.emit("snapshot", this.snapshot);
     }
     // Re-engage the UI lock after a UI-originated write (not for MQTT).
     if (!opts.bypassLock && this.cfg.autoRelock) this.setLock(true);
@@ -636,11 +648,15 @@ export class Inverter extends EventEmitter {
     if (!this.snapshot.connection.connected || !info) return;
 
     const phase = this.phaseNow();
-    if (phase !== this.tariffPhase) {
+    // Ручная пауза кончается со сменой фазы — с этого цикла планировщик снова ведёт сам.
+    const holdEnds = this.manualHold !== null && phase !== this.manualHold;
+    if (holdEnds) this.manualHold = null;
+    if (phase !== this.tariffPhase || holdEnds) {
       this.tariffPhase = phase;
       this.snapshot = { ...this.snapshot, nightTariff: this.nightTariffState() };
       this.emit("snapshot", this.snapshot);
     }
+    if (this.manualHold !== null) return;
     if (Date.now() < this.scheduleRetryAt) return;
     const pending = profileChanges(info, "night", phase);
     if (!pending.length) return;
