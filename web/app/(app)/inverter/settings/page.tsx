@@ -322,6 +322,7 @@ function ControlPanel() {
           <span className="season-now">
             {t.seasonNow + (info || nightTariff?.enabled ? seasonLabel(t, activeProfile) : "—")}
             {nightTariff?.enabled && nightTariff.phase ? " (" + t.nightPhase[nightTariff.phase] + ")" : ""}
+            {nightTariff?.enabled && nightTariff.held ? " — " + t.nightHeld : ""}
           </span>
           {" · " + t.seasonHint}
         </p>

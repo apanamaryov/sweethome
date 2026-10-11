@@ -918,9 +918,9 @@ describe("ночной тариф — профиль night и планировщ
     expect(inv.getSnapshot().nightTariff?.enabled).toBe(false);
   });
 
-  it("a manual priority change switches the tariff off, other settings do not", async () => {
+  it("a manual priority change pauses the tariff, other settings do not", async () => {
     enableOnDisk();
-    const t = new FakeTransport({ regs: fullRegs({ 301: 3, 331: 3 }) });
+    const t = new FakeTransport({ regs: fullRegs({ 301: 2, 331: 3, 229: 80 }) });
     detectTransportsMock.mockResolvedValue([t]);
     const inv = makeInverter({ allowControl: true, startupLocked: false, autoRelock: false });
     await connectAndFreeze(inv);
@@ -929,12 +929,41 @@ describe("ночной тариф — профиль night и планировщ
     const current = inv.control("maxAcChargingCurrent", 30);
     await adv(5000);
     await current;
-    expect(inv.getSnapshot().nightTariff?.enabled).toBe(true);
+    expect(inv.getSnapshot().nightTariff?.held).toBeUndefined();
 
     const csp = inv.control("chargerSourcePriority", 1);
     await adv(5000);
     await csp;
-    expect(inv.getSnapshot().nightTariff?.enabled).toBe(false);
+    expect(inv.getSnapshot().nightTariff).toEqual({ enabled: true, phase: "day", held: true });
+    expect(JSON.parse(fs.readFileSync(path.join(tmp, "schedule.json"), "utf8"))).toEqual({ nightTariff: true });
+  });
+
+  it("the scheduler leaves a manual change alone until the phase changes, then takes over again", async () => {
+    enableOnDisk();
+    const t = new FakeTransport({ regs: fullRegs({ 301: 2, 331: 3, 229: 80 }) });
+    detectTransportsMock.mockResolvedValue([t]);
+    const inv = makeInverter({ allowControl: true, startupLocked: false, autoRelock: false });
+    await connectAndFreeze(inv);
+    jest.setSystemTime(at(11, 15)); // clearAllTimers() сбрасывает подменённые часы
+
+    // Как 2026-10-07: дом вручную перевели на сеть, чтобы перезапустить батареи.
+    const manual = inv.control("outputSourcePriority", 0);
+    await adv(5000);
+    await manual;
+
+    const dayCheck = inv.reconcileNightTariff();
+    await adv(5000);
+    await dayCheck;
+    expect(t.regs.get(301)).toBe(0); // днём ручное значение держится
+    expect(inv.getSnapshot().nightTariff?.held).toBe(true);
+
+    jest.setSystemTime(at(23, 0));
+    const nightCheck = inv.reconcileNightTariff();
+    await adv(5000);
+    await nightCheck;
+    expect(t.regs.get(301)).toBe(3); // в 23:00 ночная зарядка от сети началась сама
+    expect(t.regs.get(331)).toBe(0);
+    expect(inv.getSnapshot().nightTariff).toEqual({ enabled: true, phase: "night" });
   });
 });
 

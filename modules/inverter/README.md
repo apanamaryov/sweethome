@@ -545,7 +545,7 @@ its source (`token:<name>`, `ui:<user>` or `mqtt`) — visible on the **Statisti
 The application is designed around the principle of **"read, but never overwrite until
 you need to"**:
 
-- **Nothing is ever written automatically** — with one opt-in exception. Polling sends only register reads (fn 0x03). Writes happen exclusively on explicit action; the exception is the `night` season profile, whose scheduler flips the two priorities by the clock. Applying that profile (unlocked, as an admin) is the authorization, and it lasts until another profile or a manual priority change turns it off; `ALLOW_CONTROL=false` silences it.
+- **Nothing is ever written automatically** — with one opt-in exception. Polling sends only register reads (fn 0x03). Writes happen exclusively on explicit action; the exception is the `night` season profile, whose scheduler flips the two priorities by the clock. Applying that profile (unlocked, as an admin) is the authorization, and it lasts until another profile turns it off — a manual priority change only pauses it until the next phase change (23:00, 07:00 or a top-up starting/ending), shown as `nightTariff.held`; `ALLOW_CONTROL=false` silences it.
 - **The write lock is engaged by default** (`STARTUP_LOCKED=true`). Until you press "Unlock" (or call `POST /api/inverter/lock`), all writes are rejected — via the UI and the API alike (including `W` commands in `/api/inverter/raw`).
 - **Automatic re-locking** after every successful write (`AUTO_RELOCK=true`). A season profile is one
   authorized action, not two: the lock is checked once before the profile starts and re-engaged once
