@@ -177,6 +177,41 @@ describe("StatsDb — queryEnergy (hour/day buckets)", () => {
   });
 });
 
+describe("StatsDb — todayEnergy", () => {
+  let db: StatsDb;
+  afterEach(() => db.close());
+
+  it("sums only the rolled-up minutes since the local midnight of `now`", () => {
+    db = new StatsDb(":memory:");
+    const H = (s: string) => Date.parse(s); // local time of the test environment
+    // 720 W * (5000ms / 3.6e6) = 1 Wh per snapshot.
+    const eSample = (ts: number) =>
+      sample(ts, { pvPower: 720, acOutputActivePower: 360, mainsPower: 720, batteryPower: 0 });
+    db.transaction(() => {
+      db.insertSample(eSample(H("2026-07-23T23:58:00"))); // yesterday — must not count
+      db.insertSample(eSample(H("2026-07-24T00:01:00")));
+      db.insertSample(eSample(H("2026-07-24T09:30:00")));
+    });
+    const now = H("2026-07-24T12:00:00");
+    db.rollupMinutes(now, 5000);
+
+    const e = db.todayEnergy(now);
+    expect(Number(e.pv_wh.toFixed(3))).toBe(2);
+    expect(Number(e.load_wh.toFixed(3))).toBe(1);
+    expect(Number(e.grid_wh.toFixed(3))).toBe(2);
+    expect(e.t).toBe(new Date(2026, 6, 24).getTime());
+  });
+
+  it("returns zeros for a day with no data yet (e.g. right after midnight)", () => {
+    db = new StatsDb(":memory:");
+    const now = Date.parse("2026-07-25T00:00:30");
+    expect(db.todayEnergy(now)).toEqual({
+      t: new Date(2026, 6, 25).getTime(),
+      pv_wh: 0, load_wh: 0, grid_wh: 0, batt_charge_wh: 0, batt_discharge_wh: 0,
+    });
+  });
+});
+
 describe("StatsDb — rollupMinutes", () => {
   let db: StatsDb;
   afterEach(() => db.close());

@@ -457,7 +457,13 @@ for "online", "problem", "write locked"; with `MQTT_ENABLE_CONTROL=true` — wri
 `power_source` — the derived power source (grid / battery / solar, same value as the
 web UI's header badge) — handy for automations like "we're running on solar".
 
-**Topics:** state — `inverter/<node>/state` (JSON), availability — `inverter/<node>/availability`,
+**Energy (for HA's Energy dashboard):** when statistics are on (`STATS_ENABLED`), five
+kWh meters are published as well — solar, load, from grid, battery charge and battery
+discharge, each counted since local midnight (`state_class: total_increasing`; the drop to
+zero at midnight is a new meter cycle for HA). They come from the same per-minute rollups as
+the stats page, are republished every minute and lag the live values by a minute or two.
+
+**Topics:** state — `inverter/<node>/state` (JSON), energy — `inverter/<node>/energy` (JSON, kWh), availability — `inverter/<node>/availability`,
 commands — `inverter/<node>/set/<param>`, discovery — `homeassistant/<component>/<node>/<key>/config`.
 
 > `MQTT_ENABLE_CONTROL=true` allows writes from HA bypassing the UI lock — the flag
