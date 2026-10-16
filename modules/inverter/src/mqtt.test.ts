@@ -504,3 +504,84 @@ describe("HaMqtt — сенсор источника питания", () => {
     expect(body.power_source).toBe("Solar");
   });
 });
+
+describe("HaMqtt — накопленная энергия за сегодня (для панели «Энергия» в HA)", () => {
+  const today = {
+    t: 0,
+    pv_wh: 1234.5678,
+    load_wh: 2000,
+    grid_wh: 765.4321,
+    batt_charge_wh: 500,
+    batt_discharge_wh: 250.0004,
+  };
+
+  function startWithEnergy(energy: (() => typeof today) | undefined) {
+    const cfg = baseConfig({ enableControl: false });
+    const inverter = fakeInverter(makeSnapshot());
+    const haMqtt = new HaMqtt(cfg, inverter as unknown as Inverter, energy);
+    const client = fakeMqttClient();
+    mqttMock.connect.mockReturnValue(client);
+    haMqtt.start();
+    client.connected = true;
+    client.emit("connect");
+    return { haMqtt, client };
+  }
+
+  const energyPublishes = (client: ReturnType<typeof fakeMqttClient>) =>
+    client.publish.mock.calls.filter(([topic]) => topic === "inverter/test-node/energy");
+
+  afterEach(() => jest.useRealTimers());
+
+  it("объявляет пять счётчиков kWh с total_increasing на отдельном топике", () => {
+    const { haMqtt, client } = startWithEnergy(() => today);
+    const keys = ["energy_pv", "energy_load", "energy_grid", "energy_batt_in", "energy_batt_out"];
+    for (const key of keys) {
+      const call = configTopics(client).find(
+        ([topic]) => topic === `homeassistant/sensor/test-node/${key}/config`
+      );
+      expect(call).toBeDefined();
+      expect(JSON.parse(call![1])).toEqual(
+        expect.objectContaining({
+          unique_id: `test-node_${key}`,
+          state_topic: "inverter/test-node/energy",
+          unit_of_measurement: "kWh",
+          device_class: "energy",
+          state_class: "total_increasing",
+        })
+      );
+    }
+    haMqtt.stop();
+  });
+
+  it("публикует кВт·ч за сегодня при подключении, округляя до Вт·ч", () => {
+    const { haMqtt, client } = startWithEnergy(() => today);
+    const calls = energyPublishes(client);
+    expect(calls).toHaveLength(1);
+    expect(JSON.parse(calls[0][1])).toEqual({
+      pv_kwh: 1.235,
+      load_kwh: 2,
+      grid_kwh: 0.765,
+      batt_in_kwh: 0.5,
+      batt_out_kwh: 0.25,
+    });
+    expect(calls[0][2]).toEqual({ qos: 0, retain: true });
+    haMqtt.stop();
+  });
+
+  it("повторяет публикацию раз в минуту и перестаёт после stop()", () => {
+    jest.useFakeTimers();
+    const { haMqtt, client } = startWithEnergy(() => today);
+    jest.advanceTimersByTime(60_000);
+    expect(energyPublishes(client)).toHaveLength(2);
+    haMqtt.stop();
+    jest.advanceTimersByTime(180_000);
+    expect(energyPublishes(client)).toHaveLength(2);
+  });
+
+  it("без статистики не объявляет и не публикует счётчики энергии", () => {
+    const { haMqtt, client } = startWithEnergy(undefined);
+    expect(configTopics(client).some(([topic]) => String(topic).includes("/energy_"))).toBe(false);
+    expect(energyPublishes(client)).toHaveLength(0);
+    haMqtt.stop();
+  });
+});

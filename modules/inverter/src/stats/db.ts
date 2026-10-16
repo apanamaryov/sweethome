@@ -345,6 +345,19 @@ export class StatsDb {
     }));
   }
 
+  /**
+   * Энергия с местной полуночи до `nowMs` по свёрнутым минутам (текущая минута ещё не входит).
+   * В полночь значения падают в ноль — HA понимает это как новый цикл счётчика `total_increasing`.
+   */
+  todayEnergy(nowMs: number): EnergyBucket {
+    const t = dayStartMs(localDay(nowMs));
+    return (
+      this.queryEnergy(t, nowMs, "day")[0] ?? {
+        t, pv_wh: 0, load_wh: 0, grid_wh: 0, batt_charge_wh: 0, batt_discharge_wh: 0,
+      }
+    );
+  }
+
   queryEvents(opts: {
     from?: number;
     to?: number;

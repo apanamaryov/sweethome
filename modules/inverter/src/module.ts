@@ -15,7 +15,7 @@ export function createInverterModule(rootDataDir: string): HomeModule & McpCapab
   const stats = createStats(cfg);
   if (stats) stats.attach(inverter);
   console.log(`[inverter] stats: ${stats ? "enabled (stats.db)" : "disabled"}`);
-  const mqtt = new HaMqtt(cfg, inverter);
+  const mqtt = new HaMqtt(cfg, inverter, stats ? () => stats.db.todayEnergy(Date.now()) : undefined);
 
   const clients = new Set<WebSocket>();
   inverter.on("snapshot", (snap: Snapshot) => {

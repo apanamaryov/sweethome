@@ -1,5 +1,6 @@
 import { InverterConfig } from "./config";
 import { Inverter } from "./inverter";
+import type { EnergyBucket } from "./stats/db";
 import {
   Snapshot,
   ControlType,
@@ -8,6 +9,18 @@ import {
   ALLOWED_MAX_CHARGE_CURRENT,
   ALLOWED_MAX_AC_CHARGE_CURRENT,
 } from "@sweethome/inverter-shared";
+
+// Energy accumulated since local midnight, from the stats DB (needs STATS_ENABLED).
+// HA's Energy dashboard wants kWh with state_class total_increasing; the midnight drop
+// to zero is read by HA as a new meter cycle, not as a negative reading.
+const ENERGY_SENSORS: Array<{ key: string; field: keyof Omit<EnergyBucket, "t">; json: string; name: string; icon: string }> = [
+  { key: "energy_pv", field: "pv_wh", json: "pv_kwh", name: "Солнце за сегодня", icon: "mdi:solar-power" },
+  { key: "energy_load", field: "load_wh", json: "load_kwh", name: "Потребление за сегодня", icon: "mdi:home-lightning-bolt" },
+  { key: "energy_grid", field: "grid_wh", json: "grid_kwh", name: "Из сети за сегодня", icon: "mdi:transmission-tower-import" },
+  { key: "energy_batt_in", field: "batt_charge_wh", json: "batt_in_kwh", name: "Заряд батареи за сегодня", icon: "mdi:battery-arrow-up" },
+  { key: "energy_batt_out", field: "batt_discharge_wh", json: "batt_out_kwh", name: "Разряд батареи за сегодня", icon: "mdi:battery-arrow-down" },
+];
+const ENERGY_PUBLISH_MS = 60_000;
 
 interface SensorDef {
   key: string;
@@ -85,8 +98,14 @@ export class HaMqtt {
   private stateTopic: string;
   private availTopic: string;
   private cmdRoot: string;
+  private energyTopic: string;
+  private energyTimer: NodeJS.Timeout | null = null;
 
-  constructor(cfg: InverterConfig, inverter: Inverter) {
+  constructor(
+    cfg: InverterConfig,
+    inverter: Inverter,
+    private energyToday?: () => EnergyBucket
+  ) {
     this.cfg = cfg;
     this.inverter = inverter;
     const { baseTopic, nodeId } = cfg.mqtt;
@@ -94,6 +113,7 @@ export class HaMqtt {
     this.stateTopic = `${this.base}/state`;
     this.availTopic = `${this.base}/availability`;
     this.cmdRoot = `${this.base}/set`;
+    this.energyTopic = `${this.base}/energy`;
   }
 
   start(): void {
@@ -125,7 +145,12 @@ export class HaMqtt {
         this.client.subscribe(`${this.cmdRoot}/#`, { qos: 1 });
       }
       this.publishState(this.inverter.getSnapshot());
+      this.publishEnergy();
     });
+    if (this.energyToday) {
+      this.energyTimer = setInterval(() => this.publishEnergy(), ENERGY_PUBLISH_MS);
+      this.energyTimer.unref?.();
+    }
 
     this.client.on("message", (topic: string, payload: Buffer) => {
       void this.onCommand(topic, payload.toString());
@@ -168,6 +193,23 @@ export class HaMqtt {
         availability,
         device,
       });
+    }
+
+    if (this.energyToday) {
+      for (const e of ENERGY_SENSORS) {
+        this.publishConfig("sensor", e.key, {
+          name: e.name,
+          unique_id: `${this.cfg.mqtt.nodeId}_${e.key}`,
+          state_topic: this.energyTopic,
+          value_template: `{{ value_json.${e.json} }}`,
+          unit_of_measurement: "kWh",
+          device_class: "energy",
+          state_class: "total_increasing",
+          icon: e.icon,
+          availability,
+          device,
+        });
+      }
     }
 
     // Binary sensors
@@ -283,6 +325,20 @@ export class HaMqtt {
     this.client.publish(this.stateTopic, JSON.stringify(payload), { qos: 0, retain: true });
   }
 
+  private publishEnergy(): void {
+    if (!this.energyToday || !this.client || !this.client.connected) return;
+    let today: EnergyBucket;
+    try {
+      today = this.energyToday();
+    } catch (e) {
+      console.error("[inverter-monitor] MQTT energy read failed:", (e as Error).message);
+      return;
+    }
+    const payload: Record<string, number> = {};
+    for (const e of ENERGY_SENSORS) payload[e.json] = Math.round(today[e.field]) / 1000;
+    this.client.publish(this.energyTopic, JSON.stringify(payload), { qos: 0, retain: true });
+  }
+
   private async onCommand(topic: string, value: string): Promise<void> {
     if (!this.cfg.mqtt.enableControl) return;
     const key = topic.slice(this.cmdRoot.length + 1);
@@ -313,6 +369,8 @@ export class HaMqtt {
   }
 
   stop(): void {
+    if (this.energyTimer) clearInterval(this.energyTimer);
+    this.energyTimer = null;
     const client = this.client;
     if (!client) return;
     this.client = null;
